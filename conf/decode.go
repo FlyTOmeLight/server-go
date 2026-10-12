@@ -1,33 +1,26 @@
 package conf
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
-
-	"github.com/FlyTOmeLight/server-go/pkg/safety"
 )
 
-const (
-	// EnvSecretKey 解密 ${secret: xxx} 密文使用的 AES 密钥环境变量名
-	EnvSecretKey = "SERVER_SECRET_KEY"
+// EnvSecretKey is the explicit AES key used for configuration secrets.
+const EnvSecretKey = "SERVER_SECRET_KEY"
 
-	// EnvSecretIV 解密 ${secret: xxx} 密文使用的 AES IV 环境变量名
-	EnvSecretIV = "SERVER_SECRET_IV"
-)
-
-const (
-	// defaultSecretKey 未设置 SERVER_SECRET_KEY 时使用的默认 AES 密钥
-	defaultSecretKey = "6kY8uyQEl6XV37KR"
-
-	// defaultSecretIV 未设置 SERVER_SECRET_IV 时使用的默认 AES IV
-	defaultSecretIV = "E5ZKizMERreD3HX8"
-)
+// secretFormat identifies the authenticated ciphertext format.
+const secretFormat = "v1:"
 
 // valuePattern 匹配以下形式的占位符（secret/env/file 关键字不区分大小写）：
 //   - ${secret: xxx}         密文，自动解密
@@ -35,12 +28,15 @@ const (
 //   - ${file: /path}         文件内容
 var valuePattern = regexp.MustCompile(`\$\{(?i:(secret|env|file)):([^{}]+?)\}`)
 
-// secretDecryptor 解密 ${secret: xxx} 中的密文，默认使用 AES-CBC（密钥/IV 取自环境变量），可通过 SetSecretDecryptor 替换
+// secretDecryptor 解密 ${secret: xxx} 中的密文，默认使用 AES-GCM，可通过 SetSecretDecryptor 替换
 var secretDecryptor = defaultSecretDecryptor
+var secretDecryptorMu sync.RWMutex
 
 // SetSecretDecryptor 替换默认的密文解密实现
 func SetSecretDecryptor(decryptor func(ciphertext string) (string, error)) {
 	if decryptor != nil {
+		secretDecryptorMu.Lock()
+		defer secretDecryptorMu.Unlock()
 		secretDecryptor = decryptor
 	}
 }
@@ -53,16 +49,6 @@ func DecodeHook() viper.DecoderConfigOption {
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToSliceHookFunc(","),
 	))
-}
-
-// UnmarshalKey 等同于 viper.UnmarshalKey，但会自动解析 ${secret: xxx}、${env: xxx}、${file: xxx} 占位符
-func UnmarshalKey(key string, rawVal any) error {
-	return viper.UnmarshalKey(key, rawVal, DecodeHook())
-}
-
-// Unmarshal 等同于 viper.Unmarshal，但会自动解析 ${secret: xxx}、${env: xxx}、${file: xxx} 占位符
-func Unmarshal(rawVal any) error {
-	return viper.Unmarshal(rawVal, DecodeHook())
 }
 
 // ValueDecodeHookFunc 返回 mapstructure.DecodeHookFunc，
@@ -102,7 +88,10 @@ func ResolveValue(text string) (string, error) {
 func resolvePlaceholder(kind, spec string) (string, error) {
 	switch strings.ToLower(kind) {
 	case "secret":
-		plaintext, err := secretDecryptor(strings.TrimSpace(spec))
+		secretDecryptorMu.RLock()
+		decryptor := secretDecryptor
+		secretDecryptorMu.RUnlock()
+		plaintext, err := decryptor(strings.TrimSpace(spec))
 		if err != nil {
 			return "", fmt.Errorf("DecryptSecretError: %v", err)
 		}
@@ -135,27 +124,52 @@ func splitSpec(spec string) (target, def string, hasDef bool) {
 	return strings.TrimSpace(target), def, hasDef
 }
 
-// defaultSecretDecryptor 使用 AES-CBC 解密，密钥与 IV 分别取自 SERVER_SECRET_KEY / SERVER_SECRET_IV 环境变量，未设置时使用内置默认值
+// defaultSecretDecryptor accepts only the versioned AES-GCM format.
 func defaultSecretDecryptor(ciphertext string) (string, error) {
-	key, iv := secretKeyIV()
-	return safety.CBCDecrypter(ciphertext, []byte(key), []byte(iv))
+	if !strings.HasPrefix(ciphertext, secretFormat) {
+		return "", fmt.Errorf("unsupported secret format: expected %s AES-GCM ciphertext; re-encrypt legacy secrets", secretFormat)
+	}
+	aead, err := secretCipher()
+	if err != nil {
+		return "", err
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(ciphertext, secretFormat))
+	if err != nil {
+		return "", fmt.Errorf("invalid secret encoding: %w", err)
+	}
+	if len(data) < aead.NonceSize()+aead.Overhead() {
+		return "", fmt.Errorf("secret ciphertext is too short")
+	}
+	plaintext, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], []byte(secretFormat))
+	if err != nil {
+		return "", fmt.Errorf("secret authentication failed: %w", err)
+	}
+	return string(plaintext), nil
 }
 
-// EncryptSecret 使用与 defaultSecretDecryptor 相同的密钥/IV 加密明文，用于生成 ${secret: xxx} 密文
+// EncryptSecret encrypts a configuration value using a fresh random nonce.
+// SERVER_SECRET_KEY must explicitly contain a 16, 24, or 32 byte AES key.
 func EncryptSecret(plaintext string) (string, error) {
-	key, iv := secretKeyIV()
-	return safety.CBCEncrypter(plaintext, []byte(key), []byte(iv))
+	aead, err := secretCipher()
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("generate secret nonce: %w", err)
+	}
+	data := aead.Seal(nonce, nonce, []byte(plaintext), []byte(secretFormat))
+	return secretFormat + base64.StdEncoding.EncodeToString(data), nil
 }
 
-// secretKeyIV 返回 AES 密钥与 IV，分别取自 SERVER_SECRET_KEY / SERVER_SECRET_IV 环境变量，未设置时使用内置默认值
-func secretKeyIV() (string, string) {
+func secretCipher() (cipher.AEAD, error) {
 	key := os.Getenv(EnvSecretKey)
 	if key == "" {
-		key = defaultSecretKey
+		return nil, fmt.Errorf("%s must be set to a 16, 24, or 32 byte AES key", EnvSecretKey)
 	}
-	iv := os.Getenv(EnvSecretIV)
-	if iv == "" {
-		iv = defaultSecretIV
+	block, err := aes.NewCipher([]byte(key))
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", EnvSecretKey, err)
 	}
-	return key, iv
+	return cipher.NewGCM(block)
 }

@@ -2,32 +2,71 @@ package main
 
 import (
 	"context"
-	"github.com/FlyTOmeLight/server-go"
+	"errors"
+	"fmt"
+	server "github.com/FlyTOmeLight/server-go"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/db"
 	"github.com/FlyTOmeLight/server-go/db/mongodb"
 	service1 "github.com/FlyTOmeLight/server-go/examples/example-service1/service"
 	service2 "github.com/FlyTOmeLight/server-go/examples/example-service2/service"
 	"github.com/FlyTOmeLight/server-go/host"
+	"github.com/FlyTOmeLight/server-go/httpintegration"
 	"github.com/FlyTOmeLight/server-go/logger"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
-func main() {
-	// sync logs before stops
-	defer logger.Sync()
-
-	// init bootstrap
-	bootstrap := server.NewBootstrap(&db.Module{}, &mongodb.Module{})
-	err := bootstrap.Initialize()
+func run() (result error) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	manager, err := conf.NewManager("")
 	if err != nil {
-		logger.Fatalf(context.Background(), "init bootstrap error: %v", err)
+		return err
 	}
-	defer bootstrap.Close()
-
-	// host & services
-	h := host.NewHTTPHost(conf.Default())
-	svc1 := service1.NewExampleService()
-	svc2 := service2.NewExampleService()
-	h.AddService(svc1, svc2)
-	h.Run()
+	log, err := logger.NewLogger(&logger.Config{Outputs: []logger.Output{{Type: "Console", Level: "Info"}}})
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+	var sqlConfig db.Config
+	var mongoConfig mongodb.Config
+	if err := manager.Snapshot().UnmarshalKey("DB", &sqlConfig); err != nil {
+		return err
+	}
+	if err := manager.Snapshot().UnmarshalKey("MongoDB", &mongoConfig); err != nil {
+		return err
+	}
+	database := &db.Module{Config: &sqlConfig}
+	mongo := &mongodb.Module{Config: &mongoConfig}
+	bootstrap := server.NewBootstrap(database, mongo)
+	if err := bootstrap.Initialize(ctx); err != nil {
+		return err
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		result = errors.Join(result, manager.Close(closeCtx), bootstrap.Close(closeCtx))
+	}()
+	svc1, err := service1.NewExampleService(ctx, database.DB)
+	if err != nil {
+		return err
+	}
+	h, err := host.NewHTTPHost(manager, log, httpintegration.Install, svc1, service2.NewExampleService())
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+	if err := manager.Watch(ctx, func(err error) { log.Errorf(ctx, "configuration reload: %v", err) }); err != nil {
+		return err
+	}
+	return h.Run(ctx)
+}
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

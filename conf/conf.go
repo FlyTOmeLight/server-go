@@ -6,210 +6,377 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/BurntSushi/toml"
-	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
-
-	"github.com/FlyTOmeLight/server-go/internalsdk"
-	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
-const (
-	EnvServerConfigPath = "SERVER_CONFIG_PATH"
+const EnvServerConfigPath = "SERVER_CONFIG_PATH"
+const DefaultConfigPath = "conf/server/config.toml"
+const defaultDeployMode = DeployModeCloud
 
-	defaultConfigFilePath = "conf/server/config.toml"
-	defaultDeployMode     = DeployModeCloud
-)
-
-var (
-	defaultConfig *Config
-	once          sync.Once
-)
-
-func Initialize() error {
-	var err error
-
-	once.Do(func() {
-		pwd, _ := os.Getwd()
-		logger.Debugf(context.Background(), "pwd: %s", pwd)
-
-		defaultConfig, err = NewConfig()
-		if err != nil {
-			return
-		}
-
-		viper.WatchConfig()
-		viper.OnConfigChange(onConfigChangedHandler)
-	})
-
-	return err
-}
-
-func Default() *Config {
-	if defaultConfig == nil {
-		err := Initialize()
-		if err != nil {
-			logger.Errorf(context.Background(), "InitConfigError: %v", err)
+// Load reads a complete file with an independent parser. No process globals are changed.
+func Load(path string) (*Config, error) {
+	if path == "" {
+		path = os.Getenv(EnvServerConfigPath)
+		if path == "" {
+			path = DefaultConfigPath
 		}
 	}
-	return defaultConfig
+	v := viper.New()
+	v.SetConfigFile(path)
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("read configuration: %w", err)
+	}
+	return decodeConfig(v)
 }
 
-func SetDefault(config *Config) error {
-	if config == nil {
-		return errors.New("config is nil")
+// FromSettings creates a validated configuration from caller-owned settings.
+func FromSettings(settings map[string]any) (*Config, error) {
+	v := viper.New()
+	if err := v.MergeConfigMap(cloneMap(settings)); err != nil {
+		return nil, err
 	}
-
-	if err := config.check(); err != nil {
-		return fmt.Errorf("CheckConfigError: %v", err)
-	}
-
-	configByte, err := toml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("MarshalConfigError: %v", err)
-	}
-
-	viper.SetConfigType("toml")
-	if err = viper.MergeConfig(bytes.NewBuffer(configByte)); err != nil {
-		return fmt.Errorf("MergeConfigError: %v", err)
-	}
-
-	// 只在第一次初始化时设置监听
-	if defaultConfig == nil {
-		defaultConfig = config
-		defaultConfig.AllSettings = viper.AllSettings()
-		defaultConfig.LoadMode = LoadModeLoaded
-
-		// 只在第一次初始化时设置监听
-		viper.WatchConfig()
-		viper.OnConfigChange(onConfigChangedHandler)
-	} else {
-		// 更新现有配置
-		defaultConfig.reset(config)
-		defaultConfig.AllSettings = viper.AllSettings()
-		defaultConfig.LoadMode = LoadModeLoaded
-	}
-
-	return nil
+	return decodeConfig(v)
 }
 
-func NewConfig() (*Config, error) {
-	serverConfigFilePath := getServerConfigFilePath()
-	viper.SetConfigFile(serverConfigFilePath)
-	if err := viper.MergeInConfig(); err != nil {
-		return nil, fmt.Errorf("MergeInConfigError filePath: %s, err: %v", serverConfigFilePath, err)
-	}
-
+func decodeConfig(v *viper.Viper) (*Config, error) {
 	var config Config
-	if err := Unmarshal(&config); err != nil {
-		return nil, fmt.Errorf("UnmarshalConfigError: %v", err)
+	if err := v.Unmarshal(&config, DecodeHook()); err != nil {
+		return nil, fmt.Errorf("decode configuration: %w", err)
 	}
 	if err := config.check(); err != nil {
-		return nil, fmt.Errorf("CheckConfigError: %v", err)
+		return nil, err
 	}
-
-	config.AllSettings = viper.AllSettings()
+	config.settings = cloneMap(v.AllSettings())
+	// Store effective defaults in the snapshot so later reloads compare like values.
+	data, err := toml.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	effective := viper.New()
+	effective.SetConfigType("toml")
+	if err := effective.ReadConfig(bytes.NewReader(data)); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"appname", "appcode", "runmode", "feature", "deploymode", "services", "httpserver", "fakeauth"} {
+		delete(config.settings, key)
+		if value, ok := effective.AllSettings()[key]; ok {
+			config.settings[key] = cloneValue(value)
+		}
+	}
 	return &config, nil
 }
 
-func RegisterConfigChanged(name string, f func(in fsnotify.Event)) {
-	if defaultConfig.configChanged == nil {
-		defaultConfig.configChanged = make(map[string]func(in fsnotify.Event))
+// UnmarshalKey decodes a section in this snapshot, resolving value placeholders.
+func (c *Config) UnmarshalKey(key string, target any) error {
+	if c == nil {
+		return errors.New("configuration is nil")
 	}
-	defaultConfig.configChanged[name] = f
+	v := viper.New()
+	if err := v.MergeConfigMap(cloneMap(c.settings)); err != nil {
+		return err
+	}
+	if !v.IsSet(key) {
+		return fmt.Errorf("configuration section %s is missing", key)
+	}
+	return v.UnmarshalKey(key, target, DecodeHook())
 }
 
-func RegisterConfigContentChanged(f func(newConfig *Config, changedKeys []string)) {
-	defaultConfig.configContentChanged = append(defaultConfig.configContentChanged, f)
+// Unmarshal decodes all snapshot settings without changing another configuration.
+func (c *Config) Unmarshal(target any) error {
+	if c == nil {
+		return errors.New("configuration is nil")
+	}
+	v := viper.New()
+	if err := v.MergeConfigMap(cloneMap(c.settings)); err != nil {
+		return err
+	}
+	return v.Unmarshal(target, DecodeHook())
 }
 
-func GetClient(name string) *ClientConfig {
-	if !viper.IsSet(name) {
+// Clone transfers an independent snapshot to the caller.
+func (c *Config) Clone() *Config {
+	if c == nil {
 		return nil
 	}
-	var config ClientConfig
-	_ = UnmarshalKey(name, &config)
-	return &config
+	copy := *c
+	copy.Services = append([]string(nil), c.Services...)
+	copy.HTTPServer.Trace.PrefixFilters = append([]string(nil), c.HTTPServer.Trace.PrefixFilters...)
+	copy.HTTPServer.Trace.SuffixFilters = append([]string(nil), c.HTTPServer.Trace.SuffixFilters...)
+	copy.HTTPServer.ConsoleProxyNames = append([]string(nil), c.HTTPServer.ConsoleProxyNames...)
+	copy.HTTPServer.AllowAPIPathNoHandlerAPIError = append([]string(nil), c.HTTPServer.AllowAPIPathNoHandlerAPIError...)
+	copy.HTTPServer.Assets = append([]HTTPServerAssetConfig(nil), c.HTTPServer.Assets...)
+	copy.Feature = cloneValue(c.Feature)
+	copy.settings = cloneMap(c.settings)
+	return &copy
 }
 
-func GetInternalClient(name string) *internalsdk.InternalClientConfig {
-	config := GetClient(name)
-	if config == nil {
-		return nil
+func cloneMap(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = cloneValue(value)
 	}
-
-	return &internalsdk.InternalClientConfig{
-		Config: &sdk.Config{
-			Endpoint: config.Endpoint,
-			Credentials: &sdk.Credentials{
-				AuthType:        sdk.AuthTypeAKSK,
-				AccessKeyId:     config.AccessKey,
-				SecretAccessKey: config.SecretKey,
-			},
-			Timeout: 30,
-		},
-		EnableImpersonate: config.EnableImpersonate,
-		EnableIdempotence: config.EnableIdempotence,
-		EnableSTS:         config.EnableSTS,
-		STSDuration:       config.STSDuration,
-		STSACL:            config.STSACL,
+	return output
+}
+func cloneValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return cloneMap(v)
+	case []any:
+		out := make([]any, len(v))
+		for i, value := range v {
+			out[i] = cloneValue(value)
+		}
+		return out
+	case []string:
+		return append([]string(nil), v...)
+	default:
+		return value
 	}
 }
 
-func onConfigChangedHandler(e fsnotify.Event) {
-	logger.Infof(context.Background(), "ConfigFileChanged: %s", e.Name)
+// Prepare validates a replacement and returns a non-failing commit action.
+// It must not mutate live resources before returning successfully.
+type Prepare func(previous, next *Config, changedKeys []string) (commit func(), err error)
 
-	if e.Op&fsnotify.Write != fsnotify.Write {
-		return
-	}
+// Manager owns configuration snapshots, reload subscriptions, and a file watcher.
+type Manager struct {
+	path     string
+	mu       sync.RWMutex
+	reloadMu sync.Mutex
+	current  *Config
+	handlers map[uint64]Prepare
+	nextID   uint64
+	cancel   context.CancelFunc
+	done     chan struct{}
+}
 
-	// invoke hook functions
-	for name, f := range defaultConfig.configChanged {
-		if e.Name == name {
-			f(e)
+func NewManager(path string) (*Manager, error) {
+	if path == "" {
+		path = os.Getenv(EnvServerConfigPath)
+		if path == "" {
+			path = DefaultConfigPath
 		}
 	}
-
-	filePath := getServerConfigFilePath()
-	if e.Name != filePath {
-		return
-	}
-
-	// reload config
-	defaultConfig.LoadMode = LoadModeLoading
-
-	currentConfig, err := NewConfig()
+	absolute, err := filepath.Abs(path)
 	if err != nil {
-		logger.Errorf(context.Background(), "ConfigReloadError: %v", err)
-		return
+		return nil, err
 	}
-
-	changedKeys := make([]string, 0)
-	for k, v := range defaultConfig.AllSettings {
-		if !reflect.DeepEqual(viper.Get(k), v) {
-			changedKeys = append(changedKeys, k)
-		}
+	config, err := Load(absolute)
+	if err != nil {
+		return nil, err
 	}
-
-	for _, handler := range defaultConfig.configContentChanged {
-		if handler != nil {
-			handler(currentConfig, changedKeys)
-		}
-	}
-
-	defaultConfig.reset(currentConfig)
-	defaultConfig.AllSettings = viper.AllSettings()
-	defaultConfig.LoadMode = LoadModeLoaded
+	return &Manager{path: absolute, current: config, handlers: make(map[uint64]Prepare)}, nil
 }
 
-func getServerConfigFilePath() string {
-	filePath := defaultConfigFilePath
-	if configFilePath := os.Getenv(EnvServerConfigPath); configFilePath != "" {
-		filePath = configFilePath
+// NewManagerFromConfig constructs an instance for explicit, programmatic settings.
+func NewManagerFromConfig(config *Config) (*Manager, error) {
+	if config == nil {
+		return nil, errors.New("configuration is nil")
 	}
-	return filePath
+	data, err := toml.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	v := viper.New()
+	v.SetConfigType("toml")
+	if err = v.ReadConfig(bytes.NewReader(data)); err != nil {
+		return nil, err
+	}
+	normalized, err := decodeConfig(v)
+	if err != nil {
+		return nil, err
+	}
+	// A Config loaded from a file also carries application-specific sections.
+	if config.settings != nil {
+		values := cloneMap(config.settings)
+		for _, key := range []string{"appname", "appcode", "runmode", "feature", "deploymode", "services", "httpserver", "fakeauth"} {
+			delete(values, key)
+			if value, exists := normalized.settings[key]; exists {
+				values[key] = cloneValue(value)
+			}
+		}
+		normalized.settings = values
+	}
+	return &Manager{current: normalized, handlers: make(map[uint64]Prepare)}, nil
+}
+
+func (m *Manager) Snapshot() *Config {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.current.Clone()
+}
+
+// Subscribe installs a staged replacement hook. Call the returned function to unsubscribe.
+func (m *Manager) Subscribe(handler Prepare) func() {
+	m.reloadMu.Lock()
+	defer m.reloadMu.Unlock()
+	return m.subscribe(handler)
+}
+
+// Bind initializes a subscriber from the current snapshot and then subscribes it
+// under the same reload lock. A replacement cannot be missed during construction.
+func (m *Manager) Bind(handler Prepare) (func(), error) {
+	m.reloadMu.Lock()
+	defer m.reloadMu.Unlock()
+	current := m.Snapshot()
+	commit, err := handler(current.Clone(), current, nil)
+	if err != nil {
+		return nil, err
+	}
+	if commit != nil {
+		commit()
+	}
+	return m.subscribe(handler), nil
+}
+
+func (m *Manager) subscribe(handler Prepare) func() {
+	m.nextID++
+	id := m.nextID
+	m.handlers[id] = handler
+	return func() { m.reloadMu.Lock(); defer m.reloadMu.Unlock(); delete(m.handlers, id) }
+}
+
+func changedKeys(previous, next *Config) []string {
+	keys := make(map[string]struct{})
+	for k := range previous.settings {
+		keys[k] = struct{}{}
+	}
+	for k := range next.settings {
+		keys[k] = struct{}{}
+	}
+	var changed []string
+	for key := range keys {
+		if !reflect.DeepEqual(previous.settings[key], next.settings[key]) {
+			changed = append(changed, key)
+		}
+	}
+	sort.Strings(changed)
+	return changed
+}
+
+// Update validates all subscribers before publishing a replacement.
+func (m *Manager) Update(next *Config) error {
+	if next == nil {
+		return errors.New("configuration is nil")
+	}
+	normalized, err := NewManagerFromConfig(next)
+	if err != nil {
+		return err
+	}
+	m.reloadMu.Lock()
+	defer m.reloadMu.Unlock()
+	previous := m.Snapshot()
+	candidate := normalized.Snapshot()
+	keys := changedKeys(previous, candidate)
+	if len(keys) == 0 {
+		return nil
+	}
+	ids := make([]uint64, 0, len(m.handlers))
+	for id := range m.handlers {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	var commits []func()
+	for _, id := range ids {
+		commit, err := m.handlers[id](previous.Clone(), candidate.Clone(), append([]string(nil), keys...))
+		if err != nil {
+			return err
+		}
+		if commit != nil {
+			commits = append(commits, commit)
+		}
+	}
+	m.mu.Lock()
+	m.current = candidate
+	m.mu.Unlock()
+	for _, commit := range commits {
+		commit()
+	}
+	return nil
+}
+
+func (m *Manager) Reload() error {
+	if m.path == "" {
+		return errors.New("configuration has no file path")
+	}
+	next, err := Load(m.path)
+	if err != nil {
+		return err
+	}
+	return m.Update(next)
+}
+
+// Watch starts one owned watcher. Replacement errors preserve the previous snapshot.
+func (m *Manager) Watch(ctx context.Context, onError func(error)) error {
+	if m.path == "" {
+		return errors.New("configuration has no file path")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cancel != nil {
+		return errors.New("configuration watcher is already running")
+	}
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	if err = watcher.Add(filepath.Dir(m.path)); err != nil {
+		watcher.Close()
+		return err
+	}
+	watchCtx, cancel := context.WithCancel(ctx)
+	m.cancel = cancel
+	m.done = make(chan struct{})
+	go func() {
+		defer close(m.done)
+		defer watcher.Close()
+		for {
+			select {
+			case <-watchCtx.Done():
+				return
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if filepath.Clean(event.Name) != m.path || event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
+					continue
+				}
+				if err := m.Reload(); err != nil && onError != nil {
+					onError(err)
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				if onError != nil {
+					onError(err)
+				}
+			}
+		}
+	}()
+	return nil
+}
+
+// Close cancels and waits for the watcher; it is safe to call more than once.
+func (m *Manager) Close(ctx context.Context) error {
+	m.mu.RLock()
+	cancel, done := m.cancel, m.done
+	m.mu.RUnlock()
+	if cancel == nil {
+		return nil
+	}
+	cancel()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

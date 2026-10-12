@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/FlyTOmeLight/server-go/constants"
+	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/gin-gonic/gin"
 )
@@ -146,17 +147,17 @@ func Debug(prefixFilters []string, suffixFilters []string) gin.HandlerFunc {
 func log(ctx context.Context, message string, statusCode int) {
 	switch statusCode / 100 { // reduce 2xx status to 2
 	case 1:
-		core.HTTPLogger.Infof(ctx, "%s", message)
+		logger.FromContext(ctx).Infof(ctx, "%s", message)
 	case 2:
-		core.HTTPLogger.Infof(ctx, "%s", message)
+		logger.FromContext(ctx).Infof(ctx, "%s", message)
 	case 3:
-		core.HTTPLogger.Infof(ctx, "%s", message)
+		logger.FromContext(ctx).Infof(ctx, "%s", message)
 	case 4:
-		core.HTTPLogger.Warnf(ctx, "%s", message)
+		logger.FromContext(ctx).Warnf(ctx, "%s", message)
 	case 5:
-		core.HTTPLogger.Errorf(ctx, "%s", message)
+		logger.FromContext(ctx).Errorf(ctx, "%s", message)
 	default:
-		core.HTTPLogger.Errorf(ctx, "%s", message)
+		logger.FromContext(ctx).Errorf(ctx, "%s", message)
 	}
 }
 

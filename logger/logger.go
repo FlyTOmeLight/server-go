@@ -151,7 +151,8 @@ func (l *Logger) Fatalf(ctx context.Context, format string, args ...any) {
 
 var (
 	defaultMu     sync.RWMutex
-	defaultLogger = &Logger{log: zap.NewExample()}
+	consoleLogger = &Logger{log: zap.NewExample()}
+	defaultLogger = consoleLogger
 )
 
 func SetDefaultConfig(config *Config) error {
@@ -162,7 +163,9 @@ func SetDefaultConfig(config *Config) error {
 	defaultMu.Lock()
 	previous := defaultLogger
 	defaultLogger = next
-	previous.Close()
+	if previous != consoleLogger {
+		previous.Close()
+	}
 	defaultMu.Unlock()
 	return nil
 }
@@ -176,6 +179,10 @@ func SetDefaultConfigWithFile(path string) error {
 }
 
 func write(ctx context.Context, level zapcore.Level, format string, args ...any) {
+	if l := contextualLogger(ctx); l != nil {
+		l.write(ctx, level, format, args...)
+		return
+	}
 	defaultMu.RLock()
 	defer defaultMu.RUnlock()
 	defaultLogger.write(ctx, level, format, args...)

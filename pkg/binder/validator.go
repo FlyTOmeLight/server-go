@@ -3,6 +3,7 @@ package binder
 import (
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
@@ -155,7 +156,15 @@ func tag(fl validator.FieldLevel) bool {
 	return true
 }
 
+var registerOnce sync.Once
+
+// RegisterValidator installs process-wide Gin validators before serving requests.
+// A router reload must not rewrite the validator's maps while binding requests.
 func RegisterValidator() {
+	registerOnce.Do(registerValidator)
+}
+
+func registerValidator() {
 	v, ok := binding.Validator.Engine().(*validator.Validate)
 	if !ok {
 		return

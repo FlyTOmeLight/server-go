@@ -4,20 +4,23 @@ import (
 	"github.com/FlyTOmeLight/server-go"
 	_ "github.com/FlyTOmeLight/server-go/examples/example-service1/doc/openapi"
 	sdk "github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
+	"github.com/FlyTOmeLight/server-go/idempotence"
+	"github.com/FlyTOmeLight/server-go/middleware"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/pkg/binder"
+	"github.com/gin-gonic/gin"
 )
 
 // RegisterRoute
 // @title Example service dataset open api
 // @BasePath /example-service1/v1
-func RegisterRoute(engine *core.Engine) {
+func (s *Service) RegisterRoute(engine *gin.RouterGroup, control *idempotence.Controller) {
 	g := engine.Group("/v1/projects/:projectName/datasets")
-	g.POST("", createDataset)
-	g.GET("", listDataset)
-	g.GET("/:localName", getDataset)
-	g.PUT("/:localName", updateDataset)
-	g.DELETE("/:localName", deleteDataset)
+	g.POST("", middleware.Idempotent(control, s.createDataset))
+	g.GET("", middleware.Idempotent(control, s.listDataset))
+	g.GET("/:localName", middleware.Idempotent(control, s.getDataset))
+	g.PUT("/:localName", middleware.Idempotent(control, s.updateDataset))
+	g.DELETE("/:localName", middleware.Idempotent(control, s.deleteDataset))
 }
 
 // Create a dataset
@@ -34,14 +37,14 @@ func RegisterRoute(engine *core.Engine) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/workspaces/:workspaceID/projects/:projectName/datasets [post]
-func createDataset(ctx *core.Context) {
+func (s *Service) createDataset(ctx *core.Context) {
 	var req sdk.CreateDatasetRequest
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
 		_ = ctx.Error(err)
 		return
 	}
 
-	resp, err := CreateDataset(ctx, &req)
+	resp, err := s.CreateDataset(ctx.Request.Context(), &req)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
@@ -63,14 +66,14 @@ func createDataset(ctx *core.Context) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/workspaces/:workspaceID/projects/:projectName/datasets [get]
-func listDataset(ctx *core.Context) {
+func (s *Service) listDataset(ctx *core.Context) {
 	var req sdk.ListDatasetRequest
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
 		_ = ctx.Error(err)
 		return
 	}
 
-	resp, err := ListDataset(ctx, &req)
+	resp, err := s.ListDataset(ctx.Request.Context(), &req)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
@@ -93,7 +96,7 @@ func listDataset(ctx *core.Context) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/workspaces/:workspaceID/projects/:projectName/datasets/:localName [get]
-func getDataset(ctx *core.Context) {
+func (s *Service) getDataset(ctx *core.Context) {
 	var req sdk.GetDatasetRequest
 
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
@@ -101,7 +104,7 @@ func getDataset(ctx *core.Context) {
 		return
 	}
 
-	resp, err := GetDataset(ctx, &req)
+	resp, err := s.GetDataset(ctx.Request.Context(), &req)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
@@ -124,7 +127,7 @@ func getDataset(ctx *core.Context) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/workspaces/:workspaceID/projects/:projectName/datasets/:localName [put]
-func updateDataset(ctx *core.Context) {
+func (s *Service) updateDataset(ctx *core.Context) {
 	var req sdk.UpdateDatasetRequest
 
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
@@ -132,7 +135,7 @@ func updateDataset(ctx *core.Context) {
 		return
 	}
 
-	if err := UpdateDataset(ctx, &req); err != nil {
+	if err := s.UpdateDataset(ctx.Request.Context(), &req); err != nil {
 		ctx.Error(err)
 		return
 	}
@@ -154,7 +157,7 @@ func updateDataset(ctx *core.Context) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/workspaces/:workspaceID/projects/:projectName/datasets/:localName [delete]
-func deleteDataset(ctx *core.Context) {
+func (s *Service) deleteDataset(ctx *core.Context) {
 	var req sdk.DeleteDatasetRequest
 
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
@@ -162,7 +165,7 @@ func deleteDataset(ctx *core.Context) {
 		return
 	}
 
-	if err := DeleteDataset(ctx, &req); err != nil {
+	if err := s.DeleteDataset(ctx.Request.Context(), &req); err != nil {
 		ctx.Error(err)
 		return
 	}

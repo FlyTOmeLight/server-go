@@ -1,9 +1,11 @@
 # app.toml: 应用主配置文件
 AppName = "example-combine-service"
+AppCode = 100
 RunMode = "debug"                   # debug/test/release
 Version = "1.0.0"
 
 [HTTPServer]
+AuthType = "Fake"
 # 监听地址，必填
 Listen = "0.0.0.0:8080"
 # 读超时时间（单位ms），选填，默认20s

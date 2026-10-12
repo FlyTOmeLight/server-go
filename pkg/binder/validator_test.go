@@ -1,10 +1,29 @@
 package binder
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin/binding"
 )
+
+func TestRegisterDuringValidation(t *testing.T) {
+	RegisterValidator()
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				RegisterValidator()
+				if err := validate(structLocalNameValidation{LocalName: "valid-name"}); err != nil {
+					t.Error(err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
 
 type structLowercaseAlphanumericValidation struct {
 	LocalName string `json:"localName" binding:"lowercase_alphanumeric"`

@@ -29,27 +29,23 @@ func FakeAuth() gin.HandlerFunc {
 }
 
 func FakeAuthWithID(orgID, userID, userName, userRole string) gin.HandlerFunc {
+	if orgID == "" {
+		orgID = "test-org-id"
+	}
+	if userID == "" {
+		userID = "test-user-id"
+	}
+	if userName == "" {
+		userName = "test-user-name"
+	}
+	if userRole == "" {
+		userRole = "test-user-role"
+	}
 	return func(c *gin.Context) {
-		if orgID == "" {
-			orgID = "test-org-id"
-		}
 		c.Set(constants.KeyOrgID, orgID)
-
-		if userID == "" {
-			userID = "test-user-id"
-		}
 		c.Set(constants.KeyUserID, userID)
-
-		if userName == "" {
-			userName = "test-user-name"
-		}
 		c.Set(constants.KeyUserName, userName)
-
-		if userRole == "" {
-			userRole = "test-user-role"
-		}
 		c.Set(constants.KeyUserRole, userRole)
-
 		c.Next()
 	}
 }

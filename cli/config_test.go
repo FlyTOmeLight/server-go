@@ -1,69 +1,57 @@
 package cli
 
 import (
-	"fmt"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/FlyTOmeLight/server-go/sdk"
 	"github.com/spf13/viper"
 )
 
-func TestInitConfigFull(t *testing.T) {
-	t.Run("initconfig_full", func(t *testing.T) {
-		f := filepath.Join("testdata/full_config.yaml")
-		f, err := filepath.Abs(f)
-		if err != nil {
-			t.Fatalf("GetFullPath err, %v", err)
-		}
+func TestSetConfigRejectsUnsupportedAKSK(t *testing.T) {
+	for _, filename := range []string{"full_config.yaml", "default_config.yaml"} {
+		t.Run(filename, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			viper.SetConfigFile(filepath.Join("testdata", filename))
+			if err := SetConfig(); !errors.Is(err, sdk.ErrUnsupportedAuth) {
+				t.Fatalf("expected unsupported AKSK error, got %v", err)
+			}
+		})
+	}
+}
 
-		fmt.Println(f)
-		viper.SetConfigFile(f)
-		err = viper.ReadInConfig()
-		if err != nil {
-			t.Fatalf("ReadInConfig err, %v", err)
-		}
-
-		err = SetConfig()
-		if err != nil {
-			t.Fatalf("initConfig err, %v", err)
-		}
-
-		cred := Config.Client.Config.Credentials
-		if cred.AccessKeyId != "test-ak" {
-			t.Fatalf("Credentials.AccessKeyId=%v, wanted: test-ak", cred.AccessKeyId)
-		}
-
-		if cred.SecretAccessKey != "test-sk" {
-			t.Fatalf("Credentials.SecretAccessKey=%v, wanted: test-sk", cred.SecretAccessKey)
-		}
-	})
-
-	t.Run("initconfig_", func(t *testing.T) {
-		f := filepath.Join("testdata/default_config.yaml")
-		f, err := filepath.Abs(f)
-		if err != nil {
-			t.Fatalf("GetFullPath err, %v", err)
-		}
-
-		fmt.Println(f)
-		viper.SetConfigFile(f)
-		err = viper.ReadInConfig()
-		if err != nil {
-			t.Fatalf("ReadInConfig err, %v", err)
-		}
-
-		err = SetConfig()
-		if err != nil {
-			t.Fatalf("initConfig err, %v", err)
-		}
-
-		cred := Config.Client.Config.Credentials
-		if cred.AccessKeyId != "test-ak" {
-			t.Fatalf("Credentials.AccessKeyId=%v, wanted: test-ak", cred.AccessKeyId)
-		}
-
-		if cred.SecretAccessKey != "test-sk" {
-			t.Fatalf("Credentials.SecretAccessKey=%v, wanted: test-sk", cred.SecretAccessKey)
-		}
-	})
+func TestSetConfigAPIKeyAndInvalidModes(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		core      string
+		wantError bool
+	}{
+		{name: "API key", core: "endpoint: http://localhost:8001\n  api_key: token"},
+		{name: "conflicting auth", core: "endpoint: http://localhost:8001\n  api_key: token\n  access_key: ak", wantError: true},
+		{name: "relative endpoint", core: "endpoint: localhost:8001", wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			filename := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(filename, []byte("core:\n  "+test.core+"\nlog:\n  handler: NONE\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			viper.SetConfigFile(filename)
+			err := SetConfig()
+			if (err != nil) != test.wantError {
+				t.Fatalf("got error %v, wantError %v", err, test.wantError)
+			}
+			if !test.wantError {
+				client := Config.Client
+				t.Cleanup(func() { _ = client.Close() })
+				if client.Config.Credentials.APIKey != "token" {
+					t.Fatal("client lost configured API key")
+				}
+			}
+		})
+	}
 }

@@ -1,6 +1,9 @@
 package safety
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -50,5 +53,29 @@ func BenchmarkIsBase64(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		is := IsBase64(ciphertext)
 		assert.Equal(b, is, true)
+	}
+}
+
+func TestCBCRejectsMalformedInputs(t *testing.T) {
+	key, iv := []byte(keyString), []byte(ivString)
+	for _, input := range []string{"", "YQ==", "!!!"} {
+		_, err := CBCDecrypter(input, key, iv)
+		assert.Error(t, err)
+	}
+	for _, badIV := range [][]byte{nil, []byte("short"), make([]byte, 17)} {
+		_, err := CBCEncrypter("plain", key, badIV)
+		assert.Error(t, err)
+		_, err = CBCDecrypter(ciphertext, key, badIV)
+		assert.Error(t, err)
+	}
+	block, err := aes.NewCipher(key)
+	assert.NoError(t, err)
+	for _, padding := range []byte{0, 17, 2} {
+		plain := make([]byte, aes.BlockSize)
+		plain[len(plain)-1] = padding
+		// padding=2 has a preceding zero byte, which must also be rejected.
+		cipher.NewCBCEncrypter(block, iv).CryptBlocks(plain, plain)
+		_, err = CBCDecrypter(base64.StdEncoding.EncodeToString(plain), key, iv)
+		assert.Error(t, err)
 	}
 }

@@ -1,51 +1,32 @@
 package redis
 
 import (
-	"fmt"
-
-	"github.com/FlyTOmeLight/server-go/conf"
+	"context"
+	"errors"
 )
 
-const defaultName = "Redis"
-
 type Module struct {
-	Name   string
 	Config *Config
 	Redis  Redis
 }
 
-func (m *Module) ConfigKey() string {
-	if m.Name == "" {
-		m.Name = defaultName
+func (m *Module) Initialize(ctx context.Context) error {
+	if m.Redis != nil {
+		return errors.New("redis module is already initialized")
 	}
-	return m.Name
-}
-
-func (m *Module) Initialize() error {
-	if m.Config == nil {
-		err := conf.UnmarshalKey(m.ConfigKey(), &m.Config)
-		if err != nil {
-			return fmt.Errorf("UnmarshalConfigError: %v", err)
-		}
-		if m.Config == nil {
-			return fmt.Errorf("initialize redis module failed, config is empty")
-		}
-	}
-
-	var err error
-	m.Redis, err = NewRedis(m.Config)
+	client, err := NewRedis(ctx, m.Config)
 	if err != nil {
-		return fmt.Errorf("NewRedisError: %v", err)
+		return err
 	}
-
-	SetDefaultRedis(m.Redis)
-	return err
-}
-
-func (m *Module) Close() {
-
-}
-
-func (m *Module) Reload() error {
+	m.Redis = client
 	return nil
+}
+
+func (m *Module) Close(ctx context.Context) error {
+	if m.Redis == nil {
+		return nil
+	}
+	client := m.Redis
+	m.Redis = nil
+	return client.Close()
 }

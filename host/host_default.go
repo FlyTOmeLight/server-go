@@ -2,286 +2,292 @@ package host
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"reflect"
-	"syscall"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/FlyTOmeLight/server-go/conf"
+	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/logger"
-	"github.com/gin-contrib/pprof"
+	"github.com/FlyTOmeLight/server-go/middleware"
+	"github.com/FlyTOmeLight/server-go/pkg/binder"
+	"github.com/FlyTOmeLight/server-go/version"
 	"github.com/gin-gonic/gin"
-	"github.com/go-resty/resty/v2"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
-
-	"github.com/FlyTOmeLight/server-go/auth"
-	"github.com/FlyTOmeLight/server-go/conf"
-	"github.com/FlyTOmeLight/server-go/console"
-	"github.com/FlyTOmeLight/server-go/errors"
-	"github.com/FlyTOmeLight/server-go/metrics"
-	"github.com/FlyTOmeLight/server-go/middleware"
-	core "github.com/FlyTOmeLight/server-go/pkg"
-	"github.com/FlyTOmeLight/server-go/pkg/binder"
-	"github.com/FlyTOmeLight/server-go/pubsub"
-	"github.com/FlyTOmeLight/server-go/swagger"
-	"github.com/FlyTOmeLight/server-go/version"
 )
 
 const (
-	DefaultReadTimeout    = 20000  // 20s
-	DefaultWriteTimeout   = 10000  // 10s
-	DefaultIdleTimeout    = 10000  // 10s
-	DefaultMaxHeaderBytes = 100000 // 100k
+	DefaultReadTimeout    = 20000
+	DefaultWriteTimeout   = 10000
+	DefaultIdleTimeout    = 10000
+	DefaultMaxHeaderBytes = 100000
 )
 
-type Service interface {
-	LifeCycle
+var ErrRestartRequired = errors.New("configuration change requires process restart")
 
-	// Initialize 完成数据库连接等初始化
-	Initialize(e *core.Engine)
-}
-
-var _ Host = &HTTPHost{}
+// Setup installs optional HTTP integrations before business routes are registered.
+type Setup func(*gin.Engine, *conf.Config) error
 
 type HTTPHost struct {
-	Server   *http.Server
-	services []Service
-	engine   *core.Engine
-	config   *conf.Config
+	manager     *conf.Manager
+	log         *logger.Logger
+	setup       Setup
+	services    []Service
+	mu          sync.Mutex
+	config      *conf.Config
+	server      *http.Server
+	address     string
+	running     bool
+	closed      bool
+	ready       atomic.Bool
+	router      atomic.Pointer[gin.Engine]
+	unsubscribe func()
+	closeOnce   sync.Once
+	requestMu   sync.Mutex
+	requests    sync.WaitGroup
+	draining    bool
 }
 
-func NewHTTPHost(config *conf.Config) *HTTPHost {
-	server := NewHTTPServer(config)
-	engine := NewGinEngine(config)
-	if config.HTTPServer.UseH2C {
-		server.Handler = h2c.NewHandler(engine, &http2.Server{})
-	} else {
-		server.Handler = engine
+// NewHTTPHost borrows an application manager and logger. The caller owns their cleanup.
+func NewHTTPHost(manager *conf.Manager, log *logger.Logger, setup Setup, services ...Service) (*HTTPHost, error) {
+	if manager == nil || log == nil {
+		return nil, errors.New("host requires configuration and logger instances")
 	}
-
-	host := &HTTPHost{
-		Server: server,
-		engine: engine,
-		config: config,
+	h := &HTTPHost{manager: manager, log: log, setup: setup, services: append([]Service(nil), services...)}
+	unsubscribe, err := manager.Bind(h.prepareReload)
+	if err != nil {
+		return nil, err
 	}
-
-	if config == conf.Default() {
-		conf.RegisterConfigContentChanged(func(newConfig *conf.Config, changedKeys []string) {
-			host.reloadServer(newConfig)
-		})
-	}
-
-	return host
+	h.unsubscribe = unsubscribe
+	return h, nil
 }
 
-func NewGinEngine(config *conf.Config) *core.Engine {
-	gin.SetMode(config.RunMode)
+func (h *HTTPHost) buildRouter(config *conf.Config) (*gin.Engine, error) {
 	engine := gin.New()
-
-	// 支持HTTP2无SSL
-	if config.HTTPServer.UseH2C {
-		engine.UseH2C = true
-	}
-
-	// 设置公共中间件
+	engine.ContextWithFallback = true
+	engine.Use(func(c *gin.Context) {
+		c.Request = c.Request.WithContext(logger.WithContext(c.Request.Context(), h.log))
+		c.Set("server.AppCode", config.AppCode)
+		c.Set("server.Debug", config.RunMode == conf.RunModeDebug)
+		c.Next()
+	}, middleware.RequestID(), gin.Recovery(), serrors.ErrorHandler(config))
 	engine.NoRoute(middleware.APINotFound())
-	engine.Use(middleware.RequestID())
-
-	switch config.RunMode {
-	case conf.RunModeDebug, conf.RunModeTest:
-		engine.Use(middleware.Debug(config.HTTPServer.Trace.PrefixFilters, config.HTTPServer.Trace.SuffixFilters))
-	}
-
-	if config.HTTPServer.PprofEnable {
-		pprof.Register(engine, "/pprof")
-	}
-	if config.HTTPServer.MetricsEnable {
-		engine.GET("/metrics", metrics.Metrics())
-	}
 	engine.GET("/ping", middleware.Ping())
-	engine.GET("/healthz", middleware.Healthz())
+	engine.GET("/healthz", middleware.Healthz(h.ready.Load))
 	engine.GET("/version", version.Version())
-	if config.HTTPServer.SwaggerEnable {
-		engine.GET("/swagger/*any", swagger.Swagger())
-	}
-	engine.GET("/feature", middleware.Feature(config.Feature))
-
-	middleware.Asset(config.HTTPServer.Assets, false, engine)
-
-	if config.HTTPServer.IdempotenceEnable {
-		// 使用幂等中间件时，同一个请求的两次返回requestid可能不同，考虑到还需要可追踪的日志，所以接受这个差异
-		engine.Use(middleware.Idempotence())
-	}
-
-	if config.HTTPServer.ConsoleEnable {
-		console.RegisterConsoleAPI(engine, config)
-	}
-
-	auth.Use(engine, config)
-
-	middleware.Asset(config.HTTPServer.Assets, true, engine)
-
-	engine.Use(gin.Recovery())
-	// ErrorHandler 统一处理错误，内部集成了 AutoHandleAPIError 的功能
-	engine.Use(errors.ErrorHandler(config))
-
-	engine.GET("dapr/subscribe", pubsub.Subscribe(engine))
-
-	// 注册自定义参数校验
 	binder.RegisterValidator()
-
-	// 为所有接口配置统一前缀
-	if config.HTTPServer.APIBasePath != "" {
-		router := engine.Group(config.HTTPServer.APIBasePath)
-		engine.RouterGroup = *router
+	if h.setup != nil {
+		if err := h.setup(engine, config.Clone()); err != nil {
+			return nil, err
+		}
 	}
-
-	return engine
+	group := engine.Group(config.HTTPServer.APIBasePath)
+	for _, service := range h.services {
+		if service == nil {
+			return nil, errors.New("service is nil")
+		}
+		if err := service.RegisterRoutes(group); err != nil {
+			return nil, fmt.Errorf("register routes: %w", err)
+		}
+	}
+	return engine, nil
 }
 
+// Handler exposes the current immutable router to HTTP servers and integration tests.
+func (h *HTTPHost) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.requestMu.Lock()
+		if h.draining {
+			h.requestMu.Unlock()
+			http.Error(w, "service is stopping", http.StatusServiceUnavailable)
+			return
+		}
+		h.requests.Add(1)
+		h.requestMu.Unlock()
+		defer h.requests.Done()
+		h.router.Load().ServeHTTP(w, r)
+	})
+}
+
+func (h *HTTPHost) Address() string { h.mu.Lock(); defer h.mu.Unlock(); return h.address }
+
+// prepareReload never restarts a process lifecycle or its background workers.
+func (h *HTTPHost) prepareReload(previous, next *conf.Config, keys []string) (func(), error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return nil, errors.New("host is closed")
+	}
+	for _, key := range keys {
+		switch key {
+		case "httpserver", "feature", "fakeauth", "runmode":
+		default:
+			return nil, fmt.Errorf("%w: %s", ErrRestartRequired, key)
+		}
+	}
+	old, new := previous.HTTPServer, next.HTTPServer
+	if old.Listen != new.Listen || old.ReadTimeout != new.ReadTimeout || old.WriteTimeout != new.WriteTimeout || old.IdleTimeout != new.IdleTimeout || old.MaxHeaderBytes != new.MaxHeaderBytes || old.UseH2C != new.UseH2C {
+		return nil, fmt.Errorf("%w: listener, protocol, or transport timeout", ErrRestartRequired)
+	}
+	engine, err := h.buildRouter(next)
+	if err != nil {
+		return nil, err
+	}
+	return func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if !h.closed {
+			h.config = next.Clone()
+			h.router.Store(engine)
+		}
+	}, nil
+}
+
+// NewHTTPServer configures a server without binding or reserving a socket.
 func NewHTTPServer(config *conf.Config) *http.Server {
-	readTimeout := config.HTTPServer.ReadTimeout
-	writeTimeout := config.HTTPServer.WriteTimeout
-	idleTimeout := config.HTTPServer.IdleTimeout
-	maxHeaderBytes := config.HTTPServer.MaxHeaderBytes
+	cfg := config.HTTPServer
+	if cfg.Listen == "" {
+		cfg.Listen = "127.0.0.1:0"
+	}
+	if cfg.ReadTimeout == 0 {
+		cfg.ReadTimeout = DefaultReadTimeout
+	}
+	if cfg.WriteTimeout == 0 {
+		cfg.WriteTimeout = DefaultWriteTimeout
+	}
+	if cfg.IdleTimeout == 0 {
+		cfg.IdleTimeout = DefaultIdleTimeout
+	}
+	if cfg.MaxHeaderBytes == 0 {
+		cfg.MaxHeaderBytes = DefaultMaxHeaderBytes
+	}
+	return &http.Server{Addr: cfg.Listen, ReadTimeout: time.Duration(cfg.ReadTimeout) * time.Millisecond, ReadHeaderTimeout: time.Duration(cfg.ReadTimeout) * time.Millisecond, WriteTimeout: time.Duration(cfg.WriteTimeout) * time.Millisecond, IdleTimeout: time.Duration(cfg.IdleTimeout) * time.Millisecond, MaxHeaderBytes: cfg.MaxHeaderBytes}
+}
 
-	if readTimeout == 0 {
-		readTimeout = DefaultReadTimeout
+// Run owns one serve loop. The process entry point owns signal handling.
+// Run waits for admitted handlers before releasing service resources. A handler
+// that ignores request cancellation delays Run's return until it finishes.
+func (h *HTTPHost) Run(ctx context.Context) (result error) {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	if writeTimeout == 0 {
-		writeTimeout = DefaultWriteTimeout
+	h.mu.Lock()
+	if h.running || h.closed {
+		h.mu.Unlock()
+		return errors.New("host can only run once")
 	}
-	if idleTimeout == 0 {
-		idleTimeout = DefaultIdleTimeout
-	}
-	if maxHeaderBytes == 0 {
-		maxHeaderBytes = DefaultMaxHeaderBytes
-	}
-
-	if config.HTTPServer.Listen == "" {
-		listen, err := net.Listen("tcp", "localhost:0")
-		if err != nil {
-			logger.Fatalf(context.Background(), "get random listen address error: %v", err)
+	h.running = true
+	server := NewHTTPServer(h.config)
+	requestCtx, cancelRequests := context.WithCancel(context.WithoutCancel(ctx))
+	server.BaseContext = func(net.Listener) context.Context { return requestCtx }
+	server.Handler = h.Handler()
+	if h.config.HTTPServer.UseH2C {
+		http2Server := &http2.Server{}
+		if err := http2.ConfigureServer(server, http2Server); err != nil {
+			h.running = false
+			h.mu.Unlock()
+			cancelRequests()
+			return err
 		}
-		config.HTTPServer.Listen = listen.Addr().String()
+		server.Handler = h2c.NewHandler(server.Handler, http2Server)
 	}
-
-	s := &http.Server{
-		Addr:              config.HTTPServer.Listen,
-		ReadTimeout:       time.Millisecond * time.Duration(readTimeout),
-		ReadHeaderTimeout: time.Millisecond * time.Duration(readTimeout),
-		WriteTimeout:      time.Millisecond * time.Duration(writeTimeout),
-		IdleTimeout:       time.Millisecond * time.Duration(idleTimeout),
-		MaxHeaderBytes:    maxHeaderBytes,
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		h.running = false
+		h.mu.Unlock()
+		cancelRequests()
+		return err
 	}
-
-	return s
-}
-
-func (h *HTTPHost) AddService(services ...LifeCycle) {
-	for _, s := range services {
-		hs, ok := s.(Service)
-		if ok {
-			hs.Initialize(h.engine)
-			h.services = append(h.services, hs)
+	owned := newHTTPListener(listener)
+	h.server = server
+	h.address = listener.Addr().String()
+	h.mu.Unlock()
+	workerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	started := make([]Service, 0, len(h.services))
+	defer func() {
+		h.ready.Store(false)
+		h.requestMu.Lock()
+		h.draining = true
+		h.requestMu.Unlock()
+		drainCtx, drainCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		// Drain HTTP before releasing resources still used by in-flight requests.
+		drainErr := server.Shutdown(drainCtx)
+		_ = owned.Close()
+		drained := make(chan struct{})
+		go func() {
+			h.requests.Wait()
+			owned.wait()
+			close(drained)
+		}()
+		if drainErr == nil {
+			select {
+			case <-drained:
+			case <-drainCtx.Done():
+				drainErr = drainCtx.Err()
+			}
 		}
-	}
-}
-
-func (h *HTTPHost) ReloadService() {
-	for _, s := range h.services {
-		s.Initialize(h.engine)
-	}
-}
-
-func (h *HTTPHost) Run() {
-	h.RunWithContext(context.Background())
-}
-
-// RunWithContext 启动服务， context被取消或收到Ctrl+C信号时，服务停止
-func (h *HTTPHost) RunWithContext(ctx context.Context) {
-	logger.Infof(ctx, "%s", version.GetVersionString())
-
-	for _, svc := range h.services {
-		logger.Debugf(ctx, "Service starting %s", reflect.TypeOf(svc))
-		svc.StartAsync()
-	}
-
-	h.startServer()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	select {
-	case <-quit:
-	case <-ctx.Done():
-	}
-
-	for _, svc := range h.services {
-		logger.Debugf(ctx, "Service stopping %s", reflect.TypeOf(svc))
-		svc.StopAsync()
-	}
-
-	h.shutdownServer()
-}
-
-func (h *HTTPHost) startServer() {
-	go func() {
-		if err := h.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf(context.Background(), "StartServerError: %v", err)
+		if drainErr != nil {
+			cancelRequests()
+			result = errors.Join(result, drainErr, server.Close())
+			owned.closeConnections()
 		}
+		// Closing sockets does not join handler goroutines. Wait even after the
+		// drain deadline so resources cannot be closed underneath user code.
+		<-drained
+		drainCancel()
+		cancelRequests()
+		cancel()
+		for i := len(started) - 1; i >= 0; i-- {
+			stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			result = errors.Join(result, started[i].Stop(stopCtx))
+			stopCancel()
+		}
+		h.mu.Lock()
+		h.closed = true
+		h.mu.Unlock()
+		h.closeOnce.Do(h.unsubscribe)
 	}()
-	logger.Infof(context.Background(), "Server started at: %s", h.Server.Addr)
-}
-
-func (h *HTTPHost) shutdownServer() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := h.Server.Shutdown(ctx); err != nil {
-		logger.Errorf(context.Background(), "ShutdownServerError: %v", err)
-	}
-
-	logger.Infof(context.Background(), "Server exited: %s", h.Server.Addr)
-}
-
-func (h *HTTPHost) reloadServer(newConfig *conf.Config) {
-	if newConfig == nil {
-		return
-	}
-
-	if reflect.DeepEqual(conf.Default().HTTPServer, newConfig.HTTPServer) {
-		return
-	}
-
-	logger.Infof(context.Background(), "Server reloading...")
-	h.shutdownServer()
-
-	server := NewHTTPServer(newConfig)
-	engine := NewGinEngine(newConfig)
-	if newConfig.HTTPServer.UseH2C {
-		server.Handler = h2c.NewHandler(engine, &http2.Server{})
-	} else {
-		server.Handler = engine
-	}
-
-	h.Server = server
-	h.engine = engine
-	h.config = newConfig
-
-	h.ReloadService()
-	h.Run()
-}
-
-func (h *HTTPHost) LoopPing(interval time.Duration, maxRetries int) bool {
-	for i := 0; i < maxRetries; i++ {
-		_, err := resty.New().R().EnableTrace().Get("http://" + h.Server.Addr + "/ping")
-		if err == nil {
-			return true
+	for _, service := range h.services {
+		if err := service.Start(workerCtx); err != nil {
+			return fmt.Errorf("start service %s: %w", reflect.TypeOf(service), err)
 		}
-		time.Sleep(interval)
+		started = append(started, service)
 	}
-	return false
+	h.ready.Store(true)
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(owned) }()
+	h.log.Infof(ctx, "Server started at: %s", h.Address())
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-served:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+// Close releases a host that was constructed but never run, or has already stopped.
+// A running host is stopped through the context supplied to Run.
+func (h *HTTPHost) Close() error {
+	h.mu.Lock()
+	if h.running && !h.closed {
+		h.mu.Unlock()
+		return errors.New("cancel the Run context before closing the host")
+	}
+	h.closed = true
+	h.mu.Unlock()
+	h.requestMu.Lock()
+	h.draining = true
+	h.requestMu.Unlock()
+	h.requests.Wait()
+	h.closeOnce.Do(h.unsubscribe)
+	return nil
 }

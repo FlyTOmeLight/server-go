@@ -1,7 +1,7 @@
 core:
   access_key: test-ak
   secret_key: test-sk
-  endpoint: localhost:8001
+  endpoint: http://localhost:8001
 log:
   handler: STDOUT
   dir: tmp

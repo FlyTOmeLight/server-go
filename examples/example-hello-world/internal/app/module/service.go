@@ -1,108 +1,80 @@
 package module
 
 import (
-	"github.com/FlyTOmeLight/server-go/constants"
+	"context"
 	"github.com/FlyTOmeLight/server-go/db"
-	"github.com/FlyTOmeLight/server-go/logger"
-	core "github.com/FlyTOmeLight/server-go/pkg"
-	"github.com/jinzhu/copier"
-
 	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/internal/table"
 	sdk "github.com/FlyTOmeLight/server-go/examples/example-hello-world/sdk/go/helloworldv1"
+	core "github.com/FlyTOmeLight/server-go/pkg"
+	"time"
 )
 
-func CreateModule(ctx *core.Context, req *sdk.CreateModuleRequest) (*sdk.GetModuleResponse, error) {
-	var data table.ModuleData
-	_ = copier.Copy(&data, req)
-	data.ID = core.NewID("ex")
-	data.UserID = ctx.GetString(constants.KeyUserID)
+type ModuleService struct{ database *db.DB }
 
-	err := table.CreateModule(&data, nil)
-	if err != nil {
-		logger.Errorf(ctx, "CreateModuleErrorDB req: %#v, err: %v", req, err)
+func NewModuleService(database *db.DB) *ModuleService { return &ModuleService{database: database} }
+
+func (s *ModuleService) CreateModule(ctx context.Context, userID string, req *sdk.CreateModuleRequest) (*sdk.CreateModuleResponse, error) {
+	now := db.UTCTime{Time: time.Now().UTC()}
+	data := table.ModuleData{BaseData: db.BaseData{
+		ID: core.NewID("ex"), Name: req.Name, Description: &req.Description,
+		UserID: userID, ProjectID: req.ProjectID, CreatedAt: now, UpdatedAt: now,
+	}}
+	if err := table.CreateModule(ctx, s.database, &data); err != nil {
 		return nil, err
 	}
-
-	var resp sdk.CreateModuleResponse
-	_ = copier.Copy(&resp, data)
-	return &resp, nil
+	result := moduleResponse(&data)
+	return &result, nil
 }
 
-func ListModule(ctx *core.Context, req *sdk.ListModuleRequest) (*sdk.ListModuleResponse, error) {
-	var filter table.ModuleFilter
-	_ = copier.Copy(&filter, req)
-
-	count, err := table.CountModule(filter)
+func (s *ModuleService) ListModule(ctx context.Context, req *sdk.ListModuleRequest) (*sdk.ListModuleResponse, error) {
+	filter := table.ModuleFilter{ProjectID: req.ProjectID, Filter: req.Filter}
+	count, err := table.CountModule(ctx, s.database, filter)
 	if err != nil {
-		logger.Errorf(ctx, "ListModuleErrorDBCount req: %#v, err: %v", req, err)
 		return nil, err
 	}
-	if count == 0 {
-		return &sdk.ListModuleResponse{}, nil
-	}
-
-	list, err := table.ListModule(filter, req.PagingRequest)
-	if err != nil {
-		logger.Errorf(ctx, "ListModuleErrorDBQuery req: %#v, err: %v", req, err)
-		return nil, err
-	}
-
 	results := make([]sdk.Module, 0)
-	_ = copier.Copy(&results, list)
-
+	if count > 0 {
+		list, err := table.ListModule(ctx, s.database, filter, req.PagingRequest)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range list {
+			results = append(results, moduleResponse(item))
+		}
+	}
 	return &sdk.ListModuleResponse{TotalCount: count, Results: results}, nil
 }
 
-func GetModule(ctx *core.Context, req *sdk.GetModuleRequest) (*sdk.GetModuleResponse, error) {
-	filter := table.ModuleFilter{ID: req.ID}
-	data, err := table.GetModule(filter)
+func (s *ModuleService) GetModule(ctx context.Context, req *sdk.GetModuleRequest) (*sdk.GetModuleResponse, error) {
+	data, err := table.GetModule(ctx, s.database, table.ModuleFilter{ID: req.ID})
 	if err != nil {
-		logger.Errorf(ctx, "GetModuleErrorDBQuery req: %#v, err: %v", req, err)
 		return nil, err
 	}
-
-	var resp sdk.GetModuleResponse
-	_ = copier.Copy(&resp, data)
-	return &resp, nil
+	result := moduleResponse(data)
+	return &result, nil
 }
 
-func UpdateModule(ctx *core.Context, req *sdk.UpdateModuleRequest) error {
-	filter := table.ModuleFilter{ID: req.ID}
-	_, err := table.GetModule(filter)
-	if err != nil {
-		logger.Errorf(ctx, "UpdateModuleErrorDBQuery req: %#v, err: %v", req, err)
+func (s *ModuleService) UpdateModule(ctx context.Context, req *sdk.UpdateModuleRequest) error {
+	if _, err := table.GetModule(ctx, s.database, table.ModuleFilter{ID: req.ID}); err != nil {
 		return err
 	}
-
-	data := table.ModuleData{
-		BaseData: db.BaseData{
-			ID:          req.ID,
-			Description: req.Description,
-		},
-	}
-
-	err = table.UpdateModule(&data, nil)
-	if err != nil {
-		logger.Errorf(ctx, "UpdateModuleErrorDBUpdate req: %#v, data: %v, err: %v", req, data, err)
-		return err
-	}
-
-	return nil
+	data := table.ModuleData{BaseData: db.BaseData{ID: req.ID, Description: req.Description, UpdatedAt: db.UTCTime{Time: time.Now().UTC()}}}
+	return table.UpdateModule(ctx, s.database, &data)
 }
 
-func DeleteModule(ctx *core.Context, req *sdk.DeleteModuleRequest) error {
+func (s *ModuleService) DeleteModule(ctx context.Context, req *sdk.DeleteModuleRequest) error {
 	filter := table.ModuleFilter{ID: req.ID}
-	_, err := table.GetModule(filter)
-	if err != nil {
-		logger.Errorf(ctx, "DeleteModuleErrorDBQuery req: %#v, err: %v", req, err)
+	if _, err := table.GetModule(ctx, s.database, filter); err != nil {
 		return err
 	}
+	return table.DeleteModule(ctx, s.database, filter)
+}
 
-	err = table.DeleteModule(filter, nil)
-	if err != nil {
-		logger.Errorf(ctx, "DeleteModuleErrorDBDelete req: %#v, err: %v", req, err)
-		return err
+func moduleResponse(data *table.ModuleData) sdk.Module {
+	description := ""
+	if data.Description != nil {
+		description = *data.Description
 	}
-
-	return nil
+	return sdk.Module{ID: data.ID, Name: data.Name, Description: description, UserID: data.UserID,
+		ProjectID: data.ProjectID, CreatedAt: data.CreatedAt.Time, UpdatedAt: data.UpdatedAt.Time}
 }

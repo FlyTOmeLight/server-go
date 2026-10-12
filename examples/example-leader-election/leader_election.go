@@ -5,6 +5,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/FlyTOmeLight/server-go/pkg/election"
@@ -19,10 +22,8 @@ func task(ctx context.Context) {
 		case <-ctx.Done():
 			fmt.Println("task is cancelled")
 			return
-		default:
-			// 实际要进行的迭代操作
+		case <-time.After(time.Second):
 			fmt.Println(i)
-			time.Sleep(time.Second)
 		}
 	}
 }
@@ -65,10 +66,9 @@ func main() {
 		fmt.Println("I am leader")
 	})
 	// 只运行5s钟，这样可以看到task被取消
-	ctx, cancel := context.WithTimeout(context.Background(), *runTime)
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithTimeout(signalCtx, *runTime)
 	defer cancel()
 	e.Run(ctx)
-	<-ctx.Done()
-	// 等待2s再退出，这样可以看到选举取消
-	time.Sleep(2 * time.Second)
 }

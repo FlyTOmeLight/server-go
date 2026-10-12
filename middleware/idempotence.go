@@ -2,73 +2,125 @@ package middleware
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	stderr "errors"
 	"io"
+	"mime"
 	"net/http"
-	"strings"
-
-	"github.com/FlyTOmeLight/server-go/errors"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/FlyTOmeLight/server-go/constants"
+	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/idempotence"
-	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func Idempotence() gin.HandlerFunc {
+// Idempotence caches JSON POST responses with a nonempty clientToken. Install
+// after all authentication and authorization middleware, before business handlers.
+// Only successful responses are retained; outer error rendering remains in charge.
+// Identities must come from verified Gin context keys; requests without a verified
+// identity do not use the cache.
+func Idempotence(controller *idempotence.Controller) gin.HandlerFunc {
+	return idempotenceHandler(controller, func(c *gin.Context) { c.Next() })
+}
+
+func idempotenceHandler(controller *idempotence.Controller, next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		contentType := c.Request.Header.Get(constants.HeaderContentType)
-		method := c.Request.Method
-		clientToken, ok := c.GetQuery(constants.QueryClientToken)
-		// 只有请求 content type 为 application/json 并且 query parameter参数中包含 clientToken 的 POST 请求才会进入幂等逻辑
-		if ok && method == http.MethodPost && strings.Contains(contentType, constants.ContentTypeJSON) {
-			idempotentController := idempotence.GetIdempotenceController()
-			requestURL := c.Request.URL.String()
-			var requestBody []byte
-			requestBody, _ = c.GetRawData()
-			requestID := c.GetHeader(constants.HeaderRequestID)
-			ctx := c
-			if requestBody != nil {
-				c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
-				if len(requestBody) > constants.SizeMB {
-					core.HTTPLogger.Warnf(ctx, "idempotence middleware receive request %s which body size larger than 1MB", requestID)
-				}
+		clientToken := c.Query(constants.QueryClientToken)
+		mediaType, _, _ := mime.ParseMediaType(c.GetHeader(constants.HeaderContentType))
+		orgID := c.GetString(constants.KeyOrgID)
+		userID := c.GetString(constants.KeyUserID)
+		if clientToken == "" || c.Request.Method != http.MethodPost || mediaType != constants.ContentTypeJSON || orgID == "" || userID == "" {
+			next(c)
+			return
+		}
+		if controller == nil {
+			errors.AbortWithError(c, errors.NewError(http.StatusServiceUnavailable, "IdempotenceUnavailable", "idempotence controller is not configured"))
+			return
+		}
+		body, err := c.GetRawData()
+		if err != nil {
+			errors.AbortWithError(c, errors.NewError(http.StatusBadRequest, "InvalidRequestBody", "cannot read request body"))
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+		// Query parameters (including the token) and content type are part of
+		// the request fingerprint, while the operation key uses the actual path.
+		fingerprint := sha256.Sum256(append([]byte(c.Request.URL.RequestURI()+"\x00"+mediaType+"\x00"), body...))
+		key := idempotence.Key{OrgID: orgID, UserID: userID, Operation: c.Request.Method + " " + c.Request.URL.Path, Token: clientToken}
+		executed := false
+		response, err := controller.Do(c.Request.Context(), key, fingerprint, func() (idempotence.Response, error) {
+			executed = true
+			writer := &idempotenceWriter{ResponseWriter: c.Writer}
+			original := c.Writer
+			c.Writer = writer
+			defer func() { c.Writer = original }()
+			next(c)
+			if lastErr := c.Errors.Last(); lastErr != nil {
+				return idempotence.Response{}, lastErr.Err
 			}
-			if item := idempotentController.GetIdempotentItem(clientToken); item != nil {
-				if idempotence.CalculateIdempotenceMD5(requestURL, requestBody) != item.MD5 {
-					_ = c.AbortWithError(http.StatusForbidden, errors.ErrorIdempotentParameterMismatch)
-					core.HTTPLogger.Errorf(ctx, "idempotence middleware receive request %s which body changed from last emit", requestID)
-				} else {
-					c.String(item.StatueCode, item.ResponseBuf.String())
-					c.Abort()
-				}
+			writer.WriteHeaderNow()
+			return idempotence.Response{Status: writer.Status(), Header: writer.header, Body: writer.body.Bytes()}, nil
+		})
+		if err != nil {
+			if executed {
+				// The original request keeps its error for the outer renderer.
 				return
 			}
-			var writer core.BufferedWriter
-			// 缓存response，这里为了和log middleware 合并使用，需要封装为core.BufferedWriter，并且需要避免多次封装
-			if w, ok := c.Writer.(core.BufferedWriter); !ok {
-				bufferedWriter := core.BufferedWriter{
-					Buf:            bytes.NewBufferString(""),
-					ResponseWriter: c.Writer,
-				}
-				c.Writer = bufferedWriter
-				writer = bufferedWriter
-			} else {
-				writer = w
+			switch {
+			case stderr.Is(err, idempotence.ErrConflict):
+				errors.AbortWithError(c, errors.NewError(http.StatusConflict, "IdempotentParameterMismatch", err.Error()))
+			case stderr.Is(err, context.Canceled), stderr.Is(err, context.DeadlineExceeded):
+				errors.AbortWithError(c, errors.NewError(http.StatusRequestTimeout, "IdempotenceWaitCanceled", err.Error()))
+			case stderr.Is(err, idempotence.ErrClosed), stderr.Is(err, idempotence.ErrExecutionFailed):
+				errors.AbortWithError(c, errors.NewError(http.StatusServiceUnavailable, "IdempotenceUnavailable", err.Error()))
+			default:
+				errors.AbortWithError(c, err)
 			}
-
-			c.Next()
-
-			idempotenceItem := &idempotence.IdempotentItem{
-				RequestURL:  requestURL,
-				RequestBody: bytes.NewBuffer(requestBody),
-				StatueCode:  c.Writer.Status(),
-				ResponseBuf: writer.Buf,
-				MD5:         idempotence.CalculateIdempotenceMD5(requestURL, requestBody),
-			}
-			idempotentController.SetIdempotentItem(clientToken, idempotenceItem)
-		} else {
-			c.Next()
+			return
 		}
+		if executed {
+			return
+		}
+		// Replace headers as well as status and body. Requests still pass the
+		// current authorization checks before reaching this replay branch.
+		clear(c.Writer.Header())
+		for key, values := range response.Header {
+			c.Writer.Header()[key] = append([]string(nil), values...)
+		}
+		c.Status(response.Status)
+		_, _ = c.Writer.Write(response.Body)
+		c.Abort()
 	}
+}
+
+type idempotenceWriter struct {
+	gin.ResponseWriter
+	body   bytes.Buffer
+	header http.Header
+}
+
+func (w *idempotenceWriter) WriteHeaderNow() {
+	if w.header == nil {
+		w.header = w.Header().Clone()
+	}
+	w.ResponseWriter.WriteHeaderNow()
+}
+
+func (w *idempotenceWriter) Write(data []byte) (int, error) {
+	w.WriteHeaderNow()
+	n, err := w.ResponseWriter.Write(data)
+	_, _ = w.body.Write(data[:n])
+	return n, err
+}
+
+func (w *idempotenceWriter) WriteString(data string) (int, error) {
+	return w.Write([]byte(data))
+}
+
+// Idempotent wraps the final endpoint handler so preceding route-level
+// authentication and authorization always execute, including on cache hits.
+func Idempotent(controller *idempotence.Controller, handler gin.HandlerFunc) gin.HandlerFunc {
+	return idempotenceHandler(controller, handler)
 }

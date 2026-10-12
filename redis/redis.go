@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"context"
 	"errors"
 
 	"github.com/redis/go-redis/v9"
@@ -8,26 +9,14 @@ import (
 
 type Redis = redis.UniversalClient
 
-var defaultRedis Redis
-
-func DefaultRedis() Redis {
-	return defaultRedis
-}
-
-func SetDefaultRedis(redisClient Redis) {
-	defaultRedis = redisClient
-}
-
-func SetDefaultRedisWithConfig(config *Config) error {
-	var err error
-	defaultRedis, err = NewRedis(config)
-	return err
-}
-
-func NewRedis(config *Config) (Redis, error) {
+func NewRedis(ctx context.Context, config *Config) (Redis, error) {
 	if config == nil {
 		return nil, errors.New("config is nil")
 	}
 
-	return redis.NewUniversalClient(config), nil
+	client := redis.NewUniversalClient(config)
+	if err := client.Ping(ctx).Err(); err != nil {
+		return nil, errors.Join(err, client.Close())
+	}
+	return client, nil
 }

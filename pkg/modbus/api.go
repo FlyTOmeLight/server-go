@@ -1,6 +1,8 @@
 package modbus
 
+import "context"
+
+// API reads registers. Implementations must stop promptly when ctx is canceled.
 type API interface {
-	GetRegister(slaveID uint8, regAddr int) (any, error)
-	SetRegister(slaveID uint8, regAddr int, value any) error
+	GetRegister(ctx context.Context, slaveID uint8, regAddr int) (any, error)
 }

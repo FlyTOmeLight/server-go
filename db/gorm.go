@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -57,35 +59,17 @@ type BaseDataWithoutDeleted struct {
 
 type DB = gorm.DB
 
-var (
-	defaultDB     *DB
-	defaultConfig *Config
-)
+func NewDB(ctx context.Context, config *Config) (*DB, error) {
+	if config == nil {
+		return nil, errors.New("database config is nil")
+	}
+	if err := config.check(); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-func DefaultDB() *DB {
-	return defaultDB
-}
-
-func DefaultConfig() *Config {
-	return defaultConfig
-}
-
-func SetDefaultDB(dbClient *DB) {
-	defaultDB = dbClient
-}
-
-func SetDefaultConfig(config *Config) {
-	defaultConfig = config
-}
-
-func SetDefaultDBWithConfig(config *Config) error {
-	var err error
-	defaultConfig = config
-	defaultDB, err = NewDB(config)
-	return err
-}
-
-func NewDB(config *Config) (*DB, error) {
 	var db *DB
 	var err error
 
@@ -114,9 +98,16 @@ func NewDB(config *Config) (*DB, error) {
 	// 包装 ConnPool：将 MySQL 风格的反引号标识符自动转换为目标数据库的引用符号
 	setupIdentifierConverter(db)
 
-	connection, _ := db.DB()
+	connection, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	if err := connection.PingContext(ctx); err != nil {
+		return nil, errors.Join(err, connection.Close())
+	}
 	connection.SetMaxIdleConns(config.MaxIdleConns)
 	connection.SetMaxOpenConns(config.MaxOpenConns)
+	connection.SetConnMaxIdleTime(time.Duration(config.ConnMaxIdleTime) * time.Second)
 	connection.SetConnMaxLifetime(time.Duration(config.ConnMaxLifeTime) * time.Second)
 
 	return db, err
@@ -133,6 +124,7 @@ func newMySQL(config *Config) (*DB, error) {
 	args := fmt.Sprintf(formatter, config.User, config.Password, config.Host, config.Port, config.DB)
 
 	db, err := gorm.Open(NewAIBaseDialector("mysql", mysql.Open(args)), &gorm.Config{
+		DisableAutomaticPing:                     true,
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	return db, err
@@ -140,6 +132,7 @@ func newMySQL(config *Config) (*DB, error) {
 
 func newSQLite(config *Config) (*DB, error) {
 	db, err := gorm.Open(sqlite.Open(config.DB), &gorm.Config{
+		DisableAutomaticPing:                     true,
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	return db, err
@@ -152,7 +145,7 @@ func newPostgreSQL(config *Config) (*DB, error) {
 	db, err := gorm.Open(NewAIBaseDialector("postgres", postgres.New(postgres.Config{
 		DSN:                  args,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
-	})))
+	})), &gorm.Config{DisableAutomaticPing: true})
 	return db, err
 }
 
@@ -160,7 +153,7 @@ func newClickHouse(config *Config) (*DB, error) {
 	formatter := "tcp://%s:%d?database=%s&username=%s&password=%s"
 	args := fmt.Sprintf(formatter, config.Host, config.Port, config.DB, config.User, config.Password)
 
-	db, err := gorm.Open(clickhouse.Open(args))
+	db, err := gorm.Open(clickhouse.Open(args), &gorm.Config{DisableAutomaticPing: true})
 	return db, err
 }
 
@@ -178,6 +171,7 @@ func newGaussDB(config *Config) (*DB, error) {
 		DSN:                  dsn,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	})), &gorm.Config{
+		DisableAutomaticPing:                     true,
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	return db, err
@@ -204,6 +198,7 @@ func newKingbase(config *Config) (*gorm.DB, error) {
 
 	// 使用 PostgreSQL 方言连接 KingbaseES（人大金仓 PG 兼容模式）
 	db, err := gorm.Open(baseDialector, &gorm.Config{
+		DisableAutomaticPing:                     true,
 		Logger:                                   logger.Default.LogMode(logger.Info),
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})

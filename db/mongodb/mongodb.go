@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -20,7 +21,8 @@ type Client struct {
 }
 
 func (c *Client) Config() *Config {
-	return c.config
+	config := *c.config
+	return &config
 }
 
 // replaceSpecialCharacters -- . ? + * | { } [ ] ( ) < > " \ @ #
@@ -31,18 +33,18 @@ var replaceSpecialCharacters = strings.NewReplacer(
 
 type DB = Client
 
-var defaultMongoDB *DB
+func NewClientWithConfig(ctx context.Context, config *Config) (*DB, error) {
+	if config == nil {
+		return nil, errors.New("mongodb config is nil")
+	}
+	if err := config.check(); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-func SetDefault(dbClient *DB) {
-	defaultMongoDB = dbClient
-}
-
-func Default() *DB {
-	return defaultMongoDB
-}
-
-func NewClientWithConfig(config *Config) (*DB, error) {
-	conn, err := mongo.Connect(context.TODO(), &options.ClientOptions{
+	conn, err := mongo.Connect(ctx, &options.ClientOptions{
 		Hosts: []string{fmt.Sprintf("%s:%d", config.Host, config.Port)},
 		Auth: &options.Credential{
 			Username: config.User,
@@ -53,11 +55,14 @@ func NewClientWithConfig(config *Config) (*DB, error) {
 		return nil, err
 	}
 
-	if err := conn.Ping(context.TODO(), nil); err != nil {
-		return nil, err
+	if err := conn.Ping(ctx, nil); err != nil {
+		return nil, errors.Join(err, conn.Disconnect(ctx))
 	}
 
-	return &Client{Client: conn, config: config}, nil
+	cfg := *config
+	client := &Client{Client: conn, config: &cfg}
+	client.SetDefaultCollection(cfg.Collection)
+	return client, nil
 }
 
 func (c *DB) NewCollection(name string) *mongo.Collection {

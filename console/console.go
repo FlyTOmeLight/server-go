@@ -2,7 +2,6 @@ package console
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -33,12 +32,14 @@ func RegisterConsoleAPI(engine *core.Engine, config *conf.Config) {
 			continue
 		}
 		// 传入 engine 到 Reverse，用于 WebSocket 重路由
-		engine.GET("/"+name+"/api/*any", Reverse(&config.HTTPServer, engine))
-		engine.POST("/"+name+"/api/*any", Reverse(&config.HTTPServer, engine))
+		handler := Reverse(&config.HTTPServer, config.AppCode, engine)
+		engine.GET("/"+name+"/api/*any", handler)
+		engine.POST("/"+name+"/api/*any", handler)
 	}
 }
 
-func Reverse(config *conf.HTTPServerConfig, engine *core.Engine) gin.HandlerFunc {
+func Reverse(config *conf.HTTPServerConfig, appCode int, engine *core.Engine) gin.HandlerFunc {
+	proxy := NewConsoleProxy(config, appCode)
 	return func(c *gin.Context) {
 		// WebSocket 请求不能通过普通反向代理，需要直接路由
 		// 检测 Upgrade: websocket 头，如果是 WebSocket 则重写路径并触发重新路由
@@ -61,7 +62,6 @@ func Reverse(config *conf.HTTPServerConfig, engine *core.Engine) gin.HandlerFunc
 			return
 		}
 
-		proxy := NewConsoleProxy(config)
 		proxy.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}
@@ -76,11 +76,12 @@ func isWebSocketUpgrade(r *http.Request) bool {
 // NewConsoleProxy
 // 由于OpenAPI和前端使用的API规范对同一个API的HTTP协议使用方式要求不同，故微服务会提供OpenAPI和FE API两套API
 // ConsoleProxy能够将一个FE请求适配到OpenAPI，并将一个OpenAPI Response适配到FE响应上
-// 通过在微服务中集成ConsoleProxy的反向代理，即可实现BCE FE API到OpenAPI的适配，eg: engine.POST("/example/api/*any", console.Reverse())
-func NewConsoleProxy(config *conf.HTTPServerConfig) *httputil.ReverseProxy {
+// 目标地址和应用错误码由调用方传入；不读取进程全局配置。
+func NewConsoleProxy(config *conf.HTTPServerConfig, appCode int) *httputil.ReverseProxy {
+	listen := config.Listen
 	return &httputil.ReverseProxy{
-		Director:       modifyRequest,
-		ModifyResponse: modifyResponse,
+		Director:       func(r *http.Request) { modifyRequest(r, listen) },
+		ModifyResponse: func(resp *http.Response) error { return modifyResponse(resp, appCode) },
 		Transport: &http.Transport{
 			DialContext: (&net.Dialer{
 				Timeout: time.Millisecond * time.Duration(config.WriteTimeout), // 连接超时
@@ -89,20 +90,20 @@ func NewConsoleProxy(config *conf.HTTPServerConfig) *httputil.ReverseProxy {
 			IdleConnTimeout:       time.Millisecond * time.Duration(config.IdleTimeout),  // 空闲连接超时
 		},
 		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
-			core.HTTPLogger.Errorf(context.Background(), "ProxyError req: %#v, err: %v", request, err)
+			logger.FromContext(request.Context()).Errorf(request.Context(), "ProxyError req: %#v, err: %v", request, err)
 			writer.WriteHeader(http.StatusBadGateway)
 		}}
 }
 
-func modifyRequest(r *http.Request) {
-	defer core.HTTPLogger.Debugf(context.Background(), "ProxyModifiedRequest: %#v, URL: %#v", r, r.URL)
+func modifyRequest(r *http.Request, listen string) {
+	defer logger.FromContext(r.Context()).Debugf(r.Context(), "ProxyModifiedRequest: %#v, URL: %#v", r, r.URL)
 
 	r.URL.Scheme = "http"
-	r.URL.Host = conf.Default().HTTPServer.Listen
+	r.URL.Host = listen
 
 	path, err := parseRequest(r)
 	if err != nil {
-		core.HTTPLogger.Errorf(context.Background(), "ProxyError url path is invalid: %s", r.URL.Path)
+		logger.FromContext(r.Context()).Errorf(r.Context(), "ProxyError url path is invalid: %s", r.URL.Path)
 		return
 	}
 	r.URL.Path = path
@@ -114,15 +115,16 @@ func modifyRequest(r *http.Request) {
 	}
 }
 
-func modifyResponse(resp *http.Response) error {
-	logger.Debugf(context.Background(), "ProxyModifiedResponse url: %s", resp.Request.URL)
+func modifyResponse(resp *http.Response, appCode int) error {
+	logger.FromContext(resp.Request.Context()).Debugf(resp.Request.Context(), "ProxyModifiedResponse url: %s", resp.Request.URL)
 	ignoredContentType := []string{"application/zip", "application/pdf", "application/octet-stream", "text/event-stream"}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if arrutil.Contains(ignoredContentType, contentType) {
-		logger.Debugf(context.Background(), "ProxyModifiedResponse ignored content type %s", contentType)
+		logger.FromContext(resp.Request.Context()).Debugf(resp.Request.Context(), "ProxyModifiedResponse ignored content type %s", contentType)
 		return nil
 	}
 
+	defer resp.Body.Close()
 	buffer, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
@@ -136,7 +138,7 @@ func modifyResponse(resp *http.Response) error {
 			RequestID: resp.Header.Get(constants.HeaderRequestID),
 			Status:    http.StatusInternalServerError,
 		}
-		wrong.SetStatusCode()
+		wrong.SetStatusCode(appCode)
 		setResponse(resp, Response{Error: &wrong})
 		return nil
 	}
@@ -151,7 +153,7 @@ func modifyResponse(resp *http.Response) error {
 		if wrong.Status == 0 {
 			wrong.Status = resp.StatusCode
 		}
-		wrong.SetStatusCode()
+		wrong.SetStatusCode(appCode)
 		setResponse(resp, Response{Error: &wrong})
 		return nil
 	}

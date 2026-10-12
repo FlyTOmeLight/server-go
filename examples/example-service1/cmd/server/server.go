@@ -2,30 +2,65 @@ package main
 
 import (
 	"context"
-	server "github.com/FlyTOmeLight/server-go"
-	"github.com/FlyTOmeLight/server-go/logger"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	server "github.com/FlyTOmeLight/server-go"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/db"
 	"github.com/FlyTOmeLight/server-go/examples/example-service1/service"
 	"github.com/FlyTOmeLight/server-go/host"
+	"github.com/FlyTOmeLight/server-go/httpintegration"
+	"github.com/FlyTOmeLight/server-go/logger"
 )
 
-func main() {
-	// init bootstrap
-	// NewBootstrap传入需要启动的Modules
-	// Module中的Name参数用于指定配置文件中的key, 如果不传则为Module中的默认值, 例如db.Module的defaultName = DB
-	// 也可以自行构造Module的Config, 这时Module不会去配置文件中解析配置, 而是使用传入的自定义配置
-	bootstrap := server.NewBootstrap(&db.Module{})
-	err := bootstrap.Initialize()
+func run() (result error) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	manager, err := conf.NewManager("")
 	if err != nil {
-		logger.Fatalf(context.Background(), "init bootstrap error: %v", err)
+		return err
 	}
-	defer bootstrap.Close()
-
-	// host & services
-	h := host.NewHTTPHost(conf.Default())
-	svc := service.NewExampleService()
-	h.AddService(svc)
-	h.Run()
+	log, err := logger.NewLogger(&logger.Config{Outputs: []logger.Output{{Type: "Console", Level: "Info"}}})
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+	var cfg db.Config
+	if err := manager.Snapshot().UnmarshalKey("DB", &cfg); err != nil {
+		return err
+	}
+	database := &db.Module{Config: &cfg}
+	bootstrap := server.NewBootstrap(database)
+	if err := bootstrap.Initialize(ctx); err != nil {
+		return err
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		result = errors.Join(result, manager.Close(closeCtx), bootstrap.Close(closeCtx))
+	}()
+	svc, err := service.NewExampleService(ctx, database.DB)
+	if err != nil {
+		return err
+	}
+	h, err := host.NewHTTPHost(manager, log, httpintegration.Install, svc)
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+	if err := manager.Watch(ctx, func(err error) { log.Errorf(ctx, "configuration reload: %v", err) }); err != nil {
+		return err
+	}
+	return h.Run(ctx)
+}
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

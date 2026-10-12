@@ -65,13 +65,11 @@ install-doc:
 
 compile: build
 
-# disable CGO on CLI build for max compatibility
-build: set-env
+# Native server builds enable CGO for SQLite; CLI builds remain portable.
+build:
 	$(GOMOD) tidy
-	CGO_ENABLED=0 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME} cmd/server/server.go
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME}-arm64 cmd/server/server.go
+	CGO_ENABLED=1 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME} cmd/server/server.go
 	CGO_ENABLED=0 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${CLINAME} cmd/cli/cli.go
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${CLINAME}-arm64 cmd/cli/cli.go
 
 doc:
 	$(SWAG) init -d $(SWAG_SCAN_DIRS) -g controller.go --instanceName=${SWAG_DOC_PREFIX} --parseDependency --parseInternal -o $(HOMEDIR)/doc/openapi

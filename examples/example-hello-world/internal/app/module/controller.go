@@ -2,6 +2,10 @@ package module
 
 import (
 	"github.com/FlyTOmeLight/server-go"
+	"github.com/FlyTOmeLight/server-go/constants"
+	"github.com/FlyTOmeLight/server-go/db"
+	"github.com/FlyTOmeLight/server-go/idempotence"
+	"github.com/FlyTOmeLight/server-go/middleware"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/pkg/binder"
 
@@ -10,13 +14,16 @@ import (
 
 // @title HelloWorldService Module OpenAPI
 // @BasePath /helloworld/internal
-func RegisterRoute(engine *core.RouterGroup) {
+type ModuleController struct{ service *ModuleService }
+
+func RegisterRoute(engine *core.RouterGroup, database *db.DB, cache *idempotence.Controller) {
+	controller := &ModuleController{service: NewModuleService(database)}
 	g := engine.Group("/v1")
-	g.POST("/CreateModule", createModule)
-	g.POST("/ListModule", listModule)
-	g.POST("/GetModule", getModule)
-	g.POST("/UpdateModule", updateModule)
-	g.POST("/DeleteModule", deleteModule)
+	g.POST("/CreateModule", middleware.Idempotent(cache, controller.createModule))
+	g.POST("/ListModule", middleware.Idempotent(cache, controller.listModule))
+	g.POST("/GetModule", middleware.Idempotent(cache, controller.getModule))
+	g.POST("/UpdateModule", middleware.Idempotent(cache, controller.updateModule))
+	g.POST("/DeleteModule", middleware.Idempotent(cache, controller.deleteModule))
 }
 
 // Create Module
@@ -31,14 +38,14 @@ func RegisterRoute(engine *core.RouterGroup) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/CreateModule [post]
-func createModule(ctx *core.Context) {
+func (c *ModuleController) createModule(ctx *core.Context) {
 	var req sdk.CreateModuleRequest
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
 		_ = ctx.Error(err)
 		return
 	}
 
-	resp, err := CreateModule(ctx, &req)
+	resp, err := c.service.CreateModule(ctx.Request.Context(), ctx.GetString(constants.KeyUserID), &req)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
@@ -58,14 +65,14 @@ func createModule(ctx *core.Context) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/ListModule [post]
-func listModule(ctx *core.Context) {
+func (c *ModuleController) listModule(ctx *core.Context) {
 	var req sdk.ListModuleRequest
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
 		_ = ctx.Error(err)
 		return
 	}
 
-	resp, err := ListModule(ctx, &req)
+	resp, err := c.service.ListModule(ctx.Request.Context(), &req)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
@@ -85,7 +92,7 @@ func listModule(ctx *core.Context) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/GetModule [post]
-func getModule(ctx *core.Context) {
+func (c *ModuleController) getModule(ctx *core.Context) {
 	var req sdk.GetModuleRequest
 
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
@@ -93,7 +100,7 @@ func getModule(ctx *core.Context) {
 		return
 	}
 
-	resp, err := GetModule(ctx, &req)
+	resp, err := c.service.GetModule(ctx.Request.Context(), &req)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
@@ -113,7 +120,7 @@ func getModule(ctx *core.Context) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/UpdateModule [post]
-func updateModule(ctx *core.Context) {
+func (c *ModuleController) updateModule(ctx *core.Context) {
 	var req sdk.UpdateModuleRequest
 
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
@@ -121,7 +128,7 @@ func updateModule(ctx *core.Context) {
 		return
 	}
 
-	if err := UpdateModule(ctx, &req); err != nil {
+	if err := c.service.UpdateModule(ctx.Request.Context(), &req); err != nil {
 		_ = ctx.Error(err)
 		return
 	}
@@ -139,7 +146,7 @@ func updateModule(ctx *core.Context) {
 // @Failure 400 {string} string "Invalid Params"
 // @Failure 500 {string} string "Internal Error"
 // @Router /v1/DeleteModule [post]
-func deleteModule(ctx *core.Context) {
+func (c *ModuleController) deleteModule(ctx *core.Context) {
 	var req sdk.DeleteModuleRequest
 
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
@@ -147,7 +154,7 @@ func deleteModule(ctx *core.Context) {
 		return
 	}
 
-	if err := DeleteModule(ctx, &req); err != nil {
+	if err := c.service.DeleteModule(ctx.Request.Context(), &req); err != nil {
 		_ = ctx.Error(err)
 		return
 	}

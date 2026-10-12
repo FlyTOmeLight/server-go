@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"github.com/FlyTOmeLight/server-go/errors"
-	core "github.com/FlyTOmeLight/server-go/pkg"
+	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
@@ -21,7 +21,7 @@ func LicenseAuth(client LicenseAuthorizer) gin.HandlerFunc {
 			return
 		}
 		if !client.GetAuthorization() {
-			core.HTTPLogger.Errorf(c, "LicenseAuthError err: %s", client.ErrorMessage())
+			logger.FromContext(c).Errorf(c, "LicenseAuthError err: %s", client.ErrorMessage())
 			errors.AbortWithError(c, errors.NewError(http.StatusUnauthorized, "LicenseAuthFailed", "license鉴权失败，未获得授权"))
 			return
 		}

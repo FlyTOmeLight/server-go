@@ -1,11 +1,13 @@
 # app.toml: 应用主配置文件
 AppName = "ExampleService"
+AppCode = 100
 RunMode = "debug"          # debug/test/release
 [Feature]
 Feature1 = true
 Feature2 = false
 
 [HTTPServer]
+AuthType = "Fake"
 # 监听地址，必填
 Listen = "0.0.0.0:80"
 # 读超时时间（单位ms），选填，默认20s
@@ -19,9 +21,7 @@ MaxHeaderBytes = 100000 # 100k
 # 对外接口通用前缀，配置后所有接口path将默认加上该前缀，选填，默认为空
 APIBasePath = "example-service1"
 # 是否开启幂等校验
-IdempotenceEnable = true
 # 幂等超时时间
-IdempotenceTTL = 60
 # 是否开启pprof
 PprofEnable = true
 # 是否开启swagger接口

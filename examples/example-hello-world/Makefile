@@ -65,16 +65,12 @@ install-doc:
 
 compile: build
 
-# disable CGO on CLI build for max compatibility
+# Native server builds enable CGO for SQLite; CLI builds remain portable.
 build:
 	$(GOMOD) tidy
-	CGO_ENABLED=0 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME} cmd/server/server.go
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME}-linux-amd64 cmd/server/server.go
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME}-linux-arm64 cmd/server/server.go
+	CGO_ENABLED=1 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME} cmd/server/server.go
 
 	CGO_ENABLED=0 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${CLINAME} cmd/cli/cli.go
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${CLINAME}-linux-amd64 cmd/cli/cli.go
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${CLINAME}-linux-arm64 cmd/cli/cli.go
 
 doc:
 	$(SWAG) init -d $(SWAG_SCAN_DIRS) -g controller.go --instanceName=${SWAG_DOC_PREFIX} --parseDependency --parseInternal -o $(HOMEDIR)/doc/openapi

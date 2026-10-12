@@ -1,18 +1,23 @@
 package conf
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func withStubDecryptor(t *testing.T, decryptor func(ciphertext string) (string, error)) {
 	t.Helper()
+	secretDecryptorMu.RLock()
 	origin := secretDecryptor
+	secretDecryptorMu.RUnlock()
 	SetSecretDecryptor(decryptor)
 	t.Cleanup(func() {
 		SetSecretDecryptor(origin)
@@ -141,36 +146,55 @@ func TestResolveValueCaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestDefaultSecretDecryptor(t *testing.T) {
-	t.Run("missing env uses default key", func(t *testing.T) {
-		t.Setenv(EnvSecretKey, "")
-		t.Setenv(EnvSecretIV, "")
-
-		plaintext, err := defaultSecretDecryptor("qg5lFlIxLWKUtXUKi9FVoLfmiTNDTRVjQfOh7k/ti+o=")
-		assert.Nil(t, err)
-		assert.Equal(t, "oooooo11111113442", plaintext)
-	})
-
-	t.Run("aes cbc", func(t *testing.T) {
-		t.Setenv(EnvSecretKey, "6kY8uyQEl6XV37KR")
-		t.Setenv(EnvSecretIV, "E5ZKizMERreD3HX8")
-
-		plaintext, err := defaultSecretDecryptor("qg5lFlIxLWKUtXUKi9FVoLfmiTNDTRVjQfOh7k/ti+o=")
-		assert.Nil(t, err)
-		assert.Equal(t, "oooooo11111113442", plaintext)
-	})
+func TestEncryptSecretRoundTrip(t *testing.T) {
+	t.Setenv(EnvSecretKey, "0123456789abcdef0123456789abcdef")
+	for _, text := range []string{"", "my-password", "中文密文"} {
+		first, err := EncryptSecret(text)
+		if !assert.NoError(t, err) {
+			return
+		}
+		second, err := EncryptSecret(text)
+		assert.NoError(t, err)
+		assert.NotEqual(t, first, second, "every encryption requires a fresh nonce")
+		assert.True(t, strings.HasPrefix(first, secretFormat))
+		plaintext, err := defaultSecretDecryptor(first)
+		assert.NoError(t, err)
+		assert.Equal(t, text, plaintext)
+		resolved, err := ResolveValue("${secret: " + first + "}")
+		assert.NoError(t, err)
+		assert.Equal(t, text, resolved)
+	}
 }
 
-func TestEncryptSecretRoundTrip(t *testing.T) {
-	t.Setenv(EnvSecretKey, "")
-	t.Setenv(EnvSecretIV, "")
+func TestSecretRequiresExplicitKey(t *testing.T) {
+	for _, key := range []string{"", "short"} {
+		t.Setenv(EnvSecretKey, key)
+		_, err := EncryptSecret("password")
+		assert.ErrorContains(t, err, EnvSecretKey)
+		_, err = defaultSecretDecryptor("v1:AAAA")
+		assert.ErrorContains(t, err, EnvSecretKey)
+	}
+}
 
-	ciphertext, err := EncryptSecret("my-password")
-	assert.Nil(t, err)
-
-	plaintext, err := defaultSecretDecryptor(ciphertext)
-	assert.Nil(t, err)
-	assert.Equal(t, "my-password", plaintext)
+func TestSecretRejectsMalformedCiphertext(t *testing.T) {
+	t.Setenv(EnvSecretKey, "0123456789abcdef")
+	valid, err := EncryptSecret("password")
+	if !assert.NoError(t, err) {
+		return
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(valid, secretFormat))
+	assert.NoError(t, err)
+	data[len(data)-1] ^= 1
+	tampered := secretFormat + base64.StdEncoding.EncodeToString(data)
+	for _, ciphertext := range []string{"", "qg5lFlIxLWKUtXUKi9FVoLfmiTNDTRVjQfOh7k/ti+o=", "v2:AAAA", "v1:!", "v1:", "v1:YQ==", tampered} {
+		t.Run(ciphertext, func(t *testing.T) {
+			_, err := defaultSecretDecryptor(ciphertext)
+			assert.Error(t, err)
+		})
+	}
+	t.Setenv(EnvSecretKey, "fedcba9876543210")
+	_, err = defaultSecretDecryptor(valid)
+	assert.ErrorContains(t, err, "authentication failed")
 }
 
 func TestUnmarshalKeyWithPlaceholder(t *testing.T) {
@@ -191,7 +215,9 @@ func TestUnmarshalKeyWithPlaceholder(t *testing.T) {
 	defer viper.Set("TestPlaceholder", nil)
 
 	var config testConfig
-	err := UnmarshalKey("TestPlaceholder", &config)
+	snapshot, err := FromSettings(map[string]any{"AppName": "test", "AppCode": 100, "RunMode": "release", "TestPlaceholder": viper.Get("TestPlaceholder")})
+	require.NoError(t, err)
+	err = snapshot.UnmarshalKey("TestPlaceholder", &config)
 	assert.Nil(t, err)
 	assert.Equal(t, "root", config.User)
 	assert.Equal(t, "decrypted-cipher-text", config.Password)

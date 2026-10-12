@@ -1,5 +1,9 @@
+import json
 import os
 import shutil
+import re
+import tempfile
+import sys
 
 
 def _camel_to_snake(camel_str, split='_'):
@@ -20,91 +24,22 @@ def _camel_to_snake(camel_str, split='_'):
 
 
 def write_to_file(file_path, content, mode='w', encoding='utf-8'):
-    """
-    安全写入内容到指定文件
-    :param file_path: 文件路径
-    :param content: 要写入的内容
-    :param mode: 写入模式 'w'覆盖写入/'a'追加写入
-    :param encoding: 文件编码
-    :return: bool 是否成功
-    """
-    try:
-        with open(file_path, mode, encoding=encoding) as f:
-            f.write(content)
-        return True
-    except PermissionError:
-        print(f"错误：没有写入权限 {file_path}")
-    except FileNotFoundError:
-        print(f"错误：文件路径不存在 {file_path}")
-    except Exception as e:
-        print(f"写入文件出错: {str(e)}")
-    return False
-
-
-def copy_file_with_suffix(src_path, suffix=".tmp") -> str:
-    """
-    复制文件并添加后缀
-    :param src_path: 源文件路径
-    :param suffix: 新文件后缀
-    :return: 新文件路径
-    """
-    if not os.path.exists(src_path):
-        raise FileNotFoundError(f"源文件不存在: {src_path}")
-
-    if not os.path.isfile(src_path):
-        raise ValueError(f"路径不是文件: {src_path}")
-
-    base, ext = os.path.splitext(src_path)
-    dest_path = f"{base}{suffix}{ext}"
-
-    try:
-        shutil.copy2(src_path, dest_path)
-        return dest_path
-    except Exception as e:
-        raise RuntimeError(f"复制失败: {str(e)}")
+    with open(file_path, mode, encoding=encoding) as f:
+        f.write(content)
 
 
 def _replace_content(file_path: str, replacer: dict[str, str]) -> None:
-    """处理单个文件内容"""
-    # 创建临时文件
-    temp_path = copy_file_with_suffix(file_path)
+    """Replace text only inside this invocation's staged project."""
     try:
-        modified = False
-        with open(file_path, 'r', encoding='utf-8') as src, \
-                open(temp_path, 'w', encoding='utf-8') as dest:
-            for line in src:
-                new_line = line
-                for key, value in replacer.items():
-                    new_line = new_line.replace(key, value)
-
-                if new_line != line:
-                    modified = True
-                    dest.write(new_line)
-                else:
-                    dest.write(line)
-
-        # 替换原文件
-        if modified:
-            os.replace(temp_path, file_path)
-            print(f"已修改: {file_path}")
-            return
-
-        # 无修改则删除临时文件
-        print(f"未修改: {file_path}")
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return
-
+        with open(file_path, encoding='utf-8') as src:
+            original = src.read()
     except UnicodeDecodeError:
-        print(f"跳过二进制文件: {file_path}")
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
         return
-    except Exception as e:
-        print(f"处理文件 {file_path} 出错: {str(e)}")
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return
+    content = original
+    for key, value in replacer.items():
+        content = content.replace(key, value)
+    if content != original:
+        write_to_file(file_path, content)
 
 
 def _replace_filenames(dir_path: str, dir_replacer: dict[str, str], file_replacer: dict[str, str]) -> list[str]:
@@ -146,47 +81,47 @@ class MultiModuleGenerator:
         self.template_go_mod = "github.com/FlyTOmeLight/server-go/examples/example-hello-world"
 
     def generate(self, name: str, output_dir: str, modules: list[str], go_mod: str):
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-
-            # 创建临时工作目录
-            project_dir = os.path.join(output_dir, _camel_to_snake(name, "-"))
-            temp_dir = f"{project_dir}_temp"
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-
-            # 复制模板
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', name):
+            raise ValueError("项目名必须为字母开头的字母数字标识符")
+        if not modules or any(not re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', module) for module in modules):
+            raise ValueError("模块名必须为字母开头的字母数字标识符")
+        if len({module.lower() for module in modules}) != len(modules):
+            raise ValueError("模块名不可重复")
+        if self.template_module_name in modules and modules != [self.template_module_name]:
+            raise ValueError("默认 Module 不能与自定义模块混用")
+        if not go_mod or any(char.isspace() for char in go_mod):
+            raise ValueError("go module path 不能为空或包含空白")
+        project_dir = os.path.join(output_dir, _camel_to_snake(name, "-"))
+        if os.path.lexists(project_dir):
+            raise FileExistsError(f"目标已存在，保留原有文件: {project_dir}")
+        os.makedirs(output_dir, exist_ok=True)
+        # A unique directory on the same filesystem allows a final rename.
+        with tempfile.TemporaryDirectory(prefix='.server-go-', dir=output_dir) as work_dir:
+            temp_dir = os.path.join(work_dir, 'project')
             shutil.copytree(self.template_path, temp_dir)
-
-            try:
-                self._process_project(temp_dir, name, go_mod)
-            except Exception as e:
-                print(f"项目处理失败: {str(e)}")
-                return False
-
-            try:
+            self._process_project(temp_dir, name, go_mod)
+            if modules != [self.template_module_name]:
                 self._process_modules(temp_dir, modules)
-            except Exception as e:
-                print(f"模块处理失败: {str(e)}")
-                return False
-
-            # 重命名为最终项目
-            if os.path.exists(project_dir):
-                shutil.rmtree(project_dir)
-            os.rename(temp_dir, project_dir)
-            print("生成成功")
-
-        except Exception as e:
-            print(f"生成失败: {str(e)}")
-            return False
+            # Reserve the destination exclusively. Never remove an existing path.
+            os.mkdir(project_dir)
+            try:
+                os.rename(temp_dir, project_dir)
+            except Exception:
+                # Only an empty directory created by this invocation is removable.
+                try:
+                    os.rmdir(project_dir)
+                except OSError:
+                    pass
+                raise
+        print(f"生成成功: {project_dir}")
+        return project_dir
 
     def _process_project(self, file_path: str, name: str, go_mod: str):
         print(f"start process project file_path: {file_path}, name: {name}, go_mod: {go_mod}")
         os.remove(f"{file_path}/go.sum")
         # 重写go.mod
         go_mod_content = (f"module {go_mod}\n\ngo 1.24\n\nrequire (\n"
-                          f"   github.com/FlyTOmeLight/server-go v0.1.0\n"
-                          f"   github.com/jinzhu/copier v0.4.0\n"
+                          f"   github.com/FlyTOmeLight/server-go v0.2.0\n"
                           f"   github.com/spf13/cobra v1.7.0\n"
                           f"   github.com/swaggo/swag v1.8.1\n)")
         write_to_file(f"{file_path}/go.mod", go_mod_content)
@@ -210,6 +145,7 @@ class MultiModuleGenerator:
     def _process_modules(self, file_path: str, modules: list[str]):
         print(f"start process modules file_path: {file_path}, modules: {modules}")
 
+        project_path = file_path
         deleted = []
 
         # internal/app/module -> internal/app/{custom module}
@@ -248,7 +184,7 @@ class MultiModuleGenerator:
                         self._process_module_file_content(new_path, module_name)
                     continue
 
-                if file_path.endswith(".mod") or file_path.endswith("server/server.go"):
+                if file_path.endswith(".mod") or file_path.endswith("server/server.go") or os.path.basename(root) == "openapi":
                     continue
                 self._multi_replace_modules_content(file_path, modules)
 
@@ -260,64 +196,71 @@ class MultiModuleGenerator:
                 continue
             shutil.rmtree(deleted_path)
 
+        self._process_openapi(project_path, modules)
         print("end process modules")
 
 
+    def _process_openapi(self, project_path: str, modules: list[str]):
+        """Clone whole Swagger operations and schemas, never individual JSON lines."""
+        directory = os.path.join(project_path, 'doc', 'openapi')
+        for filename in os.listdir(directory):
+            if not filename.endswith('_swagger.json'):
+                continue
+            path = os.path.join(directory, filename)
+            with open(path, encoding='utf-8') as source:
+                document = json.load(source)
+            for section in ['paths', 'definitions']:
+                entries = {}
+                for key, value in document.get(section, {}).items():
+                    if self.template_module_name not in key:
+                        entries[key] = value
+                        continue
+                    for module in modules:
+                        replaced_key = key.replace(self.template_module_name, module)
+                        entries[replaced_key] = json.loads(json.dumps(value).replace(self.template_module_name, module))
+                document[section] = entries
+            content = json.dumps(document, ensure_ascii=False, indent=4) + '\n'
+            write_to_file(path, content)
+            # JSON is valid YAML and avoids adding a Python YAML dependency.
+            write_to_file(path[:-5] + '.yaml', content)
+            go_path = path.replace('_swagger.json', '_docs.go')
+            with open(go_path, encoding='utf-8') as source:
+                go_content = source.read()
+            start = go_content.index('"paths":')
+            end = go_content.index('}`', start)
+            sections = json.dumps({'paths': document['paths'], 'definitions': document['definitions']},
+                                  ensure_ascii=False, indent=4)[1:]
+            write_to_file(go_path, go_content[:start] + sections.lstrip() + go_content[end + 1:])
+
+    def _replace_business_module(self, content: str, module: str) -> str:
+        # Lifecycle types belong to the framework, not the generated domain.
+        content = re.sub(r'(?<!db\.)(?<!redis\.)(?<!mongodb\.)(?<!conf\.)Module', module, content)
+        return content.replace('module', module.lower())
+
     def _process_module_file_content(self, file_path: str, module_name: str):
-        _replace_content(file_path, {
-            _camel_to_snake(self.template_module_name): _camel_to_snake(module_name),
-            self.template_module_name: module_name,
-            self.template_module_name.lower(): module_name.lower(),
-        })
+        with open(file_path, encoding='utf-8') as source:
+            content = source.read()
+        write_to_file(file_path, self._replace_business_module(content, module_name))
 
     def _multi_replace_modules_content(self, file_path: str, modules: list[str]):
-        # 创建临时文件
-        temp_path = copy_file_with_suffix(file_path)
         try:
-            modified = False
-            name = self.template_module_name
-            with open(file_path, 'r', encoding='utf-8') as src, \
-                    open(temp_path, 'w', encoding='utf-8') as dest:
-                for line in src:
-                    edited = False
-                    if name in line or name.lower() in line or _camel_to_snake(name) in line:
-                        edited = True
-
-                    for module in modules:
-                        if module in line or module.lower() in line or _camel_to_snake(module) in line:
-                            edited = False
-
-                    if not edited:
-                        dest.write(line)
-                        continue
-
-                    modified = True
-                    for module in modules:
-                        new_line = line.replace(name, module)
-                        new_line = new_line.replace(name.lower(), module.lower())
-                        dest.write(new_line)
-
-            # 替换原文件
-            if modified:
-                os.replace(temp_path, file_path)
-                print(f"已修改: {file_path}")
-                return
-
-            # 无修改则删除临时文件
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            return
-
+            with open(file_path, encoding='utf-8') as src:
+                lines = src.readlines()
         except UnicodeDecodeError:
-            print(f"跳过二进制文件: {file_path}")
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
             return
-        except Exception as e:
-            print(f"处理文件 {file_path} 出错: {str(e)}")
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            return
+        content = []
+        name = self.template_module_name
+        for line in lines:
+            edited = name in line or name.lower() in line or _camel_to_snake(name) in line
+            for module in modules:
+                if module in line or module.lower() in line or _camel_to_snake(module) in line:
+                    edited = False
+            if edited:
+                for module in modules:
+                    content.append(self._replace_business_module(line, module))
+            else:
+                content.append(line)
+        write_to_file(file_path, ''.join(content))
 
 
 if __name__ == "__main__":
@@ -333,7 +276,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     generator = MultiModuleGenerator(args.template)
-    generator.generate(args.name, args.output, args.modules, args.go_mod)
+    try:
+        generator.generate(args.name, args.output, args.modules, args.go_mod)
+    except Exception as exc:
+        print(f"生成失败: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 # examples:

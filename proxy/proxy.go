@@ -1,13 +1,12 @@
 package proxy
 
 import (
-	"context"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 
-	core "github.com/FlyTOmeLight/server-go/pkg"
+	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -65,7 +64,7 @@ func ReverseWithModifyHandler(director func(r *http.Request), modifyResponse fun
 		Director:       director,
 		ModifyResponse: modifyResponse,
 		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
-			core.HTTPLogger.Errorf(context.Background(), "ProxyError req: %#v, err: %v", request, err)
+			logger.FromContext(request.Context()).Errorf(request.Context(), "ProxyError req: %#v, err: %v", request, err)
 			writer.WriteHeader(http.StatusBadGateway)
 		}}
 	return ReverseWithProxy(proxy)

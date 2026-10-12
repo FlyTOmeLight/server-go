@@ -2,9 +2,7 @@ package election
 
 import (
 	"context"
-	"os"
-	"os/signal"
-	"syscall"
+	"sync"
 
 	"github.com/FlyTOmeLight/server-go/logger"
 )
@@ -57,15 +55,18 @@ func (e *DummyAppElection) RunOnLeader(task func(context.Context)) {
 }
 
 func (e *DummyAppElection) Run(ctx context.Context) {
-	// 直接运行任务
+	// The application owns cancellation. Wait for every owned task to stop.
+	var tasks sync.WaitGroup
 	for _, task := range e.leaderTasks {
-		go task(ctx)
+		tasks.Add(1)
+		go func() {
+			defer tasks.Done()
+			task(ctx)
+		}()
 	}
-	// 收到Ctrl+C退出
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	logger.Infof(ctx, "app exit by ctrl+c")
+	<-ctx.Done()
+	tasks.Wait()
+	logger.Infof(ctx, "app election canceled")
 }
 
 func (e *DummyAppElection) RunAsync(ctx context.Context) {

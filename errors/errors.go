@@ -2,20 +2,17 @@ package errors
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
-	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/gin-gonic/gin"
-	"github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
-	"go.mongodb.org/mongo-driver/mongo"
-	"gorm.io/gorm"
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
-	"github.com/FlyTOmeLight/server-go/pkg/utils"
 )
 
 var (
@@ -36,8 +33,6 @@ var (
 	ErrorIncorrectString             = NewError(http.StatusBadRequest, "IncorrectString", "字符串值不正确")
 	ErrorAPINotFound                 = NewError(http.StatusNotFound, "APINotFound", "API 不存在") // The API was not found.
 )
-
-var dbOrderErrMsgRegex = regexp.MustCompile("^Unknown column '(?P<column>.+?)' in 'order clause'$")
 
 var _ error = (*Error)(nil)
 
@@ -64,15 +59,17 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
-func (e *Error) SetStatusCode() {
-	if conf.Default() == nil {
-		e.StatusCode = e.Status
-		return
-	}
+func (e *Error) SetStatusCode(appCode int) {
 	if e.StatusCode != 0 {
 		return
 	}
-	e.StatusCode = utils.JoinInt(conf.Default().AppCode, e.Status)
+	e.StatusCode = e.Status
+	if appCode != 0 {
+		code, err := strconv.Atoi(fmt.Sprintf("%d%d", appCode, e.Status))
+		if err == nil {
+			e.StatusCode = code
+		}
+	}
 }
 
 func NewError(status int, code string, message string) error {
@@ -100,47 +97,9 @@ func NewInvalidParameter(message string) error {
 	}
 }
 
-func NewDBError(err error) error {
-	if err == nil {
-		return nil
-	}
+func New(err error) *Error { return normalize(err, false) }
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ErrorResourceNotFound
-	}
-
-	var mysqlErr *mysql.MySQLError
-	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-		return ErrorResourceIsExists
-	}
-	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1366 {
-		return ErrorIncorrectString
-	}
-
-	if strings.HasPrefix(err.Error(), "UNIQUE constraint failed") {
-		return ErrorResourceIsExists
-	}
-
-	// unknown column in order clause
-	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1054 {
-		m := dbOrderErrMsgRegex.FindStringSubmatch(mysqlErr.Message)
-		if len(m) > dbOrderErrMsgRegex.NumSubexp() {
-			return NewInvalidParameter("Unknown field used in orderBy")
-		}
-	}
-
-	// mongodb error
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return ErrorResourceNotFound
-	}
-	if mongo.IsDuplicateKeyError(err) {
-		return ErrorResourceIsExists
-	}
-
-	return NewError(http.StatusInternalServerError, "InternalError", err.Error())
-}
-
-func New(err error) *Error {
+func normalize(err error, debug bool) *Error {
 	if err == nil {
 		return nil
 	}
@@ -150,19 +109,20 @@ func New(err error) *Error {
 		message := e.Message
 		if e.Status == http.StatusInternalServerError {
 			message = ErrorInternalError.Error()
-			if gin.Mode() == gin.DebugMode {
+			if debug {
 				message = err.Error()
 			}
 		}
 		return &Error{
-			Status:    e.Status,
-			Code:      e.Code,
-			Message:   message,
-			RequestID: e.RequestID,
+			Status:     e.Status,
+			Code:       e.Code,
+			Message:    message,
+			RequestID:  e.RequestID,
+			StatusCode: e.StatusCode,
 		}
 	default:
 		message := ErrorInternalError.Error()
-		if gin.Mode() == gin.DebugMode {
+		if debug {
 			message = err.Error()
 		}
 		newErr := Error{
@@ -284,11 +244,11 @@ func ErrorHandler(config *conf.Config) gin.HandlerFunc {
 		// 如果启用了自动处理且路径匹配，需要特殊处理错误响应
 		if writer != nil {
 			// 规范化错误并设置 RequestID
-			errObj := New(lastErr.Err)
+			errObj := normalize(lastErr.Err, config.RunMode == conf.RunModeDebug)
 			errObj.RequestID = c.GetHeader(constants.HeaderRequestID)
 			// 确保 StatusCode 已设置（如果为 0，则调用 SetStatusCode 设置）
 			if errObj.StatusCode == 0 {
-				errObj.SetStatusCode()
+				errObj.SetStatusCode(config.AppCode)
 			}
 			// 如果还没有写入响应，直接返回 JSON，状态码为200
 			if !writer.written {
@@ -356,8 +316,9 @@ func (w *statusCodeWriter) Status() int {
 
 func AbortWithError(c *gin.Context, err error) {
 	logger.Errorf(c, "API Error: %+v", err)
-	wrong := New(err)
+	wrong := normalize(err, c.GetBool("server.Debug"))
 	wrong.RequestID = c.GetHeader(constants.HeaderRequestID)
+	wrong.SetStatusCode(c.GetInt("server.AppCode"))
 	c.AbortWithStatusJSON(wrong.Status, wrong)
 }
 

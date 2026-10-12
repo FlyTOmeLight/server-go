@@ -1,30 +1,13 @@
 package service
 
 import (
-	"github.com/FlyTOmeLight/server-go/host"
-	core "github.com/FlyTOmeLight/server-go/pkg"
+	"context"
+	"github.com/gin-gonic/gin"
 )
 
-type ExampleService struct {
-	host.Service
-	engine *core.Engine
-}
+type ExampleService struct{}
 
-var _ host.Service = &ExampleService{}
-
-func NewExampleService() *ExampleService {
-	return &ExampleService{}
-}
-
-func (s *ExampleService) Initialize(e *core.Engine) {
-	s.engine = e
-	// 初始化所有必备启动资源
-}
-
-func (s *ExampleService) StartAsync() {
-
-}
-
-func (s *ExampleService) StopAsync() {
-
-}
+func NewExampleService() *ExampleService                               { return &ExampleService{} }
+func (s *ExampleService) RegisterRoutes(router *gin.RouterGroup) error { return nil }
+func (s *ExampleService) Start(context.Context) error                  { return nil }
+func (s *ExampleService) Stop(context.Context) error                   { return nil }

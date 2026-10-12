@@ -37,7 +37,11 @@ func SetConfig() error {
 	}
 
 	setLog()
-	Config.Client = newClient()
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	Config.Client = client
 	return nil
 }
 
@@ -99,7 +103,7 @@ func setLog() {
 	}
 }
 
-func newClient() *sdk.Client {
+func newClient() (*sdk.Client, error) {
 	configuration := sdk.Config{
 		Endpoint: viper.GetString("core.endpoint"),
 		Timeout:  30,
@@ -107,7 +111,7 @@ func newClient() *sdk.Client {
 
 	ak := viper.GetString("core.access_key")
 	sk := viper.GetString("core.secret_key")
-	if ak != "" && sk != "" {
+	if ak != "" || sk != "" {
 		configuration.Credentials = &sdk.Credentials{
 			AuthType:        sdk.AuthTypeAKSK,
 			AccessKeyId:     ak,
@@ -117,6 +121,9 @@ func newClient() *sdk.Client {
 
 	apiKey := viper.GetString("core.api_key")
 	if apiKey != "" {
+		if ak != "" || sk != "" {
+			return nil, errors.New("CLI config must select one authentication mode")
+		}
 		configuration.Credentials = &sdk.Credentials{
 			AuthType: sdk.AuthTypeAPIKey,
 			APIKey:   apiKey,

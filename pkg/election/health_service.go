@@ -1,10 +1,11 @@
 package election
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/FlyTOmeLight/server-go/errors"
-	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,26 +27,22 @@ func IsLeader(e LeaderElection) gin.HandlerFunc {
 
 // 用于注册接口路由，实现从节点的readiness probe检查
 type LeaderHealthService struct {
-	engine *core.Engine
-	e      LeaderElection
+	e LeaderElection
 }
 
 func NewLeaderHealthService(e LeaderElection) *LeaderHealthService {
-	return &LeaderHealthService{
-		engine: nil,
-		e:      e,
+	return &LeaderHealthService{e: e}
+}
+
+func (s *LeaderHealthService) RegisterRoutes(group *gin.RouterGroup) error {
+	if s.e == nil {
+		return fmt.Errorf("leader election is required")
 	}
-}
-
-func (s *LeaderHealthService) Initialize(e *core.Engine) {
-	s.engine = e
-}
-
-func (s *LeaderHealthService) StartAsync() {
-	g := s.engine.Group("/election")
+	g := group.Group("/election")
 	g.GET("/isleader", IsLeader(s.e))
+	return nil
 }
 
-// StopAsync 异步的停止，无阻塞操作。
-func (s *LeaderHealthService) StopAsync() {
-}
+// The application owns the election; this service only exposes its readiness.
+func (s *LeaderHealthService) Start(ctx context.Context) error { return ctx.Err() }
+func (s *LeaderHealthService) Stop(context.Context) error      { return nil }

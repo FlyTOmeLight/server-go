@@ -2,33 +2,78 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/FlyTOmeLight/server-go"
+	server "github.com/FlyTOmeLight/server-go"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/db"
 	"github.com/FlyTOmeLight/server-go/host"
+	"github.com/FlyTOmeLight/server-go/httpintegration"
 	"github.com/FlyTOmeLight/server-go/logger"
+	"github.com/FlyTOmeLight/server-go/swagger"
 
-	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/service"
+	_ "github.com/FlyTOmeLight/server-go/examples/example-hello-world/doc/openapi"
+	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/internal/service"
 )
 
 func main() {
-	defer logger.Sync()
-
-	// init bootstrap
-	// NewBootstrap传入需要启动的Modules
-	// Module中的Name参数用于指定配置文件中的key, 如果不传则为Module中的默认值, 例如db.Module的defaultName = DB
-	// 也可以自行构造Module的Config, 这时Module不会去配置文件中解析配置, 而是使用传入的自定义配置
-	bootstrap := server.NewBootstrap(&db.Module{})
-	err := bootstrap.Initialize()
-	if err != nil {
-		logger.Fatalf(context.Background(), "init bootstrap error: %v", err)
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	defer bootstrap.Close()
+}
 
-	// host & services
-	h := host.NewHTTPHost(conf.Default())
-	svc := service.NewHelloWorldService(nil)
-	h.AddService(svc)
-	h.Run()
+func run() (result error) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	log, err := logger.NewLogger(&logger.Config{Level: "info", Outputs: []logger.Output{{Type: "console"}}})
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+	manager, err := conf.NewManager("")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		result = errors.Join(result, manager.Close(closeCtx))
+	}()
+	var databaseConfig db.Config
+	if err := manager.Snapshot().UnmarshalKey("DB", &databaseConfig); err != nil {
+		return fmt.Errorf("load database config: %w", err)
+	}
+	database := &db.Module{Config: &databaseConfig}
+	bootstrap := server.NewBootstrap(database)
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		result = errors.Join(result, bootstrap.Close(closeCtx))
+	}()
+	initCtx, initCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer initCancel()
+	if err := bootstrap.Initialize(initCtx); err != nil {
+		return err
+	}
+	svc, err := service.NewHelloWorldService(initCtx, database.DB, databaseConfig.AutoMigrate)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, svc.Stop(context.Background())) }()
+	swagger.DocPrefix = "HelloWorld"
+	h, err := host.NewHTTPHost(manager, log, httpintegration.Install, svc)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, h.Close()) }()
+	if err := manager.Watch(ctx, func(err error) { log.Errorf(ctx, "reload configuration: %v", err) }); err != nil {
+		return err
+	}
+	return h.Run(ctx)
 }

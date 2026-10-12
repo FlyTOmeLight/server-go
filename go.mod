@@ -23,7 +23,6 @@ require (
 	github.com/prometheus/client_golang v1.19.1
 	github.com/redis/go-redis/v9 v9.16.0
 	github.com/robfig/cron/v3 v3.0.0
-	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
@@ -31,7 +30,6 @@ require (
 	github.com/swaggo/gin-swagger v1.5.2
 	github.com/tbrandon/mbserver v0.0.0-20211210035124-daf3c8c4269f
 	go.mongodb.org/mongo-driver v1.12.1
-	go.uber.org/automaxprocs v1.5.1
 	go.uber.org/zap v1.27.0
 	golang.org/x/net v0.47.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -118,6 +116,7 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
+	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

@@ -1,21 +1,17 @@
 package middleware
 
 import (
-	"net/http"
-
-	"github.com/FlyTOmeLight/server-go/conf"
-	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
-func Healthz() gin.HandlerFunc {
+// Healthz checks the owning host's readiness without process-wide configuration.
+func Healthz(ready func() bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if conf.Default().LoadMode == conf.LoadModeLoaded {
+		if ready != nil && ready() {
 			c.String(http.StatusOK, "healthz")
 			return
 		}
-
-		c.Abort()
-		_ = c.Error(errors.NewError(http.StatusServiceUnavailable, "ServiceLoading", "The service is loading, please try again later."))
+		c.AbortWithStatus(http.StatusServiceUnavailable)
 	}
 }

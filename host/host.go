@@ -1,13 +1,14 @@
 package host
 
-type LifeCycle interface {
-	// StartAsync 异步的启动，无阻塞操作。建议每个service在这个函数中将接口路由注册到HttpServer上，可以接受请求
-	StartAsync()
-	// StopAsync 异步的停止，无阻塞操作。
-	StopAsync()
-}
+import (
+	"context"
+	"github.com/gin-gonic/gin"
+)
 
-type Host interface {
-	AddService(services ...LifeCycle)
-	Run()
+// Service installs routes separately from owned background resources.
+// RegisterRoutes may run for a fresh router; it must not create workers or connections.
+type Service interface {
+	RegisterRoutes(*gin.RouterGroup) error
+	Start(context.Context) error
+	Stop(context.Context) error
 }

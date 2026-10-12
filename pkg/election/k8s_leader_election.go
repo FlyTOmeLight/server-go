@@ -4,6 +4,8 @@ package election
 import (
 	"context"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/FlyTOmeLight/server-go/logger"
@@ -43,14 +45,10 @@ type K8sLeaderElection struct {
 	leaderElector *leaderelection.LeaderElector
 	client        *clientset.Clientset
 
-	ctx context.Context
-
 	// 在leader上运行的任务列表
 	leaderTasks []func(context.Context)
-	// 用于控制运行在leader上的任务，当失去leader的时候，context会被取消并重新创建
-	leaderTaskCancelFunc context.CancelFunc
 	// 选举已经启动
-	started bool
+	started atomic.Bool
 }
 
 type K8sElectionOption func(e *K8sLeaderElection)
@@ -60,8 +58,6 @@ func NewK8sLeaderElection(appName string, options ...K8sElectionOption) *K8sLead
 		namespace:     "",
 		id:            "",
 		appName:       appName,
-		ctx:           context.Background(),
-		started:       false,
 		leaseDuration: 3 * time.Second,
 	}
 	for _, option := range options {
@@ -121,7 +117,7 @@ func (e *K8sLeaderElection) createClient() {
 	}
 }
 
-func (e *K8sLeaderElection) startElection() {
+func (e *K8sLeaderElection) startElection(ctx context.Context) {
 	// 创建k8s的client
 	e.createClient()
 	lock := &resourcelock.LeaseLock{
@@ -148,47 +144,73 @@ func (e *K8sLeaderElection) startElection() {
 		RenewDeadline:   renewDeadline,
 		RetryPeriod:     1 * time.Second,
 		ReleaseOnCancel: true,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(ctx context.Context) {
-				logger.Infof(ctx, "%s became leader now", e.id)
-				if e.startLeaderCallback != nil {
-					e.startLeaderCallback(ctx)
-				}
-				// 启动只能运行在leader上的任务， 注意任务重要监听ctx的Done事件，并在事件发生后立刻退出，防止多个leader上都在执行此任务
-				ctx, cancel := context.WithCancel(context.Background())
-				e.leaderTaskCancelFunc = cancel
-				for _, task := range e.leaderTasks {
-					// 重新创建一个context，当leader切换的时候，任务会被取消
-					go task(ctx)
-				}
-			},
-			OnStoppedLeading: func() {
-				logger.Warnf(e.ctx, "%s lost leader", e.id)
-				// 取消正在leader上运行的任务
-				if e.leaderTaskCancelFunc != nil {
-					e.leaderTaskCancelFunc()
-				}
-
-				// 执行leader失去任期的回调
-				if e.stopLeaderCallback != nil {
-					e.stopLeaderCallback()
-				}
-
-			},
-			OnNewLeader: func(identity string) {
-				logger.Infof(e.ctx, "%s: new leader is %s", e.id, identity)
-				// 执行leader切换的回调
-				if e.leaderChangeCallback != nil {
-					e.leaderChangeCallback(identity)
-				}
-			},
-		},
+		Callbacks:       e.leaderCallbacks(ctx),
 	})
 	if err != nil {
 		panic(err)
 	}
 	// 开始选举，Run会一直执行到ctx被取消
-	e.leaderElector.Run(e.ctx)
+	e.leaderElector.Run(ctx)
+}
+
+// leaderCallbacks joins every owned leader task before a term finishes. The
+// upstream elector dispatches OnStartedLeading asynchronously, so the mutex also
+// prevents a late callback from starting work after OnStoppedLeading.
+func (e *K8sLeaderElection) leaderCallbacks(runCtx context.Context) leaderelection.LeaderCallbacks {
+	var mu sync.Mutex
+	var stopped bool
+	var cancel context.CancelFunc
+	var done chan struct{}
+	return leaderelection.LeaderCallbacks{
+		OnStartedLeading: func(ctx context.Context) {
+			mu.Lock()
+			if stopped || ctx.Err() != nil {
+				mu.Unlock()
+				return
+			}
+			ctx, cancel = context.WithCancel(ctx)
+			done = make(chan struct{})
+			finished := done
+			mu.Unlock()
+			defer close(finished)
+			logger.Infof(ctx, "%s became leader now", e.id)
+			if e.startLeaderCallback != nil {
+				e.startLeaderCallback(ctx)
+			}
+			var tasks sync.WaitGroup
+			for _, task := range e.leaderTasks {
+				if ctx.Err() != nil {
+					break
+				}
+				tasks.Add(1)
+				go func() {
+					defer tasks.Done()
+					task(ctx)
+				}()
+			}
+			tasks.Wait()
+		},
+		OnStoppedLeading: func() {
+			mu.Lock()
+			stopped = true
+			stop, finished := cancel, done
+			mu.Unlock()
+			if stop != nil {
+				stop()
+				<-finished
+			}
+			logger.Warnf(runCtx, "%s lost leader", e.id)
+			if e.stopLeaderCallback != nil {
+				e.stopLeaderCallback()
+			}
+		},
+		OnNewLeader: func(identity string) {
+			logger.Infof(runCtx, "%s: new leader is %s", e.id, identity)
+			if e.leaderChangeCallback != nil {
+				e.leaderChangeCallback(identity)
+			}
+		},
+	}
 }
 
 // 启动选举，只能执行一次，多次执行后续执行无效
@@ -197,22 +219,24 @@ func (e *K8sLeaderElection) RunAsync(ctx context.Context) {
 }
 
 func (e *K8sLeaderElection) Run(ctx context.Context) {
-	if e.started {
+	if ctx.Err() != nil {
+		return
+	}
+	if !e.started.CompareAndSwap(false, true) {
 		logger.Warnf(ctx, "app election already started")
 		return
 	}
-	e.ctx = ctx
 
 	for {
-		e.startElection()
+		e.startElection(ctx)
 		select {
-		case <-e.ctx.Done():
+		case <-ctx.Done():
 			// 取消选举，退出
-			logger.Warnf(e.ctx, "app election canceled")
+			logger.Warnf(ctx, "app election canceled")
 			return
 		default:
 			// 没有被取消，继续尝试竞选
-			logger.Warnf(e.ctx, "app election failed, retrying...")
+			logger.Warnf(ctx, "app election failed, retrying...")
 			continue
 		}
 	}

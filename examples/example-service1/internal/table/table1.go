@@ -1,8 +1,8 @@
 package table
 
 import (
+	"context"
 	"github.com/FlyTOmeLight/server-go/db"
-	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/sdk"
 	"gorm.io/plugin/soft_delete"
 )
@@ -32,31 +32,34 @@ func (t *DatasetData) TableName() string {
 	return "dataset"
 }
 
-func AutoMigrateDataset() {
-	_ = db.DefaultDB().AutoMigrate(&DatasetData{})
+type Store struct{ database *db.DB }
+
+func New(database *db.DB) *Store { return &Store{database: database} }
+func (s *Store) AutoMigrate(ctx context.Context) error {
+	return s.database.WithContext(ctx).AutoMigrate(&DatasetData{})
 }
 
-func CreateDataset(dataset *DatasetData) error {
-	err := db.DefaultDB().Create(dataset).Error
-	return errors.NewDBError(err)
+func (s *Store) CreateDataset(ctx context.Context, dataset *DatasetData) error {
+	err := s.database.WithContext(ctx).Create(dataset).Error
+	return db.NewError(err)
 }
 
-func UpdateDataset(dataset *DatasetData) error {
-	err := db.DefaultDB().Where(&DatasetFilter{Name: dataset.Name}).Updates(dataset).Error
-	return errors.NewDBError(err)
+func (s *Store) UpdateDataset(ctx context.Context, dataset *DatasetData) error {
+	err := s.database.WithContext(ctx).Where(&DatasetFilter{Name: dataset.Name}).Updates(dataset).Error
+	return db.NewError(err)
 }
 
-func GetDataset(name string) (*DatasetData, error) {
+func (s *Store) GetDataset(ctx context.Context, name string) (*DatasetData, error) {
 	var t DatasetData
-	err := db.DefaultDB().Where(&DatasetFilter{Name: name}).Find(&t).Error
+	err := s.database.WithContext(ctx).Where(&DatasetFilter{Name: name}).Find(&t).Error
 	if err != nil {
-		return nil, errors.NewDBError(err)
+		return nil, db.NewError(err)
 	}
 	return &t, nil
 }
 
-func ListDataset(filters DatasetFilter, paging sdk.PagingRequest) ([]*DatasetData, error) {
-	sql := db.DefaultDB().
+func (s *Store) ListDataset(ctx context.Context, filters DatasetFilter, paging sdk.PagingRequest) ([]*DatasetData, error) {
+	sql := s.database.WithContext(ctx).
 		Where(filters).
 		Offset(paging.Offset()).
 		Limit(paging.Limit()).
@@ -69,22 +72,22 @@ func ListDataset(filters DatasetFilter, paging sdk.PagingRequest) ([]*DatasetDat
 	data := make([]*DatasetData, 0)
 	err := sql.Find(&data).Error
 	if err != nil {
-		return nil, errors.NewDBError(err)
+		return nil, db.NewError(err)
 	}
 	return data, nil
 }
 
-func DeleteDataset(name string) error {
-	err := db.DefaultDB().Where(&DatasetFilter{Name: name}).Delete(&DatasetData{}).Error
-	return errors.NewDBError(err)
+func (s *Store) DeleteDataset(ctx context.Context, name string) error {
+	err := s.database.WithContext(ctx).Where(&DatasetFilter{Name: name}).Delete(&DatasetData{}).Error
+	return db.NewError(err)
 }
 
-func CountDataset(filters DatasetFilter) (int, error) {
+func (s *Store) CountDataset(ctx context.Context, filters DatasetFilter) (int, error) {
 	var count int64
-	sql := db.DefaultDB().Where(filters)
+	sql := s.database.WithContext(ctx).Where(filters)
 	if filters.Filter != "" {
 		sql.Where("local_name LIKE ? or description LIKE ?", "%"+filters.Filter+"%", "%"+filters.Filter+"%")
 	}
 	err := sql.Model(&DatasetData{}).Count(&count).Error
-	return int(count), errors.NewDBError(err)
+	return int(count), db.NewError(err)
 }

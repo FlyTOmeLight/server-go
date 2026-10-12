@@ -17,12 +17,20 @@ func NewClient(ak, sk, endpoint string) (*Client, error) {
 		return nil, errors.New("endpoint should not be empty")
 	}
 
+	var credentials *sdk.Credentials
+	if ak != "" || sk != "" {
+		credentials = &sdk.Credentials{AuthType: sdk.AuthTypeAKSK, AccessKeyId: ak, SecretAccessKey: sk}
+	}
 	return NewClientWithConfig(&sdk.Config{
-		Endpoint: endpoint + "/helloworld/openapi",
-	}), nil
+		Credentials: credentials,
+		Endpoint:    endpoint + "/helloworld/openapi",
+	})
 }
 
-func NewClientWithConfig(config *sdk.Config) *Client {
-	client := &Client{Client: sdk.NewClientWithConfig(config)}
-	return client
+func NewClientWithConfig(config *sdk.Config) (*Client, error) {
+	client, err := sdk.NewClientWithConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{Client: client}, nil
 }

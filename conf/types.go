@@ -2,8 +2,6 @@ package conf
 
 import (
 	"errors"
-
-	"github.com/fsnotify/fsnotify"
 )
 
 const (
@@ -16,13 +14,6 @@ const (
 	// RunModeRelease 线上发布
 	RunModeRelease = "release"
 )
-
-const (
-	LoadModeLoaded LoadMode = iota
-	LoadModeLoading
-)
-
-type LoadMode int
 
 const (
 	DeployModeCloud DeployMode = "Cloud"
@@ -59,10 +50,7 @@ type Config struct {
 	HTTPServer HTTPServerConfig
 	FakeAuth   FakeAuthConfig
 
-	AllSettings          map[string]any
-	LoadMode             LoadMode
-	configContentChanged []func(newConfig *Config, changedKeys []string)
-	configChanged        map[string]func(in fsnotify.Event)
+	settings map[string]any
 }
 
 // 检查配置文件是否合规
@@ -73,8 +61,8 @@ func (c *Config) check() error {
 	if c.AppCode == 0 {
 		return errors.New("Config.AppCode is empty")
 	}
-	if c.RunMode == "" {
-		return errors.New("Config.RunMode is empty")
+	if c.RunMode != RunModeDebug && c.RunMode != RunModeTest && c.RunMode != RunModeRelease {
+		return errors.New("Config.RunMode must be debug, test, or release")
 	}
 
 	c.setDefaults()
@@ -90,18 +78,6 @@ func (c *Config) setDefaults() {
 	}
 }
 
-func (c *Config) reset(newConfig *Config) {
-	c.AppName = newConfig.AppName
-	c.AppCode = newConfig.AppCode
-	c.RunMode = newConfig.RunMode
-	c.DeployMode = newConfig.DeployMode
-	c.Feature = newConfig.Feature
-
-	c.Services = newConfig.Services
-	c.HTTPServer = newConfig.HTTPServer
-	c.FakeAuth = newConfig.FakeAuth
-}
-
 type FakeAuthConfig struct {
 	OrgID    string
 	UserID   string
@@ -110,20 +86,18 @@ type FakeAuthConfig struct {
 }
 
 type HTTPServerConfig struct {
-	Listen            string
-	ReadTimeout       int // 单位 ms
-	WriteTimeout      int // 单位 ms
-	IdleTimeout       int
-	MaxHeaderBytes    int
-	APIBasePath       string
-	IdempotenceEnable bool
-	IdempotenceTTL    int // 单位 分钟
-	PprofEnable       bool
-	MetricsEnable     bool
-	SwaggerEnable     bool
-	Trace             HTTPServerTraceConfig
-	UseH2C            bool // 支持HTTP2 无SSL
-	AuthType          AuthType
+	Listen         string
+	ReadTimeout    int // 单位 ms
+	WriteTimeout   int // 单位 ms
+	IdleTimeout    int
+	MaxHeaderBytes int
+	APIBasePath    string
+	PprofEnable    bool
+	MetricsEnable  bool
+	SwaggerEnable  bool
+	Trace          HTTPServerTraceConfig
+	UseH2C         bool // 支持HTTP2 无SSL
+	AuthType       AuthType
 	// ConsoleEnable 是否开启Console API反向代理功能
 	// 该反向代理会将前端API请求（路径包含/api）转换为内部OpenAPI请求（路径包含/internal）
 	// 例如：POST /example/api/v1/GetProject => POST /example/internal/v1/GetProject
@@ -149,17 +123,4 @@ type HTTPServerAssetConfig struct {
 type HTTPServerTraceConfig struct {
 	PrefixFilters []string
 	SuffixFilters []string
-}
-
-type ClientConfig struct {
-	Endpoint          string
-	AccessKey         string
-	SecretKey         string
-	Region            string
-	Retry             int
-	EnableImpersonate bool
-	EnableIdempotence bool
-	EnableSTS         bool
-	STSDuration       int
-	STSACL            string
 }

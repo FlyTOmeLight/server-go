@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"context"
 	"github.com/jinzhu/copier"
 
 	"github.com/FlyTOmeLight/server-go/errors"
@@ -10,7 +11,11 @@ import (
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func CreateDataset(ctx *core.Context, req *sdk.CreateDatasetRequest) (*sdk.GetDatasetResponse, error) {
+type Service struct{ store *table.Store }
+
+func New(store *table.Store) *Service { return &Service{store: store} }
+
+func (s *Service) CreateDataset(ctx context.Context, req *sdk.CreateDatasetRequest) (*sdk.GetDatasetResponse, error) {
 	if req.LocalName == "" {
 		return nil, errors.NewInvalidParameter("localName is missing")
 	}
@@ -23,7 +28,7 @@ func CreateDataset(ctx *core.Context, req *sdk.CreateDatasetRequest) (*sdk.GetDa
 		Description: &req.Description,
 	}
 
-	err := table.CreateDataset(data)
+	err := s.store.CreateDataset(ctx, data)
 	if err != nil {
 		logger.Errorf(ctx, "CreateDatasetError: %v", err)
 		return nil, err
@@ -34,7 +39,7 @@ func CreateDataset(ctx *core.Context, req *sdk.CreateDatasetRequest) (*sdk.GetDa
 	return &resp, nil
 }
 
-func ListDataset(ctx *core.Context, req *sdk.ListDatasetRequest) (*sdk.ListDatasetResponse, error) {
+func (s *Service) ListDataset(ctx context.Context, req *sdk.ListDatasetRequest) (*sdk.ListDatasetResponse, error) {
 	filters := table.DatasetFilter{
 		ProjectName: req.ProjectName,
 	}
@@ -42,7 +47,7 @@ func ListDataset(ctx *core.Context, req *sdk.ListDatasetRequest) (*sdk.ListDatas
 	resp := sdk.ListDatasetResponse{Results: make([]sdk.Dataset, 0)}
 	var err error
 
-	resp.TotalCount, err = table.CountDataset(filters)
+	resp.TotalCount, err = s.store.CountDataset(ctx, filters)
 	if err != nil {
 		logger.Errorf(ctx, "ListDatasetErrorDBCount: req: %#v, err: %v", req, err)
 		return nil, err
@@ -51,7 +56,7 @@ func ListDataset(ctx *core.Context, req *sdk.ListDatasetRequest) (*sdk.ListDatas
 		return &resp, nil
 	}
 
-	data, listErr := table.ListDataset(filters, req.PagingRequest)
+	data, listErr := s.store.ListDataset(ctx, filters, req.PagingRequest)
 	if listErr != nil {
 		logger.Errorf(ctx, "ListDatasetErrorDBQuery: req: %#v, err: %v", req, err)
 		return nil, err
@@ -61,8 +66,8 @@ func ListDataset(ctx *core.Context, req *sdk.ListDatasetRequest) (*sdk.ListDatas
 	return &resp, nil
 }
 
-func GetDataset(ctx *core.Context, req *sdk.GetDatasetRequest) (*sdk.GetDatasetResponse, error) {
-	data, err := table.GetDataset(req.GetName())
+func (s *Service) GetDataset(ctx context.Context, req *sdk.GetDatasetRequest) (*sdk.GetDatasetResponse, error) {
+	data, err := s.store.GetDataset(ctx, req.GetName())
 	if err != nil {
 		logger.Errorf(ctx, "GetDatasetErrorDBQuery: req: %#v, err: %v", req, err)
 		return nil, err
@@ -73,11 +78,11 @@ func GetDataset(ctx *core.Context, req *sdk.GetDatasetRequest) (*sdk.GetDatasetR
 	return &resp, nil
 }
 
-func UpdateDataset(ctx *core.Context, req *sdk.UpdateDatasetRequest) error {
+func (s *Service) UpdateDataset(ctx context.Context, req *sdk.UpdateDatasetRequest) error {
 	data := table.DatasetData{Name: req.GetName()}
 	data.Description = req.Description
 
-	err := table.UpdateDataset(&data)
+	err := s.store.UpdateDataset(ctx, &data)
 	if err != nil {
 		logger.Errorf(ctx, "UpdateDatasetErrorDBUpdate: req: %#v, data: %v, err: %v", req, data, err)
 		return err
@@ -86,8 +91,8 @@ func UpdateDataset(ctx *core.Context, req *sdk.UpdateDatasetRequest) error {
 	return nil
 }
 
-func DeleteDataset(ctx *core.Context, req *sdk.DeleteDatasetRequest) error {
-	err := table.DeleteDataset(req.GetName())
+func (s *Service) DeleteDataset(ctx context.Context, req *sdk.DeleteDatasetRequest) error {
+	err := s.store.DeleteDataset(ctx, req.GetName())
 	if err != nil {
 		logger.Errorf(ctx, "DeleteDatasetErrorDBDelete: req: %#v, err: %v", req, err)
 		return err

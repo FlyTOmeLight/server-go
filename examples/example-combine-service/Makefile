@@ -44,7 +44,7 @@ CONTROLLER_DIRS := $(shell ls -d $(HOMEDIR)/internal/app/* | tr '\n' ',' | sed '
 
 all: clean prepare compile package
 
-prepare: check-var git set-env
+prepare: check-var
 
 check-var:
 	$(info GO_1_21_HOME: $(GO_1_21_HOME))
@@ -55,10 +55,10 @@ check-var:
 
 compile: build
 
-# disable CGO on CLI build for max compatibility
-build: set-env
+# Native server builds enable CGO for SQLite; CLI builds remain portable.
+build:
 	$(GOMOD) tidy
-	CGO_ENABLED=0 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME} cmd/server/server.go
+	CGO_ENABLED=1 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME} cmd/server/server.go
 	CGO_ENABLED=0 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${CLINAME} cmd/cli/cli.go
 
 # enable CGO for sqlite integration tests

@@ -2,7 +2,6 @@ package internalsdk
 
 import (
 	"errors"
-	"fmt"
 
 	"resty.dev/v3"
 
@@ -13,8 +12,7 @@ import (
 
 type InternalClient struct {
 	*sdk.Client
-	Config  *InternalClientConfig
-	Context *core.Context
+	Config *InternalClientConfig
 }
 
 type InternalClientConfig struct {
@@ -27,97 +25,51 @@ type InternalClientConfig struct {
 }
 
 func NewInternalClient(ak, sk, endpoint string) (*InternalClient, error) {
-	if endpoint == "" {
-		return nil, errors.New("endpoint should not be empty")
-	}
-
-	if ak == "" || sk == "" {
-		return nil, errors.New("ak and sk should no be empty")
-	}
-
-	config := &InternalClientConfig{
+	return NewInternalClientWithConfig(&InternalClientConfig{
 		Config: &sdk.Config{
 			Endpoint: endpoint,
 			Timeout:  30,
+			Credentials: &sdk.Credentials{
+				AuthType:        sdk.AuthTypeAKSK,
+				AccessKeyId:     ak,
+				SecretAccessKey: sk,
+			},
 		},
-	}
-
-	return NewInternalClientWithConfig(config), nil
-}
-
-func NewInternalClientWithConfig(config *InternalClientConfig) *InternalClient {
-	c := sdk.NewClientWithConfig(config.Config)
-	ic := &InternalClient{
-		Client:  c,
-		Config:  config,
-		Context: &core.Context{},
-	}
-	return ic
-}
-
-func Wrap(in any, ctx *core.Context) *InternalClient {
-	switch t := in.(type) {
-	case *InternalClient:
-		return wrapI(t, ctx).registerMiddleware()
-	case *sdk.Client:
-		return wrapC(t, ctx).registerMiddleware()
-	default:
-		return nil
-	}
-}
-
-func wrapI(c *InternalClient, ctx *core.Context) *InternalClient {
-	return &InternalClient{
-		Client:  c.Client.Clone(),
-		Config:  c.Config,
-		Context: ctx,
-	}
-}
-
-func wrapC(c *sdk.Client, ctx *core.Context) *InternalClient {
-	config := &InternalClientConfig{
-		Config:            c.Config,
-		EnableImpersonate: true,
-		EnableIdempotence: true,
-	}
-	return &InternalClient{
-		Client:  c.Clone(),
-		Config:  config,
-		Context: ctx,
-	}
-}
-
-func (c *InternalClient) registerMiddleware() *InternalClient {
-	c.Client.AddRequestMiddleware(func(client *resty.Client, req *resty.Request) error {
-		c.setImpersonateHeaders(req)
-		return nil
 	})
-
-	return c
 }
 
-// setImpersonateHeaders 在请求级别设置 impersonate header
-func (c *InternalClient) setImpersonateHeaders(req *resty.Request) {
-	if c.Config.EnableImpersonate {
-		req.SetHeader(constants.HeaderImpersonateOrgID, c.Context.GetString(constants.KeyOrgID))
-		req.SetHeader(constants.HeaderImpersonateUserID, c.Context.GetString(constants.KeyUserID))
-	} else if c.Config.EnableSTS {
-		fmt.Println("TODO")
-		// cred := c.Client.Config.Credentials
-		// client, err := sts.NewStsClient(cred.AccessKeyId, cred.SecretAccessKey, c.Client.Config.Endpoint)
-		// if err != nil {
-		// 	return err
-		// }
-
-		// token, err := client.GetSessionToken(c.Config.STSDuration, c.Config.STSACL)
-		// if err != nil {
-		// 	return err
-		// }
-
-		// stsCred, err := NewCredentials(token.AccessKeyId, token.SecretAccessKey)
-		// if err != nil {
-		// 	return err
-		// }
-		// c.Client.Config.Credentials = stsCred
+func NewInternalClientWithConfig(config *InternalClientConfig) (*InternalClient, error) {
+	if config == nil {
+		return nil, errors.New("internal SDK config is required")
 	}
+	if config.EnableSTS {
+		return nil, errors.New("internal SDK STS authentication is not implemented")
+	}
+	if config.EnableIdempotence {
+		return nil, errors.New("internal SDK idempotence is not implemented")
+	}
+	client, err := sdk.NewClientWithConfig(config.Config)
+	if err != nil {
+		return nil, err
+	}
+	copied := *config
+	copied.Config = client.Config
+	return &InternalClient{Client: client, Config: &copied}, nil
+}
+
+// Wrap creates a downstream request. It borrows the client and does not retain
+// the inbound Gin context or modify any shared client settings.
+func Wrap(client *InternalClient, ctx *core.Context) *resty.Request {
+	return client.R(ctx)
+}
+
+// R creates a request tied to the inbound request's cancellation and deadline.
+// ctx must contain an inbound HTTP request.
+func (c *InternalClient) R(ctx *core.Context) *resty.Request {
+	request := c.Client.R().SetContext(ctx.Request.Context())
+	if c.Config.EnableImpersonate {
+		request.SetHeader(constants.HeaderImpersonateOrgID, ctx.GetString(constants.KeyOrgID))
+		request.SetHeader(constants.HeaderImpersonateUserID, ctx.GetString(constants.KeyUserID))
+	}
+	return request
 }

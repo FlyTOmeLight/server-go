@@ -3,145 +3,221 @@ package modbus
 import (
 	"context"
 	"encoding/binary"
+	"errors"
+	"io"
 	"math"
+	"net"
 	"strconv"
+	"sync"
 
-	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/tbrandon/mbserver"
 )
 
+// DefaultModbusService owns its TCP listener and every accepted connection.
+// It supports holding-register reads (function 3); other functions are rejected.
 type DefaultModbusService struct {
-	// Modbus协议文档，参见 https://www.modbustools.com/modbus.html
-	Server *mbserver.Server
-
-	API     API
-	Port    int
-	Address string
+	api         API
+	address     string
+	port        int
+	mu          sync.Mutex
+	processMu   sync.Mutex
+	listener    net.Listener
+	connections map[net.Conn]struct{}
+	workers     sync.WaitGroup
+	cancel      context.CancelFunc
+	done        chan struct{}
+	serveErr    error
+	started     bool
+	closed      bool
 }
 
-func NewDefaultModbusService(address string, port int, api API) DefaultModbusService {
-	tcpServer := mbserver.NewServer()
+func NewDefaultModbusService(address string, port int, api API) *DefaultModbusService {
+	return &DefaultModbusService{api: api, address: address, port: port, connections: make(map[net.Conn]struct{})}
+}
 
-	svc := DefaultModbusService{
-		Server:  tcpServer,
-		Port:    port,
-		API:     api,
-		Address: address,
+func (svc *DefaultModbusService) ListenAddress() string {
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	if svc.listener == nil {
+		return ""
 	}
-	// 重新注册功能码执行方法，除3功能码之外的功能码，均返回功能码错误信息
-	tcpServer.RegisterFunctionHandler(1, svc.ReadCoils)
-	tcpServer.RegisterFunctionHandler(2, svc.ReadDiscreteInputs)
-	tcpServer.RegisterFunctionHandler(3, svc.ReadHoldingRegisters)
-	tcpServer.RegisterFunctionHandler(4, svc.ReadInputRegisters)
-	tcpServer.RegisterFunctionHandler(5, svc.WriteSingleCoil)
-	tcpServer.RegisterFunctionHandler(6, svc.WriteHoldingRegister)
-	tcpServer.RegisterFunctionHandler(15, svc.WriteMultipleCoils)
-	tcpServer.RegisterFunctionHandler(16, svc.WriteHoldingRegisters)
-
-	return svc
+	return svc.listener.Addr().String()
 }
 
-func (svc *DefaultModbusService) StartAsync() {
-	go func() {
-		err := svc.Server.ListenTCP(svc.Address + ":" + strconv.Itoa(svc.Port))
+// Start binds synchronously so startup failures are returned to the application.
+func (svc *DefaultModbusService) Start(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	if svc.started || svc.closed {
+		return errors.New("Modbus service can only start once")
+	}
+	if svc.api == nil {
+		return errors.New("Modbus register API is required")
+	}
+	listener, err := net.Listen("tcp", net.JoinHostPort(svc.address, strconv.Itoa(svc.port)))
+	if err != nil {
+		return err
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	svc.listener, svc.cancel = listener, cancel
+	svc.started = true
+	svc.done = make(chan struct{})
+	go svc.accept(runCtx, listener)
+	return nil
+}
+
+// Wait reports an unexpected listener failure, or returns when ctx is canceled.
+func (svc *DefaultModbusService) Wait(ctx context.Context) error {
+	svc.mu.Lock()
+	done := svc.done
+	svc.mu.Unlock()
+	if done == nil {
+		return errors.New("Modbus service is not started")
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		svc.mu.Lock()
+		defer svc.mu.Unlock()
+		return svc.serveErr
+	}
+}
+
+// Stop cancels register calls, closes active connections and waits for workers.
+func (svc *DefaultModbusService) Stop(ctx context.Context) error {
+	svc.shutdown()
+	svc.mu.Lock()
+	done := svc.done
+	svc.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (svc *DefaultModbusService) shutdown() {
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	svc.closed = true
+	if svc.cancel != nil {
+		svc.cancel()
+	}
+	if svc.listener != nil {
+		_ = svc.listener.Close()
+	}
+	for connection := range svc.connections {
+		_ = connection.Close()
+	}
+}
+
+func (svc *DefaultModbusService) accept(ctx context.Context, listener net.Listener) {
+	defer func() {
+		svc.shutdown()
+		svc.workers.Wait()
+		close(svc.done)
+	}()
+	for {
+		connection, err := listener.Accept()
 		if err != nil {
-			logger.Fatalf(context.Background(), "StartServerError: %v", err)
+			if !errors.Is(err, net.ErrClosed) {
+				svc.mu.Lock()
+				svc.serveErr = err
+				svc.mu.Unlock()
+			}
+			return
 		}
-	}()
-}
-
-func (svc *DefaultModbusService) StopAsync() {
-	go func() {
-		svc.Server.Close()
-	}()
-}
-
-// 根据需求，目前仅实现保持寄存器读取单个寄存器功能（功能码3）
-// 为避免其他请求读取到空的内存值作为正常返回，因此屏蔽掉其他功能码的实现函数
-
-func (svc *DefaultModbusService) ReadCoils(
-	s *mbserver.Server, frame mbserver.Framer) ([]byte, *mbserver.Exception) {
-	return []byte{}, &mbserver.IllegalFunction
-}
-
-func (svc *DefaultModbusService) ReadDiscreteInputs(
-	s *mbserver.Server, frame mbserver.Framer) ([]byte, *mbserver.Exception) {
-	return []byte{}, &mbserver.IllegalFunction
-}
-
-func (svc *DefaultModbusService) ReadHoldingRegisters(
-	s *mbserver.Server, frame mbserver.Framer) ([]byte, *mbserver.Exception) {
-	tcpFrame := frame.(*mbserver.TCPFrame)
-	register, numRegs, endRegister := registerAddressAndNumber(frame)
-	if endRegister > 65536 {
-		return []byte{}, &mbserver.IllegalDataAddress
+		svc.mu.Lock()
+		if svc.closed {
+			svc.mu.Unlock()
+			_ = connection.Close()
+			return
+		}
+		svc.connections[connection] = struct{}{}
+		svc.workers.Add(1)
+		svc.mu.Unlock()
+		go svc.serveConnection(ctx, connection)
 	}
-	// read from db, check length
-	bytes := make([]byte, numRegs*2)
-	bytesNum := 0
-	for regNum := 0; regNum < numRegs; regNum++ {
-		regBytes, byteNum, err := svc.readDBData(tcpFrame.Device, register+regNum)
-		if err != mbserver.Success {
-			return []byte{}, &err
+}
+
+func (svc *DefaultModbusService) serveConnection(ctx context.Context, connection net.Conn) {
+	defer svc.workers.Done()
+	defer func() {
+		_ = connection.Close()
+		svc.mu.Lock()
+		delete(svc.connections, connection)
+		svc.mu.Unlock()
+	}()
+	for {
+		// A TCP read can contain part of a frame or several frames. Read exactly
+		// the MBAP header and declared body before using mbserver's parser.
+		header := make([]byte, 6)
+		if _, err := io.ReadFull(connection, header); err != nil {
+			return
 		}
-		regNum += byteNum/2 - 1
-		copy(bytes[bytesNum:], regBytes[:byteNum])
-		bytesNum += byteNum
-		if bytesNum >= numRegs*2 {
-			break
+		body := make([]byte, int(binary.BigEndian.Uint16(header[4:6])))
+		if _, err := io.ReadFull(connection, body); err != nil {
+			return
+		}
+		frame, err := mbserver.NewTCPFrame(append(header, body...))
+		if err != nil {
+			return
+		}
+		svc.processMu.Lock()
+		data, exception := svc.readFrame(ctx, frame)
+		svc.processMu.Unlock()
+		if exception != mbserver.Success {
+			frame.SetException(&exception)
+		} else {
+			frame.SetData(data)
+		}
+		if _, err := connection.Write(frame.Bytes()); err != nil {
+			return
 		}
 	}
-	return append([]byte{byte(numRegs * 2)}, bytes[:numRegs*2]...), &mbserver.Success
 }
 
-func (svc *DefaultModbusService) ReadInputRegisters(
-	s *mbserver.Server, frame mbserver.Framer) ([]byte, *mbserver.Exception) {
-	return []byte{}, &mbserver.IllegalFunction
-}
-
-func (svc *DefaultModbusService) WriteSingleCoil(
-	s *mbserver.Server, frame mbserver.Framer) ([]byte, *mbserver.Exception) {
-	return []byte{}, &mbserver.IllegalFunction
-}
-
-func (svc *DefaultModbusService) WriteHoldingRegister(
-	s *mbserver.Server, frame mbserver.Framer) ([]byte, *mbserver.Exception) {
-	return []byte{}, &mbserver.IllegalFunction
-}
-
-func (svc *DefaultModbusService) WriteMultipleCoils(
-	s *mbserver.Server, frame mbserver.Framer) ([]byte, *mbserver.Exception) {
-	return []byte{}, &mbserver.IllegalFunction
-}
-
-func (svc *DefaultModbusService) WriteHoldingRegisters(
-	s *mbserver.Server, frame mbserver.Framer) ([]byte, *mbserver.Exception) {
-	return []byte{}, &mbserver.IllegalFunction
-}
-
-// 通用数据帧解析
-func registerAddressAndNumber(frame mbserver.Framer) (register int, numRegs int, endRegister int) {
-	data := frame.GetData()
-	// Framer接口在rtu和tcp两种情况下的实现，都将各自数据包中功能码之后的数据保存在 frame.data 里，
-	// 两种情况下，data中的数据格式一致，均为 2字节寄存器地址 + 2字节寄存器数量N + 2*N字节数据
-	register = int(binary.BigEndian.Uint16(data[0:2]))
-	numRegs = int(binary.BigEndian.Uint16(data[2:4]))
-	endRegister = register + numRegs
-	return register, numRegs, endRegister
-}
-
-func registerAddressAndValue(frame mbserver.Framer) (int, uint16) {
-	// Framer接口在rtu和tcp两种情况下的实现，都将各自数据包中功能码之后的数据保存在 frame.data 里，
-	// 两种情况下，data中的数据格式一致，均为 2字节寄存器地址 + 2字节数据
-	data := frame.GetData()
-	register := int(binary.BigEndian.Uint16(data[0:2]))
-	value := binary.BigEndian.Uint16(data[2:4])
-	return register, value
+func (svc *DefaultModbusService) readFrame(ctx context.Context, frame *mbserver.TCPFrame) ([]byte, mbserver.Exception) {
+	if frame.GetFunction() != 3 {
+		return nil, mbserver.IllegalFunction
+	}
+	if len(frame.GetData()) != 4 {
+		return nil, mbserver.IllegalDataValue
+	}
+	register := int(binary.BigEndian.Uint16(frame.GetData()[:2]))
+	numRegs := int(binary.BigEndian.Uint16(frame.GetData()[2:]))
+	if numRegs == 0 || numRegs > 125 {
+		return nil, mbserver.IllegalDataValue
+	}
+	if register+numRegs > 65536 {
+		return nil, mbserver.IllegalDataAddress
+	}
+	data := make([]byte, numRegs*2)
+	for offset := 0; offset < len(data); {
+		if ctx.Err() != nil {
+			return nil, mbserver.SlaveDeviceFailure
+		}
+		value, size, exception := svc.readDBData(ctx, frame.Device, register+offset/2)
+		if exception != mbserver.Success {
+			return nil, exception
+		}
+		copy(data[offset:], value[:size])
+		offset += size
+	}
+	return append([]byte{byte(len(data))}, data...), mbserver.Success
 }
 
 // 读取数据，并根据数据类型写入寄存器
-func (svc *DefaultModbusService) readDBData(slaveID uint8, regAddr int) ([]byte, int, mbserver.Exception) {
-	regValue, err := svc.API.GetRegister(slaveID, regAddr)
+func (svc *DefaultModbusService) readDBData(ctx context.Context, slaveID uint8, regAddr int) ([]byte, int, mbserver.Exception) {
+	regValue, err := svc.api.GetRegister(ctx, slaveID, regAddr)
 	bytes := make([]byte, 8)
 	if err != nil {
 		return bytes, 0, mbserver.IllegalDataAddress
@@ -150,10 +226,9 @@ func (svc *DefaultModbusService) readDBData(slaveID uint8, regAddr int) ([]byte,
 	boolValue, ok := regValue.(bool)
 	if ok {
 		if boolValue {
-			bytes[0] = byte(1)
+			binary.BigEndian.PutUint16(bytes, 1)
 		}
-		bytes[0] = byte(0)
-		return bytes, 1, mbserver.Success
+		return bytes, 2, mbserver.Success
 	}
 
 	int16Value, ok := regValue.(int16)
