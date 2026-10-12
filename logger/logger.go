@@ -3,6 +3,7 @@ package logger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -48,7 +49,7 @@ func ParseConfigFile(path string) (*Config, error) {
 
 func NewLogger(config *Config) (*Logger, error) {
 	if config == nil {
-		return nil, fmt.Errorf("logger config is nil")
+		return nil, errors.New("logger config is nil")
 	}
 	level := zapcore.InfoLevel
 	if config.Level != "" {
@@ -80,7 +81,7 @@ func NewLogger(config *Config) (*Logger, error) {
 		case "file":
 			if output.Path == "" {
 				l.Close()
-				return nil, fmt.Errorf("log file path is empty")
+				return nil, errors.New("log file path is empty")
 			}
 			if err := os.MkdirAll(filepath.Dir(output.Path), 0o755); err != nil {
 				l.Close()

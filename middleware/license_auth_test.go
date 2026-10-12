@@ -20,9 +20,9 @@ func TestLicenseAuth(t *testing.T) {
 		client LicenseAuthorizer
 		status int
 	}{
-		{"missing client", nil, http.StatusInternalServerError},
-		{"denied", testLicense{false}, http.StatusUnauthorized},
-		{"authorized", testLicense{true}, http.StatusNoContent},
+		{name: "missing client", client: nil, status: http.StatusInternalServerError},
+		{name: "denied", client: testLicense{authorized: false}, status: http.StatusUnauthorized},
+		{name: "authorized", client: testLicense{authorized: true}, status: http.StatusNoContent},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			engine := gin.New()

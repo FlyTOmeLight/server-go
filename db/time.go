@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -57,7 +58,7 @@ func (t UTCTime) Value() (driver.Value, error) {
 func (t *UTCTime) Scan(v any) error {
 	vType := reflect.TypeOf(v)
 	if vType == nil {
-		return fmt.Errorf("can not convert NULL to timestamp")
+		return errors.New("can not convert NULL to timestamp")
 	}
 	// 适配SQLite
 	if vType.Kind() == reflect.String {

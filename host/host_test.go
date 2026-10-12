@@ -247,7 +247,7 @@ func TestConstructionDoesNotMissReplacement(t *testing.T) {
 			setup,
 			&testService{handle: func(c *gin.Context) { c.String(200, "ok") }},
 		)
-		constructed <- result{h, err}
+		constructed <- result{host: h, err: err}
 	}()
 	select {
 	case <-entered:

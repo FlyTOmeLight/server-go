@@ -2,6 +2,8 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -44,7 +46,7 @@ func CreateFileIfNotExist(dir string, fileName string) error {
 		return nil
 	}
 
-	if os.IsExist(err) {
+	if errors.Is(err, fs.ErrExist) {
 		return err
 	}
 

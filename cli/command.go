@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +14,7 @@ import (
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
-	"github.com/FlyTOmeLight/server-go/errors"
+	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/FlyTOmeLight/server-go/version"
 )
@@ -151,7 +152,7 @@ func NewApplyCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 			if len(filenames) != 0 && directory != "" {
-				return fmt.Errorf("can not use both --directory and --filename")
+				return errors.New("can not use both --directory and --filename")
 			}
 
 			for _, f := range filenames {
@@ -198,7 +199,7 @@ func apply(filename string) error {
 			logger.Errorf(context.TODO(), "decode yaml error: %v \n", err)
 			errs = append(
 				errs,
-				errors.NewError(
+				serrors.NewError(
 					http.StatusInternalServerError,
 					"InvalidYaml",
 					fmt.Sprintf("decode yaml error: %v", err),
@@ -225,7 +226,7 @@ func apply(filename string) error {
 			continue
 		}
 
-		e := errors.New(err)
+		e := serrors.New(err)
 		if e.Status == http.StatusConflict {
 			succeededMap[spec.Kind]++
 			continue

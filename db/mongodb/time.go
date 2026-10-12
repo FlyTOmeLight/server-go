@@ -1,7 +1,6 @@
 package mongodb
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -22,8 +21,8 @@ func (t *Time) MarshalBSONValue() (bsontype.Type, []byte, error) {
 // UnmarshalBSONValue 实现bson反序列化，从mongodb中读取数据转换成time.Time格式，这里用到了bsoncore中的方法读取数据转换成int64然后再转换成time.Time
 func (t *Time) UnmarshalBSONValue(bt bsontype.Type, data []byte) error {
 	v, _, valid := bsoncore.ReadValue(data, bt)
-	if valid == false {
-		return errors.New(fmt.Sprintf("%s, %s, %s", "UnmarshalBSONValue error:", bt, data))
+	if !valid {
+		return fmt.Errorf("%s, %s, %s", "UnmarshalBSONValue error:", bt, data)
 	}
 
 	if v.Type == bson.TypeInt64 {

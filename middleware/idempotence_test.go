@@ -60,16 +60,16 @@ func TestIdempotenceAuthorizationAndIdentityScopes(t *testing.T) {
 		revoked                     bool
 		status, executions          int
 	}{
-		{"original", "/create?clientToken=token", "org1", "alice", `{}`, false, 201, 1},
-		{"replay", "/create?clientToken=token", "org1", "alice", `{}`, false, 201, 1},
-		{"revoked", "/create?clientToken=token", "org1", "alice", `{}`, true, 403, 1},
-		{"other user", "/create?clientToken=token", "org1", "bob", `{}`, false, 201, 2},
-		{"other org", "/create?clientToken=token", "org2", "alice", `{}`, false, 201, 3},
-		{"other operation", "/another?clientToken=token", "org1", "alice", `{}`, false, 201, 4},
-		{"body conflict", "/create?clientToken=token", "org1", "alice", `{"x":1}`, false, 409, 4},
-		{"query conflict", "/create?clientToken=token&x=1", "org1", "alice", `{}`, false, 409, 4},
-		{"anonymous first", "/create?clientToken=token", "", "", `{}`, false, 201, 5},
-		{"anonymous repeat", "/create?clientToken=token", "", "", `{}`, false, 201, 6},
+		{name: "original", path: "/create?clientToken=token", org: "org1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 1},
+		{name: "replay", path: "/create?clientToken=token", org: "org1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 1},
+		{name: "revoked", path: "/create?clientToken=token", org: "org1", user: "alice", body: `{}`, revoked: true, status: 403, executions: 1},
+		{name: "other user", path: "/create?clientToken=token", org: "org1", user: "bob", body: `{}`, revoked: false, status: 201, executions: 2},
+		{name: "other org", path: "/create?clientToken=token", org: "org2", user: "alice", body: `{}`, revoked: false, status: 201, executions: 3},
+		{name: "other operation", path: "/another?clientToken=token", org: "org1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 4},
+		{name: "body conflict", path: "/create?clientToken=token", org: "org1", user: "alice", body: `{"x":1}`, revoked: false, status: 409, executions: 4},
+		{name: "query conflict", path: "/create?clientToken=token&x=1", org: "org1", user: "alice", body: `{}`, revoked: false, status: 409, executions: 4},
+		{name: "anonymous first", path: "/create?clientToken=token", org: "", user: "", body: `{}`, revoked: false, status: 201, executions: 5},
+		{name: "anonymous repeat", path: "/create?clientToken=token", org: "", user: "", body: `{}`, revoked: false, status: 201, executions: 6},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := idempotentRequest(tc.path, tc.org, tc.user, tc.body)
@@ -98,18 +98,18 @@ func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 		status  int
 		body    string
 	}{
-		{"write string", func(c *gin.Context) {
+		{name: "write string", handler: func(c *gin.Context) {
 			c.Header("Content-Type", "text/plain")
 			c.Header("Location", "/created/1")
 			c.Writer.Header().Add("Set-Cookie", "first=1")
 			c.Writer.Header().Add("Set-Cookie", "second=2")
 			c.Status(http.StatusCreated)
 			_, _ = c.Writer.WriteString("created")
-		}, 201, "created"},
-		{"rendered error", func(c *gin.Context) {
+		}, status: 201, body: "created"},
+		{name: "rendered error", handler: func(c *gin.Context) {
 			c.Abort()
 			_ = c.Error(errors.NewError(http.StatusUnprocessableEntity, "InvalidInput", "invalid input"))
-		}, 422, "invalid input"},
+		}, status: 422, body: "invalid input"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			controller := idempotence.New(time.Minute)

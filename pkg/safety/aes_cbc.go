@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"regexp"
 )
@@ -52,7 +53,7 @@ func CBCDecrypter(ciphertext string, key []byte, iv []byte) (string, error) {
 		return "", fmt.Errorf("invalid CBC IV length: %d", len(iv))
 	}
 	if len(cipherBuf) == 0 || len(cipherBuf)%block.BlockSize() != 0 {
-		return "", fmt.Errorf("CBC ciphertext must contain complete nonempty blocks")
+		return "", errors.New("CBC ciphertext must contain complete nonempty blocks")
 	}
 	blockMode := cipher.NewCBCDecrypter(block, iv)
 
@@ -86,15 +87,15 @@ func PKCS7Padding(text []byte, blockSize int) []byte {
 // UnPKCS7Padding PKCS7 去除填充方式
 func UnPKCS7Padding(text []byte) ([]byte, error) {
 	if len(text) == 0 || len(text)%aes.BlockSize != 0 {
-		return nil, fmt.Errorf("invalid PKCS7 padded length")
+		return nil, errors.New("invalid PKCS7 padded length")
 	}
 	padding := int(text[len(text)-1])
 	if padding == 0 || padding > aes.BlockSize || padding > len(text) {
-		return nil, fmt.Errorf("invalid PKCS7 padding length")
+		return nil, errors.New("invalid PKCS7 padding length")
 	}
 	for _, value := range text[len(text)-padding:] {
 		if int(value) != padding {
-			return nil, fmt.Errorf("invalid PKCS7 padding bytes")
+			return nil, errors.New("invalid PKCS7 padding bytes")
 		}
 	}
 	return text[:len(text)-padding], nil

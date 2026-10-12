@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -143,7 +144,7 @@ func defaultSecretDecryptor(ciphertext string) (string, error) {
 		return "", fmt.Errorf("invalid secret encoding: %w", err)
 	}
 	if len(data) < aead.NonceSize()+aead.Overhead() {
-		return "", fmt.Errorf("secret ciphertext is too short")
+		return "", errors.New("secret ciphertext is too short")
 	}
 	plaintext, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], []byte(secretFormat))
 	if err != nil {

@@ -27,7 +27,7 @@ func TestLeaderHealthRoutesCanBeRegisteredOnFreshRouters(t *testing.T) {
 		status int
 	}{
 		{name: "leader", e: NewDummyAppElection("leader"), status: http.StatusOK},
-		{name: "standby", e: standbyElection{NewDummyAppElection("standby")}, status: http.StatusServiceUnavailable},
+		{name: "standby", e: standbyElection{DummyAppElection: NewDummyAppElection("standby")}, status: http.StatusServiceUnavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := NewLeaderHealthService(test.e)

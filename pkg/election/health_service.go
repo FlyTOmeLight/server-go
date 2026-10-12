@@ -2,12 +2,12 @@ package election
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/FlyTOmeLight/server-go/errors"
+	serrors "github.com/FlyTOmeLight/server-go/errors"
 )
 
 // 用于检查当前节点是否是leader， 可用于有状态控制面服务的readiness probe，以避免从节点接收到请求
@@ -23,7 +23,7 @@ func IsLeader(e LeaderElection) gin.HandlerFunc {
 
 		c.Abort()
 		_ = c.Error(
-			errors.NewError(
+			serrors.NewError(
 				http.StatusServiceUnavailable,
 				"ServiceLoading",
 				"Request is not allowed on standby node, current leader is"+e.GetLeader(),
@@ -43,7 +43,7 @@ func NewLeaderHealthService(e LeaderElection) *LeaderHealthService {
 
 func (s *LeaderHealthService) RegisterRoutes(group *gin.RouterGroup) error {
 	if s.e == nil {
-		return fmt.Errorf("leader election is required")
+		return errors.New("leader election is required")
 	}
 	g := group.Group("/election")
 	g.GET("/isleader", IsLeader(s.e))

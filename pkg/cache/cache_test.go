@@ -12,13 +12,13 @@ import (
 func TestCacheStringKey(t *testing.T) {
 	c := NewCache(time.Second, time.Minute, mockLoadStringKey)
 
-	_, err := c.Lookup(&String{"ok"})
+	_, err := c.Lookup(&String{Key: "ok"})
 	assert.Nil(t, err)
-	_, err = c.Lookup(&String{"ok"}) // cache hit
+	_, err = c.Lookup(&String{Key: "ok"}) // cache hit
 	assert.Nil(t, err)
 	c.Delete("ok")
 
-	_, err = c.Lookup(&String{"fail"})
+	_, err = c.Lookup(&String{Key: "fail"})
 	assert.NotNil(t, err)
 }
 
@@ -54,7 +54,7 @@ func TestCacheStructKey(t *testing.T) {
 func mockLoadStructKey(key fmt.Stringer) (any, error) {
 	item, ok := key.(*cacheItem)
 	if !ok {
-		return nil, fmt.Errorf("type error")
+		return nil, errors.New("type error")
 	}
 	if item.key == "fail" {
 		return nil, errors.New("failed")

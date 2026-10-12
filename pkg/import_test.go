@@ -2,6 +2,8 @@ package core_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +47,7 @@ func TestImportDoesNotConfigureLogging(t *testing.T) {
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("import configured logging or failed: %v\n%s", err, output)
 	}
-	if _, err := os.Stat(filepath.Join(cwd, "logs")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(cwd, "logs")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("import created log output: %v", err)
 	}
 }
