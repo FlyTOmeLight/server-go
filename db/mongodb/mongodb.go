@@ -86,7 +86,7 @@ func (c *DB) GetFindOptions(pageRequest sdk.PagingRequest) (*options.FindOptions
 
 	var sort bson.D
 	for _, orderBytes := range pageRequest.Orders {
-		var order = map[string]string{}
+		order := map[string]string{}
 		if err = json.Unmarshal([]byte(orderBytes), &order); err != nil {
 			return nil, err
 		}
@@ -99,7 +99,6 @@ func (c *DB) GetFindOptions(pageRequest sdk.PagingRequest) (*options.FindOptions
 				sort = append(sort, bson.E{Key: key, Value: 1})
 			}
 		}
-
 	}
 	if len(sort) > 0 {
 		orders.SetSort(sort)
@@ -108,8 +107,9 @@ func (c *DB) GetFindOptions(pageRequest sdk.PagingRequest) (*options.FindOptions
 	return &orders, nil
 }
 
-func (c *DB) Transaction(ctx context.Context, fn func(sessionCtx mongo.SessionContext) (interface{}, error)) (
-	interface{}, error) {
+func (c *DB) Transaction(ctx context.Context, fn func(sessionCtx mongo.SessionContext) (any, error)) (
+	any, error,
+) {
 	session, err := c.StartSession()
 	if err != nil {
 		return nil, err

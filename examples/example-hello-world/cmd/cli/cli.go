@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/FlyTOmeLight/server-go/cli"
+
 	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/command"
 )
 

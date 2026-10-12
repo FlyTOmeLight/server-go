@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/FlyTOmeLight/server-go/sdk"
 	"github.com/spf13/viper"
+
+	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
 func TestSetConfigRejectsUnsupportedAKSK(t *testing.T) {
@@ -37,7 +38,11 @@ func TestSetConfigAPIKeyAndInvalidModes(t *testing.T) {
 			viper.Reset()
 			t.Cleanup(viper.Reset)
 			filename := filepath.Join(t.TempDir(), "config.yaml")
-			if err := os.WriteFile(filename, []byte("core:\n  "+test.core+"\nlog:\n  handler: NONE\n"), 0600); err != nil {
+			if err := os.WriteFile(
+				filename,
+				[]byte("core:\n  "+test.core+"\nlog:\n  handler: NONE\n"),
+				0o600,
+			); err != nil {
 				t.Fatal(err)
 			}
 			viper.SetConfigFile(filename)

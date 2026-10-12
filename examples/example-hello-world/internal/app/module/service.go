@@ -2,18 +2,24 @@ package module
 
 import (
 	"context"
+	"time"
+
 	"github.com/FlyTOmeLight/server-go/db"
+	core "github.com/FlyTOmeLight/server-go/pkg"
+
 	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/internal/table"
 	sdk "github.com/FlyTOmeLight/server-go/examples/example-hello-world/sdk/go/helloworldv1"
-	core "github.com/FlyTOmeLight/server-go/pkg"
-	"time"
 )
 
 type ModuleService struct{ database *db.DB }
 
 func NewModuleService(database *db.DB) *ModuleService { return &ModuleService{database: database} }
 
-func (s *ModuleService) CreateModule(ctx context.Context, userID string, req *sdk.CreateModuleRequest) (*sdk.CreateModuleResponse, error) {
+func (s *ModuleService) CreateModule(
+	ctx context.Context,
+	userID string,
+	req *sdk.CreateModuleRequest,
+) (*sdk.CreateModuleResponse, error) {
 	now := db.UTCTime{Time: time.Now().UTC()}
 	data := table.ModuleData{BaseData: db.BaseData{
 		ID: core.NewID("ex"), Name: req.Name, Description: &req.Description,
@@ -58,7 +64,13 @@ func (s *ModuleService) UpdateModule(ctx context.Context, req *sdk.UpdateModuleR
 	if _, err := table.GetModule(ctx, s.database, table.ModuleFilter{ID: req.ID}); err != nil {
 		return err
 	}
-	data := table.ModuleData{BaseData: db.BaseData{ID: req.ID, Description: req.Description, UpdatedAt: db.UTCTime{Time: time.Now().UTC()}}}
+	data := table.ModuleData{
+		BaseData: db.BaseData{
+			ID:          req.ID,
+			Description: req.Description,
+			UpdatedAt:   db.UTCTime{Time: time.Now().UTC()},
+		},
+	}
 	return table.UpdateModule(ctx, s.database, &data)
 }
 
@@ -75,6 +87,8 @@ func moduleResponse(data *table.ModuleData) sdk.Module {
 	if data.Description != nil {
 		description = *data.Description
 	}
-	return sdk.Module{ID: data.ID, Name: data.Name, Description: description, UserID: data.UserID,
-		ProjectID: data.ProjectID, CreatedAt: data.CreatedAt.Time, UpdatedAt: data.UpdatedAt.Time}
+	return sdk.Module{
+		ID: data.ID, Name: data.Name, Description: description, UserID: data.UserID,
+		ProjectID: data.ProjectID, CreatedAt: data.CreatedAt.Time, UpdatedAt: data.UpdatedAt.Time,
+	}
 }

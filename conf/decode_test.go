@@ -215,7 +215,14 @@ func TestUnmarshalKeyWithPlaceholder(t *testing.T) {
 	defer viper.Set("TestPlaceholder", nil)
 
 	var config testConfig
-	snapshot, err := FromSettings(map[string]any{"AppName": "test", "AppCode": 100, "RunMode": "release", "TestPlaceholder": viper.Get("TestPlaceholder")})
+	snapshot, err := FromSettings(
+		map[string]any{
+			"AppName":         "test",
+			"AppCode":         100,
+			"RunMode":         "release",
+			"TestPlaceholder": viper.Get("TestPlaceholder"),
+		},
+	)
 	require.NoError(t, err)
 	err = snapshot.UnmarshalKey("TestPlaceholder", &config)
 	assert.Nil(t, err)

@@ -16,10 +16,16 @@ func TestConsoleProxyCapturesTargetAndAppCode(t *testing.T) {
 	config.Listen = "second.example:8081"
 	req := httptest.NewRequest(http.MethodPost, "http://frontend/example/api/v1/Create", strings.NewReader(`{}`))
 	proxy.Director(req)
-	if req.URL.Host != "first.example:8080" || req.URL.Path != "/example/internal/v1/Create" || req.Method != http.MethodPost {
+	if req.URL.Host != "first.example:8080" || req.URL.Path != "/example/internal/v1/Create" ||
+		req.Method != http.MethodPost {
 		t.Fatalf("incorrect proxy target: %s %s", req.Method, req.URL)
 	}
-	resp := &http.Response{StatusCode: http.StatusInternalServerError, Header: http.Header{}, Request: req, Body: io.NopCloser(strings.NewReader("not json"))}
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Header:     http.Header{},
+		Request:    req,
+		Body:       io.NopCloser(strings.NewReader("not json")),
+	}
 	if err := proxy.ModifyResponse(resp); err != nil {
 		t.Fatal(err)
 	}

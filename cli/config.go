@@ -6,15 +6,16 @@ import (
 	"os"
 	"strings"
 
-	"github.com/FlyTOmeLight/server-go/logger"
-	"github.com/FlyTOmeLight/server-go/sdk"
 	"github.com/fsnotify/fsnotify"
 	"github.com/gookit/goutil/fsutil"
 	"github.com/spf13/viper"
+
+	"github.com/FlyTOmeLight/server-go/logger"
+	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
-var (
-	ErrEndpointNotFound = errors.New("CLI endpoint is empty, please run config set core.endpoint to set a valid endpoint")
+var ErrEndpointNotFound = errors.New(
+	"CLI endpoint is empty, please run config set core.endpoint to set a valid endpoint",
 )
 
 var (
@@ -46,7 +47,7 @@ func SetConfig() error {
 }
 
 func setLog() {
-	var defaultConfig = &logger.Config{
+	defaultConfig := &logger.Config{
 		Outputs: []logger.Output{
 			{
 				Type:  "Console",

@@ -22,7 +22,7 @@ func TestCacheStringKey(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-func mockLoadStringKey(key fmt.Stringer) (interface{}, error) {
+func mockLoadStringKey(key fmt.Stringer) (any, error) {
 	if key.String() == "fail" {
 		return nil, errors.New("failed")
 	}
@@ -51,7 +51,7 @@ func TestCacheStructKey(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-func mockLoadStructKey(key fmt.Stringer) (interface{}, error) {
+func mockLoadStructKey(key fmt.Stringer) (any, error) {
 	item, ok := key.(*cacheItem)
 	if !ok {
 		return nil, fmt.Errorf("type error")

@@ -7,31 +7,87 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
+	"github.com/FlyTOmeLight/server-go/logger"
 )
 
 var (
-	ErrorNotImplemented              = NewError(http.StatusInternalServerError, "NotImplemented", "API 未实现")       // API NotImplemented.
-	ErrorAccessDenied                = NewError(http.StatusForbidden, "AccessDenied", "拒绝访问")                      // Access denied.
-	ErrorInappropriateJSON           = NewError(http.StatusBadRequest, "InappropriateJSON", "json 格式错误")           // The JSON you provided was well-formed and valid, but not appropriate for this operation.
-	ErrorInternalError               = NewError(http.StatusInternalServerError, "InternalError", "服务器内部错误，请稍后重试！") // We encountered an internal error. Please try again.
-	ErrorInvalidHTTPRequest          = NewError(http.StatusBadRequest, "InvalidHTTPRequest", "HTTP 请求参数错误")        // There was an error in the body of your HTTP request.
-	ErrorInvalidURI                  = NewError(http.StatusBadRequest, "InvalidURI", "无效 URI")                     // Could not parse the specified URI.
-	ErrorMalformedJSON               = NewError(http.StatusBadRequest, "MalformedJSON", "无效 json")                 // The JSON you provided was not well-formed.
-	ErrorInvalidVersion              = NewError(http.StatusNotFound, "InvalidVersion", "无效 API 版本")                //The API version specified was invalid.
-	ErrorOptInRequired               = NewError(http.StatusForbidden, "OptInRequired", "需要订阅服务")                   // A subscription for the service is required.
-	ErrorRequestExpired              = NewError(http.StatusBadRequest, "RequestExpired", "请求已过期")                  // Request has expired.
-	ErrorIdempotentParameterMismatch = NewError(http.StatusForbidden, "IdempotentParameterMismatch", "幂等参数不匹配")    // The request uses the same client token as a previous, but non-identical request.
-	ErrorSignatureDoesNotMatch       = NewError(http.StatusBadRequest, "SignatureDoesNotMatch", "签名不匹配")           // The request signature we calculated does not match the signature you provided. Check your Secret Access Key and signing method. Consult the service documentation for details.
-	ErrorResourceNotFound            = NewError(http.StatusNotFound, "ResourceNotFound", "资源不存在")                  // The resource was not found.
-	ErrorResourceIsExists            = NewError(http.StatusConflict, "ResourceIsExists", "资源已存在")
-	ErrorIncorrectString             = NewError(http.StatusBadRequest, "IncorrectString", "字符串值不正确")
-	ErrorAPINotFound                 = NewError(http.StatusNotFound, "APINotFound", "API 不存在") // The API was not found.
+	ErrorNotImplemented = NewError(
+		http.StatusInternalServerError,
+		"NotImplemented",
+		"API 未实现",
+	) // API NotImplemented.
+	ErrorAccessDenied = NewError(
+		http.StatusForbidden,
+		"AccessDenied",
+		"拒绝访问",
+	) // Access denied.
+	ErrorInappropriateJSON = NewError(
+		http.StatusBadRequest,
+		"InappropriateJSON",
+		"json 格式错误",
+	) // The JSON you provided was well-formed and valid, but not appropriate for this operation.
+	ErrorInternalError = NewError(
+		http.StatusInternalServerError,
+		"InternalError",
+		"服务器内部错误，请稍后重试！",
+	) // We encountered an internal error. Please try again.
+	ErrorInvalidHTTPRequest = NewError(
+		http.StatusBadRequest,
+		"InvalidHTTPRequest",
+		"HTTP 请求参数错误",
+	) // There was an error in the body of your HTTP request.
+	ErrorInvalidURI = NewError(
+		http.StatusBadRequest,
+		"InvalidURI",
+		"无效 URI",
+	) // Could not parse the specified URI.
+	ErrorMalformedJSON = NewError(
+		http.StatusBadRequest,
+		"MalformedJSON",
+		"无效 json",
+	) // The JSON you provided was not well-formed.
+	ErrorInvalidVersion = NewError(
+		http.StatusNotFound,
+		"InvalidVersion",
+		"无效 API 版本",
+	) // The API version specified was invalid.
+	ErrorOptInRequired = NewError(
+		http.StatusForbidden,
+		"OptInRequired",
+		"需要订阅服务",
+	) // A subscription for the service is required.
+	ErrorRequestExpired = NewError(
+		http.StatusBadRequest,
+		"RequestExpired",
+		"请求已过期",
+	) // Request has expired.
+	ErrorIdempotentParameterMismatch = NewError(
+		http.StatusForbidden,
+		"IdempotentParameterMismatch",
+		"幂等参数不匹配",
+	) // The request uses the same client token as a previous, but non-identical request.
+	ErrorSignatureDoesNotMatch = NewError(
+		http.StatusBadRequest,
+		"SignatureDoesNotMatch",
+		"签名不匹配",
+	) // The request signature we calculated does not match the signature you provided. Check your Secret Access Key and signing method. Consult the service documentation for details.
+	ErrorResourceNotFound = NewError(
+		http.StatusNotFound,
+		"ResourceNotFound",
+		"资源不存在",
+	) // The resource was not found.
+	ErrorResourceIsExists = NewError(http.StatusConflict, "ResourceIsExists", "资源已存在")
+	ErrorIncorrectString  = NewError(http.StatusBadRequest, "IncorrectString", "字符串值不正确")
+	ErrorAPINotFound      = NewError(
+		http.StatusNotFound,
+		"APINotFound",
+		"API 不存在",
+	) // The API was not found.
 )
 
 var _ error = (*Error)(nil)
@@ -188,7 +244,8 @@ func WithMessage(err error, message string) error {
 func ErrorHandler(config *conf.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 检查是否需要自动处理 API 错误（将非200状态码改为200）
-		shouldAutoHandle := config != nil && config.HTTPServer.AltoHandlerAPIError && !config.HTTPServer.ConsoleEnable
+		shouldAutoHandle := config != nil && config.HTTPServer.AltoHandlerAPIError &&
+			!config.HTTPServer.ConsoleEnable
 
 		// 如果 shouldAutoHandle = false，则不进行自动处理，直接返回错误
 		if !shouldAutoHandle {

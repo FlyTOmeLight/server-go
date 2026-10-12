@@ -16,9 +16,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-const EnvServerConfigPath = "SERVER_CONFIG_PATH"
-const DefaultConfigPath = "conf/server/config.toml"
-const defaultDeployMode = DeployModeCloud
+const (
+	EnvServerConfigPath = "SERVER_CONFIG_PATH"
+	DefaultConfigPath   = "conf/server/config.toml"
+	defaultDeployMode   = DeployModeCloud
+)
 
 // Load reads a complete file with an independent parser. No process globals are changed.
 func Load(path string) (*Config, error) {
@@ -110,7 +112,9 @@ func (c *Config) Clone() *Config {
 	copy.HTTPServer.Trace.PrefixFilters = append([]string(nil), c.HTTPServer.Trace.PrefixFilters...)
 	copy.HTTPServer.Trace.SuffixFilters = append([]string(nil), c.HTTPServer.Trace.SuffixFilters...)
 	copy.HTTPServer.ConsoleProxyNames = append([]string(nil), c.HTTPServer.ConsoleProxyNames...)
-	copy.HTTPServer.AllowAPIPathNoHandlerAPIError = append([]string(nil), c.HTTPServer.AllowAPIPathNoHandlerAPIError...)
+	copy.HTTPServer.AllowAPIPathNoHandlerAPIError = append(
+		[]string(nil),
+		c.HTTPServer.AllowAPIPathNoHandlerAPIError...)
 	copy.HTTPServer.Assets = append([]HTTPServerAssetConfig(nil), c.HTTPServer.Assets...)
 	copy.Feature = cloneValue(c.Feature)
 	copy.settings = cloneMap(c.settings)
@@ -124,6 +128,7 @@ func cloneMap(input map[string]any) map[string]any {
 	}
 	return output
 }
+
 func cloneValue(value any) any {
 	switch v := value.(type) {
 	case map[string]any:
@@ -345,7 +350,8 @@ func (m *Manager) Watch(ctx context.Context, onError func(error)) error {
 				if !ok {
 					return
 				}
-				if filepath.Clean(event.Name) != m.path || event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
+				if filepath.Clean(event.Name) != m.path ||
+					event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
 					continue
 				}
 				if err := m.Reload(); err != nil && onError != nil {

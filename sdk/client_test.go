@@ -13,13 +13,20 @@ import (
 
 func TestClonePreservesSettingsAndResourceOwnership(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer token" || r.Header.Get("X-Default") != "default" || r.Header.Get("X-Signature") != "signed" || r.URL.Query().Get("key") != "value" {
+		if r.Header.Get("Authorization") != "Bearer token" || r.Header.Get("X-Default") != "default" ||
+			r.Header.Get("X-Signature") != "signed" ||
+			r.URL.Query().Get("key") != "value" {
 			t.Errorf("clone lost request settings: headers=%v query=%v", r.Header, r.URL.Query())
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	config := &Config{Endpoint: server.URL, Timeout: 3, Retry: 2, Credentials: &Credentials{AuthType: AuthTypeAPIKey, APIKey: "token"}}
+	config := &Config{
+		Endpoint:    server.URL,
+		Timeout:     3,
+		Retry:       2,
+		Credentials: &Credentials{AuthType: AuthTypeAPIKey, APIKey: "token"},
+	}
 	client, err := NewClientWithConfig(config)
 	if err != nil {
 		t.Fatal(err)
@@ -63,9 +70,33 @@ func TestNewClientRejectsInvalidConfiguration(t *testing.T) {
 		{name: "empty endpoint", config: &Config{}},
 		{name: "relative endpoint", config: &Config{Endpoint: "localhost"}},
 		{name: "negative retry", config: &Config{Endpoint: "http://localhost", Retry: -1}},
-		{name: "empty API key", config: &Config{Endpoint: "http://localhost", Credentials: &Credentials{AuthType: AuthTypeAPIKey}}},
-		{name: "AKSK", config: &Config{Endpoint: "http://localhost", Credentials: &Credentials{AuthType: AuthTypeAKSK, AccessKeyId: "ak", SecretAccessKey: "sk"}}, unsupported: true},
-		{name: "unknown auth", config: &Config{Endpoint: "http://localhost", Credentials: &Credentials{AuthType: "unknown"}}, unsupported: true},
+		{
+			name: "empty API key",
+			config: &Config{
+				Endpoint:    "http://localhost",
+				Credentials: &Credentials{AuthType: AuthTypeAPIKey},
+			},
+		},
+		{
+			name: "AKSK",
+			config: &Config{
+				Endpoint: "http://localhost",
+				Credentials: &Credentials{
+					AuthType:        AuthTypeAKSK,
+					AccessKeyId:     "ak",
+					SecretAccessKey: "sk",
+				},
+			},
+			unsupported: true,
+		},
+		{
+			name: "unknown auth",
+			config: &Config{
+				Endpoint:    "http://localhost",
+				Credentials: &Credentials{AuthType: "unknown"},
+			},
+			unsupported: true,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

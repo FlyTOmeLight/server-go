@@ -23,6 +23,7 @@ func (m *lifecycleModule) Initialize(ctx context.Context) error {
 	}
 	return m.initErr
 }
+
 func (m *lifecycleModule) Close(ctx context.Context) error {
 	*m.events = append(*m.events, "close:"+m.name)
 	if m.onClose != nil {
@@ -92,7 +93,11 @@ func TestCancelledInitializationUsesBoundedRollbackContext(t *testing.T) {
 		closed = true
 		return nil
 	}}
-	failure := &lifecycleModule{name: "failure", events: &events, onInit: func(context.Context) error { cancel(); return ctx.Err() }}
+	failure := &lifecycleModule{
+		name:   "failure",
+		events: &events,
+		onInit: func(context.Context) error { cancel(); return ctx.Err() },
+	}
 	bootstrap := NewBootstrap(resource, failure)
 	if err := bootstrap.Initialize(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("initialization: %v", err)

@@ -6,8 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/gin-gonic/gin"
+
+	"github.com/FlyTOmeLight/server-go/constants"
 )
 
 func TestDefaultFakeAuthIsSafeForConcurrentRequests(t *testing.T) {

@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/FlyTOmeLight/server-go/sdk"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
 func TestStructDecode(t *testing.T) {
@@ -15,7 +16,7 @@ func TestStructDecode(t *testing.T) {
 	})
 
 	t.Run("empty in", func(t *testing.T) {
-		var out map[string]interface{}
+		var out map[string]any
 		err := StructDecode(nil, &out, "json")
 		assert.Nil(t, err)
 	})
@@ -54,7 +55,6 @@ func TestStructDecode(t *testing.T) {
 		out := FormToStringMap(&req)
 		t.Logf("out: %v", out)
 	})
-
 }
 
 func TestNilFieldDecode(t *testing.T) {

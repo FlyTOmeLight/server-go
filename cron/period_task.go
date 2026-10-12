@@ -380,8 +380,26 @@ func (p *RunPeriod) IsValid(target ...time.Time) bool {
 	if len(target) > 0 {
 		now = target[0]
 	}
-	start := time.Date(now.Year(), now.Month(), now.Day(), p.Start.Hour(), p.Start.Minute(), p.Start.Second(), p.Start.Nanosecond(), now.Location())
-	end := time.Date(now.Year(), now.Month(), now.Day(), p.End.Hour(), p.End.Minute(), p.End.Second(), p.End.Nanosecond(), now.Location())
+	start := time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		p.Start.Hour(),
+		p.Start.Minute(),
+		p.Start.Second(),
+		p.Start.Nanosecond(),
+		now.Location(),
+	)
+	end := time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		p.End.Hour(),
+		p.End.Minute(),
+		p.End.Second(),
+		p.End.Nanosecond(),
+		now.Location(),
+	)
 	if end.Before(start) {
 		return !now.Before(start) || !now.After(end)
 	}
@@ -497,5 +515,11 @@ func NewPeriodTask(task Task, times []RunPeriod, updatePolicy UpdatePolicy, enab
 			periods[index].End = &value
 		}
 	}
-	return &PeriodTask{task: task, times: periods, updatePolicy: updatePolicy, enabled: enabled, status: TaskStatusInit}
+	return &PeriodTask{
+		task:         task,
+		times:        periods,
+		updatePolicy: updatePolicy,
+		enabled:      enabled,
+		status:       TaskStatusInit,
+	}
 }

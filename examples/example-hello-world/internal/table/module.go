@@ -2,6 +2,7 @@ package table
 
 import (
 	"context"
+
 	"github.com/FlyTOmeLight/server-go/db"
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
@@ -42,7 +43,12 @@ func CreateModule(ctx context.Context, tx *db.DB, example *ModuleData) error {
 	return db.NewError(err)
 }
 
-func ListModule(ctx context.Context, database *db.DB, filter ModuleFilter, paging sdk.PagingRequest) ([]*ModuleData, error) {
+func ListModule(
+	ctx context.Context,
+	database *db.DB,
+	filter ModuleFilter,
+	paging sdk.PagingRequest,
+) ([]*ModuleData, error) {
 	sql := database.WithContext(ctx).Offset(paging.Offset()).Limit(paging.Limit()).Order(paging.DBOrder())
 	sql = filter.BuildCondition(sql)
 

@@ -1,9 +1,10 @@
 package trainv1
 
 import (
-	"github.com/FlyTOmeLight/server-go/errors"
 	"net/url"
 	"strconv"
+
+	"github.com/FlyTOmeLight/server-go/errors"
 )
 
 func (client *Client) CreateDataset(req *CreateDatasetRequest) (*CreateDatasetResponse, error) {

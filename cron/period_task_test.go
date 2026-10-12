@@ -20,6 +20,7 @@ type testTask struct {
 }
 
 func (t *testTask) Name() string { return t.name }
+
 func (t *testTask) Init(ctx context.Context) error {
 	t.initialized.Add(1)
 	if t.init != nil {
@@ -27,6 +28,7 @@ func (t *testTask) Init(ctx context.Context) error {
 	}
 	return t.initErr
 }
+
 func (t *testTask) Start(ctx context.Context) error {
 	t.started.Add(1)
 	if t.start != nil {
@@ -34,6 +36,7 @@ func (t *testTask) Start(ctx context.Context) error {
 	}
 	return t.startErr
 }
+
 func (t *testTask) Stop(ctx context.Context) error {
 	t.stopped.Add(1)
 	if t.stop != nil {
@@ -309,7 +312,8 @@ func TestStopCallerDeadlineDoesNotExpireResourceCleanup(t *testing.T) {
 	}
 	started, release := make(chan struct{}), make(chan struct{})
 	var cleaned atomic.Bool
-	task := &testTask{name: "slow-cleanup", start: func(context.Context) error { close(started); <-release; return nil },
+	task := &testTask{
+		name: "slow-cleanup", start: func(context.Context) error { close(started); <-release; return nil },
 		stop: func(ctx context.Context) error {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -319,7 +323,8 @@ func TestStopCallerDeadlineDoesNotExpireResourceCleanup(t *testing.T) {
 			}
 			cleaned.Store(true)
 			return nil
-		}}
+		},
+	}
 	ctx := context.Background()
 	if err := manager.Add(ctx, NewPeriodTask(task, nil, AutoUpdate, true)); err != nil {
 		t.Fatal(err)
@@ -432,7 +437,8 @@ func TestCancelledInitializationCleanupKeepsFailedResourcesOwned(t *testing.T) {
 			defer cancel()
 			failure := errors.New("resource close failed")
 			var attempts atomic.Int32
-			task := &testTask{name: "initializing", init: func(context.Context) error { cancel(); return ctx.Err() },
+			task := &testTask{
+				name: "initializing", init: func(context.Context) error { cancel(); return ctx.Err() },
 				stop: func(cleanup context.Context) error {
 					if err := cleanup.Err(); err != nil {
 						return err
@@ -444,7 +450,8 @@ func TestCancelledInitializationCleanupKeepsFailedResourcesOwned(t *testing.T) {
 						return failure
 					}
 					return nil
-				}}
+				},
+			}
 			period := NewPeriodTask(task, nil, AutoUpdate, true)
 			err = manager.Add(ctx, period)
 			if !errors.Is(err, context.Canceled) {

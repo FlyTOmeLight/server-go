@@ -11,15 +11,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+
 	"github.com/FlyTOmeLight/server-go/conf"
 	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/FlyTOmeLight/server-go/middleware"
 	"github.com/FlyTOmeLight/server-go/pkg/binder"
 	"github.com/FlyTOmeLight/server-go/version"
-	"github.com/gin-gonic/gin"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 const (
@@ -132,7 +133,10 @@ func (h *HTTPHost) prepareReload(previous, next *conf.Config, keys []string) (fu
 		}
 	}
 	old, new := previous.HTTPServer, next.HTTPServer
-	if old.Listen != new.Listen || old.ReadTimeout != new.ReadTimeout || old.WriteTimeout != new.WriteTimeout || old.IdleTimeout != new.IdleTimeout || old.MaxHeaderBytes != new.MaxHeaderBytes || old.UseH2C != new.UseH2C {
+	if old.Listen != new.Listen || old.ReadTimeout != new.ReadTimeout || old.WriteTimeout != new.WriteTimeout ||
+		old.IdleTimeout != new.IdleTimeout ||
+		old.MaxHeaderBytes != new.MaxHeaderBytes ||
+		old.UseH2C != new.UseH2C {
 		return nil, fmt.Errorf("%w: listener, protocol, or transport timeout", ErrRestartRequired)
 	}
 	engine, err := h.buildRouter(next)
@@ -167,7 +171,14 @@ func NewHTTPServer(config *conf.Config) *http.Server {
 	if cfg.MaxHeaderBytes == 0 {
 		cfg.MaxHeaderBytes = DefaultMaxHeaderBytes
 	}
-	return &http.Server{Addr: cfg.Listen, ReadTimeout: time.Duration(cfg.ReadTimeout) * time.Millisecond, ReadHeaderTimeout: time.Duration(cfg.ReadTimeout) * time.Millisecond, WriteTimeout: time.Duration(cfg.WriteTimeout) * time.Millisecond, IdleTimeout: time.Duration(cfg.IdleTimeout) * time.Millisecond, MaxHeaderBytes: cfg.MaxHeaderBytes}
+	return &http.Server{
+		Addr:              cfg.Listen,
+		ReadTimeout:       time.Duration(cfg.ReadTimeout) * time.Millisecond,
+		ReadHeaderTimeout: time.Duration(cfg.ReadTimeout) * time.Millisecond,
+		WriteTimeout:      time.Duration(cfg.WriteTimeout) * time.Millisecond,
+		IdleTimeout:       time.Duration(cfg.IdleTimeout) * time.Millisecond,
+		MaxHeaderBytes:    cfg.MaxHeaderBytes,
+	}
 }
 
 // Run owns one serve loop. The process entry point owns signal handling.

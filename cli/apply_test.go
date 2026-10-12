@@ -2,20 +2,25 @@ package cli
 
 import (
 	"encoding/json"
-	"gopkg.in/yaml.v3"
 	"os"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 type ArtifactContent struct {
 	// URI 版本文件路径
 	URI string `json:"uri" binding:"required,uri,max=512" example:"s3://aiqa/store/workspaces/ws1/modelstores/ms1/models/model1/1"`
+
 	// Description 版本描述
 	Description string `json:"description" binding:"max=255" example:"artifact description"`
+
 	// Alias 版本别名，如default, latest
 	Alias []string `json:"alias" example:"[default]"`
+
 	// Tags 版本标签 [key:value]
 	Tags map[string]string `json:"tags"`
+
 	// Metadata 版本基本信息
 	Metadata any `json:"metadata"`
 }

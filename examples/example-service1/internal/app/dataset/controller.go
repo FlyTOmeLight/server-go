@@ -2,13 +2,14 @@ package dataset
 
 import (
 	"github.com/FlyTOmeLight/server-go"
-	_ "github.com/FlyTOmeLight/server-go/examples/example-service1/doc/openapi"
-	sdk "github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
 	"github.com/FlyTOmeLight/server-go/idempotence"
 	"github.com/FlyTOmeLight/server-go/middleware"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/pkg/binder"
 	"github.com/gin-gonic/gin"
+
+	_ "github.com/FlyTOmeLight/server-go/examples/example-service1/doc/openapi"
+	sdk "github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
 )
 
 // RegisterRoute

@@ -7,9 +7,7 @@ import (
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
-var (
-	DatasetNameRegex = regexp.MustCompile("^projects/(?P<projectName>.+?)/datasets/(?P<datasetName>.+?)$")
-)
+var DatasetNameRegex = regexp.MustCompile("^projects/(?P<projectName>.+?)/datasets/(?P<datasetName>.+?)$")
 
 type FileFormat string
 

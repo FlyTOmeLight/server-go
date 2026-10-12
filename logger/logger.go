@@ -82,16 +82,22 @@ func NewLogger(config *Config) (*Logger, error) {
 				l.Close()
 				return nil, fmt.Errorf("log file path is empty")
 			}
-			if err := os.MkdirAll(filepath.Dir(output.Path), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(output.Path), 0o755); err != nil {
 				l.Close()
 				return nil, err
 			}
 			if output.Rotation {
-				file := &lumberjack.Logger{Filename: output.Path, MaxSize: output.MaxSize, MaxAge: output.MaxAge, MaxBackups: output.MaxBackups, Compress: output.Compress}
+				file := &lumberjack.Logger{
+					Filename:   output.Path,
+					MaxSize:    output.MaxSize,
+					MaxAge:     output.MaxAge,
+					MaxBackups: output.MaxBackups,
+					Compress:   output.Compress,
+				}
 				l.files = append(l.files, file)
 				writer = zapcore.AddSync(file)
 			} else {
-				file, err := os.OpenFile(output.Path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+				file, err := os.OpenFile(output.Path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 				if err != nil {
 					l.Close()
 					return nil, err
@@ -136,15 +142,19 @@ func (l *Logger) write(ctx context.Context, level zapcore.Level, format string, 
 func (l *Logger) Debugf(ctx context.Context, format string, args ...any) {
 	l.write(ctx, zapcore.DebugLevel, format, args...)
 }
+
 func (l *Logger) Infof(ctx context.Context, format string, args ...any) {
 	l.write(ctx, zapcore.InfoLevel, format, args...)
 }
+
 func (l *Logger) Warnf(ctx context.Context, format string, args ...any) {
 	l.write(ctx, zapcore.WarnLevel, format, args...)
 }
+
 func (l *Logger) Errorf(ctx context.Context, format string, args ...any) {
 	l.write(ctx, zapcore.ErrorLevel, format, args...)
 }
+
 func (l *Logger) Fatalf(ctx context.Context, format string, args ...any) {
 	l.write(ctx, zapcore.FatalLevel, format, args...)
 }
@@ -191,18 +201,23 @@ func write(ctx context.Context, level zapcore.Level, format string, args ...any)
 func Debugf(ctx context.Context, format string, args ...any) {
 	write(ctx, zapcore.DebugLevel, format, args...)
 }
+
 func Infof(ctx context.Context, format string, args ...any) {
 	write(ctx, zapcore.InfoLevel, format, args...)
 }
+
 func Warnf(ctx context.Context, format string, args ...any) {
 	write(ctx, zapcore.WarnLevel, format, args...)
 }
+
 func Errorf(ctx context.Context, format string, args ...any) {
 	write(ctx, zapcore.ErrorLevel, format, args...)
 }
+
 func Fatalf(ctx context.Context, format string, args ...any) {
 	write(ctx, zapcore.FatalLevel, format, args...)
 }
+
 func Sync() error {
 	defaultMu.RLock()
 	defer defaultMu.RUnlock()

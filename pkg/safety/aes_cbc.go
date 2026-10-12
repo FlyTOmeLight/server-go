@@ -11,7 +11,6 @@ import (
 
 // CBCEncrypter is used to encryption with cbc mode
 func CBCEncrypter(text string, key []byte, iv []byte) (string, error) {
-
 	// key is secret key
 	block, err := aes.NewCipher(key)
 	if err != nil {

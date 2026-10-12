@@ -48,11 +48,14 @@ func TestContextLoggersAreIsolatedAndPreserveRequestID(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(data), "explicit "+name) || !strings.Contains(string(data), "package "+name) || !strings.Contains(string(data), `"requestId":"request-123"`) {
+		if !strings.Contains(string(data), "explicit "+name) ||
+			!strings.Contains(string(data), "package "+name) ||
+			!strings.Contains(string(data), `"requestId":"request-123"`) {
 			t.Fatalf("context logger or request ID was lost: %s", data)
 		}
 		other := []string{"second", "first"}[i]
-		if strings.Contains(string(data), "explicit "+other) || strings.Contains(string(data), "package "+other) {
+		if strings.Contains(string(data), "explicit "+other) ||
+			strings.Contains(string(data), "package "+other) {
 			t.Fatalf("loggers shared outputs: %s", data)
 		}
 	}

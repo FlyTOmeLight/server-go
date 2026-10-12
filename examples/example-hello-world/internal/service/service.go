@@ -3,13 +3,15 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
+
 	"github.com/FlyTOmeLight/server-go/db"
-	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/internal/app/module"
-	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/internal/table"
 	"github.com/FlyTOmeLight/server-go/host"
 	"github.com/FlyTOmeLight/server-go/idempotence"
 	"github.com/gin-gonic/gin"
-	"time"
+
+	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/internal/app/module"
+	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/internal/table"
 )
 
 type HelloWorldService struct {
@@ -39,4 +41,5 @@ func (s *HelloWorldService) RegisterRoutes(root *gin.RouterGroup) error {
 }
 
 func (s *HelloWorldService) Start(context.Context) error { return nil }
-func (s *HelloWorldService) Stop(context.Context) error  { return s.cache.Close() }
+
+func (s *HelloWorldService) Stop(context.Context) error { return s.cache.Close() }

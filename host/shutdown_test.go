@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/http2"
+
+	"github.com/FlyTOmeLight/server-go/conf"
 )
 
 func TestShutdownTimeoutJoinsHandlersAndGivesStopItsOwnBudget(t *testing.T) {

@@ -11,7 +11,8 @@ import (
 type testLicense struct{ authorized bool }
 
 func (l testLicense) GetAuthorization() bool { return l.authorized }
-func (l testLicense) ErrorMessage() string   { return "not authorized" }
+
+func (l testLicense) ErrorMessage() string { return "not authorized" }
 
 func TestLicenseAuth(t *testing.T) {
 	for _, tc := range []struct {

@@ -11,15 +11,16 @@ import (
 	"github.com/FlyTOmeLight/server-go/cli"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/db"
-	"github.com/FlyTOmeLight/server-go/examples/example-service1/command"
-	"github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
-	"github.com/FlyTOmeLight/server-go/examples/example-service1/service"
 	"github.com/FlyTOmeLight/server-go/host"
 	"github.com/FlyTOmeLight/server-go/httpintegration"
 	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/FlyTOmeLight/server-go/sdk"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/FlyTOmeLight/server-go/examples/example-service1/command"
+	"github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
+	"github.com/FlyTOmeLight/server-go/examples/example-service1/service"
 )
 
 const (
@@ -41,6 +42,7 @@ func TestMain(m *testing.M) {
 	os.RemoveAll(directory)
 	os.Exit(code)
 }
+
 func runTests(m *testing.M, directory string) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -53,7 +55,9 @@ func runTests(m *testing.M, directory string) int {
 		panic(err)
 	}
 	defer pool.Close()
-	manager, err := conf.NewManagerFromConfig(&conf.Config{AppName: "example-service1", AppCode: 100, RunMode: conf.RunModeTest})
+	manager, err := conf.NewManagerFromConfig(
+		&conf.Config{AppName: "example-service1", AppCode: 100, RunMode: conf.RunModeTest},
+	)
 	if err != nil {
 		panic(err)
 	}

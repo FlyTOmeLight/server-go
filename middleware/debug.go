@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
-	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -125,7 +126,8 @@ func Debug(prefixFilters []string, suffixFilters []string) gin.HandlerFunc {
 			respBody = strings.Trim(writer.Buf.String(), constants.LineBreak)
 		}
 
-		message := fmt.Sprintf("\nlatency: %v, [C]%s --> [S]%s  %s\n%s %s\n%s \n> %s\n=================\n%d %s\n%s\n< %s",
+		message := fmt.Sprintf(
+			"\nlatency: %v, [C]%s --> [S]%s  %s\n%s %s\n%s \n> %s\n=================\n%d %s\n%s\n< %s",
 			endTime.Sub(startTime),
 			c.ClientIP(),
 			c.Request.Host,

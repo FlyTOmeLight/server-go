@@ -65,8 +65,10 @@ func TestValidatorLowercaseAlphanumeric(t *testing.T) {
 			shouldError: true,
 		},
 		{
-			desc:        "too long",
-			validation:  structLowercaseAlphanumericValidation{LocalName: "abcdefghij123456789abcdefghij123456789"},
+			desc: "too long",
+			validation: structLowercaseAlphanumericValidation{
+				LocalName: "abcdefghij123456789abcdefghij123456789",
+			},
 			shouldError: true,
 		},
 	}
@@ -156,8 +158,10 @@ func TestValidatorCategory(t *testing.T) {
 		},
 		{
 			desc: "too long",
-			validation: structCategoryValidation{Category: "abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij" +
-				"123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789"},
+			validation: structCategoryValidation{
+				Category: "abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij" +
+					"123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789abcdefghij123456789",
+			},
 			shouldError: true,
 		},
 	}

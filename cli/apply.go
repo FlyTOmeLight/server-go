@@ -10,9 +10,7 @@ import (
 	"github.com/FlyTOmeLight/server-go/errors"
 )
 
-var (
-	handlers map[string]*ApplyHandler
-)
+var handlers map[string]*ApplyHandler
 
 type CommandSpec struct {
 	Kind     string `yaml:"kind" json:"kind"`
@@ -33,11 +31,19 @@ func (h *ApplyHandler) Handle(kind string, meta any) error {
 
 	buf, err := json.Marshal(meta)
 	if err != nil {
-		return errors.NewError(http.StatusInternalServerError, kind+"InvalidMetadata", fmt.Sprintf("json marshal error: %v", err))
+		return errors.NewError(
+			http.StatusInternalServerError,
+			kind+"InvalidMetadata",
+			fmt.Sprintf("json marshal error: %v", err),
+		)
 	}
 	err = json.Unmarshal(buf, &inputContent)
 	if err != nil {
-		return errors.NewError(http.StatusInternalServerError, kind+"InvalidMetadata", fmt.Sprintf("json unmarshal error: %v", err))
+		return errors.NewError(
+			http.StatusInternalServerError,
+			kind+"InvalidMetadata",
+			fmt.Sprintf("json unmarshal error: %v", err),
+		)
 	}
 
 	return h.handler(inputContent)
@@ -47,7 +53,11 @@ func GetApplyHandler(kind string) (*ApplyHandler, error) {
 	k := strings.ToLower(kind)
 	applyHandler, ok := handlers[k]
 	if !ok {
-		return nil, errors.NewError(http.StatusInternalServerError, k+"InvalidKind", fmt.Sprintf("kind: %s is invalid", k))
+		return nil, errors.NewError(
+			http.StatusInternalServerError,
+			k+"InvalidKind",
+			fmt.Sprintf("kind: %s is invalid", k),
+		)
 	}
 	return applyHandler, nil
 }

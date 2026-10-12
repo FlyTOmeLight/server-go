@@ -9,11 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/host"
 	"github.com/FlyTOmeLight/server-go/httpintegration"
 	"github.com/FlyTOmeLight/server-go/logger"
-	"github.com/gin-gonic/gin"
 )
 
 type helloService struct{}
@@ -22,8 +23,10 @@ func (s *helloService) RegisterRoutes(router *gin.RouterGroup) error {
 	router.GET("/hello", func(c *gin.Context) { c.JSON(200, gin.H{"message": "hello"}) })
 	return nil
 }
+
 func (s *helloService) Start(context.Context) error { return nil }
-func (s *helloService) Stop(context.Context) error  { return nil }
+
+func (s *helloService) Stop(context.Context) error { return nil }
 
 func run() (result error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -52,6 +55,7 @@ func run() (result error) {
 	}
 	return h.Run(ctx)
 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

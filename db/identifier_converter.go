@@ -48,15 +48,15 @@ func (w *identifierConverter) PrepareContext(ctx context.Context, query string) 
 	return w.inner.PrepareContext(ctx, w.convert(query))
 }
 
-func (w *identifierConverter) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (w *identifierConverter) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return w.inner.ExecContext(ctx, w.convert(query), args...)
 }
 
-func (w *identifierConverter) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (w *identifierConverter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return w.inner.QueryContext(ctx, w.convert(query), args...)
 }
 
-func (w *identifierConverter) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (w *identifierConverter) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return w.inner.QueryRowContext(ctx, w.convert(query), args...)
 }
 
@@ -119,21 +119,22 @@ func (t *converterTx) PrepareContext(ctx context.Context, query string) (*sql.St
 	return t.inner.PrepareContext(ctx, t.convert(query))
 }
 
-func (t *converterTx) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (t *converterTx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return t.inner.ExecContext(ctx, t.convert(query), args...)
 }
 
-func (t *converterTx) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (t *converterTx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return t.inner.QueryContext(ctx, t.convert(query), args...)
 }
 
-func (t *converterTx) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (t *converterTx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return t.inner.QueryRowContext(ctx, t.convert(query), args...)
 }
 
 // ---- 实现 gorm.TxCommitter 接口（GORM Commit/Rollback 需要） ----
 
-func (t *converterTx) Commit() error   { return t.inner.Commit() }
+func (t *converterTx) Commit() error { return t.inner.Commit() }
+
 func (t *converterTx) Rollback() error { return t.inner.Rollback() }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ package command
 
 import (
 	"github.com/FlyTOmeLight/server-go/cli"
+
 	sdk "github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
 )
 

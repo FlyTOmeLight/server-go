@@ -6,8 +6,12 @@ import (
 	"github.com/FlyTOmeLight/server-go/errors"
 )
 
-var nameRegex1 = regexp.MustCompile("^workspaces/(?P<workspaceID>.+?)/(?P<parentType>.+?)s/(?P<parentName>.+?)/(?P<objectType>.+?)s/(.+?)$")
-var nameRegex2 = regexp.MustCompile("^(?P<parentType>.+?)s/(?P<parentName>.+?)/(?P<objectType>.+?)s/(.+?)$")
+var (
+	nameRegex1 = regexp.MustCompile(
+		"^workspaces/(?P<workspaceID>.+?)/(?P<parentType>.+?)s/(?P<parentName>.+?)/(?P<objectType>.+?)s/(.+?)$",
+	)
+	nameRegex2 = regexp.MustCompile("^(?P<parentType>.+?)s/(?P<parentName>.+?)/(?P<objectType>.+?)s/(.+?)$")
+)
 
 // workspaces/a/devicehubs/b/devices/c/modules/1
 var nameRegex3 = regexp.MustCompile(
@@ -140,7 +144,8 @@ func getNameRegex3(objectName string) *Naming {
 	if len(m) < nameRegex3.NumSubexp() {
 		return nil
 	}
-	if subObjectType := m[nameRegex3.SubexpIndex("subObjectType")]; subObjectType == "" || subObjectType == "version" {
+	if subObjectType := m[nameRegex3.SubexpIndex("subObjectType")]; subObjectType == "" ||
+		subObjectType == "version" {
 		return nil
 	}
 

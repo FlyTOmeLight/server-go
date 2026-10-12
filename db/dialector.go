@@ -85,9 +85,11 @@ func (d *AIBaseDialector) DataTypeOf(field *schema.Field) string {
 
 // BindVarTo 将整数布尔模式下的 Go bool 参数绑定为 0/1。
 // PostgreSQL/GaussDB 驱动默认会把 bool 编码为 t/f，而 Kingbase 兼容字段使用 int 存储。
-func (d *AIBaseDialector) BindVarTo(writer clause.Writer, stmt *gorm.Statement, value interface{}) {
-	if strings.EqualFold(d.dbType, "postgres") || strings.EqualFold(d.dbType, "postgresql") || strings.EqualFold(d.dbType, "gaussdb") {
-		if boolean, ok := value.(bool); ok && (d.integerBoolean || indexBooleanField(stmt, len(stmt.Vars)-1) != nil) {
+func (d *AIBaseDialector) BindVarTo(writer clause.Writer, stmt *gorm.Statement, value any) {
+	if strings.EqualFold(d.dbType, "postgres") || strings.EqualFold(d.dbType, "postgresql") ||
+		strings.EqualFold(d.dbType, "gaussdb") {
+		if boolean, ok := value.(bool); ok &&
+			(d.integerBoolean || indexBooleanField(stmt, len(stmt.Vars)-1) != nil) {
 			if boolean {
 				stmt.Vars[len(stmt.Vars)-1] = 1
 			} else {
@@ -315,7 +317,8 @@ func mapToPostgres(gormType string, autoIncrement bool) string {
 func mapToMysql(gormType string, autoIncrement bool) string {
 	// 显式 type 会绕过 MySQL 原生方言的自增类型生成，需要在整数类型上补回属性。
 	mappedType := strings.TrimSpace(gormType)
-	if autoIncrement && isMysqlIntegerType(mappedType) && !strings.Contains(strings.ToUpper(mappedType), "AUTO_INCREMENT") {
+	if autoIncrement && isMysqlIntegerType(mappedType) &&
+		!strings.Contains(strings.ToUpper(mappedType), "AUTO_INCREMENT") {
 		return mappedType + " AUTO_INCREMENT"
 	}
 	return gormType

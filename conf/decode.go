@@ -29,8 +29,10 @@ const secretFormat = "v1:"
 var valuePattern = regexp.MustCompile(`\$\{(?i:(secret|env|file)):([^{}]+?)\}`)
 
 // secretDecryptor 解密 ${secret: xxx} 中的密文，默认使用 AES-GCM，可通过 SetSecretDecryptor 替换
-var secretDecryptor = defaultSecretDecryptor
-var secretDecryptorMu sync.RWMutex
+var (
+	secretDecryptor   = defaultSecretDecryptor
+	secretDecryptorMu sync.RWMutex
+)
 
 // SetSecretDecryptor 替换默认的密文解密实现
 func SetSecretDecryptor(decryptor func(ciphertext string) (string, error)) {
@@ -127,7 +129,10 @@ func splitSpec(spec string) (target, def string, hasDef bool) {
 // defaultSecretDecryptor accepts only the versioned AES-GCM format.
 func defaultSecretDecryptor(ciphertext string) (string, error) {
 	if !strings.HasPrefix(ciphertext, secretFormat) {
-		return "", fmt.Errorf("unsupported secret format: expected %s AES-GCM ciphertext; re-encrypt legacy secrets", secretFormat)
+		return "", fmt.Errorf(
+			"unsupported secret format: expected %s AES-GCM ciphertext; re-encrypt legacy secrets",
+			secretFormat,
+		)
 	}
 	aead, err := secretCipher()
 	if err != nil {

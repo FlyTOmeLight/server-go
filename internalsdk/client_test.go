@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"resty.dev/v3"
+
 	"github.com/FlyTOmeLight/server-go/constants"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/sdk"
-	"resty.dev/v3"
 )
 
 func TestWrapPropagatesContextAndKeepsRequestsIsolated(t *testing.T) {
@@ -30,7 +31,9 @@ func TestWrapPropagatesContextAndKeepsRequestsIsolated(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	client, err := NewInternalClientWithConfig(&InternalClientConfig{Config: &sdk.Config{Endpoint: server.URL}, EnableImpersonate: true})
+	client, err := NewInternalClientWithConfig(
+		&InternalClientConfig{Config: &sdk.Config{Endpoint: server.URL}, EnableImpersonate: true},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

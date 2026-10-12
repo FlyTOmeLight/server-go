@@ -2,12 +2,12 @@ package core
 
 import (
 	"encoding/json"
-	"github.com/BurntSushi/toml"
-	"gopkg.in/yaml.v3"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -18,8 +18,8 @@ const (
 )
 
 // ParseFile 解析文件，将文件内容转为结构体，支持toml, yaml, json格式
-func ParseFile(filePath string, obj interface{}) error {
-	buf, err := ioutil.ReadFile(filePath)
+func ParseFile(filePath string, obj any) error {
+	buf, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
 	}

@@ -7,15 +7,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/db"
+	"github.com/gin-gonic/gin"
 )
 
 func TestModuleRebuiltRoutesReuseBusinessResources(t *testing.T) {
 	ctx := context.Background()
-	database := &db.Module{Config: &db.Config{Driver: db.DriverSQLite, DB: ":memory:", MaxIdleConns: 1, MaxOpenConns: 1}}
+	database := &db.Module{
+		Config: &db.Config{Driver: db.DriverSQLite, DB: ":memory:", MaxIdleConns: 1, MaxOpenConns: 1},
+	}
 	if err := database.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,11 @@ func TestModuleRebuiltRoutesReuseBusinessResources(t *testing.T) {
 		if err := svc.RegisterRoutes(engine.Group("")); err != nil {
 			t.Fatal(err)
 		}
-		req := httptest.NewRequest(http.MethodPost, "/helloworld/internal/v1/CreateModule?clientToken=stable-token", bytes.NewBufferString(`{"projectID":"project1","name":"example"}`))
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/helloworld/internal/v1/CreateModule?clientToken=stable-token",
+			bytes.NewBufferString(`{"projectID":"project1","name":"example"}`),
+		)
 		req.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
 		engine.ServeHTTP(response, req)
@@ -60,7 +65,9 @@ func TestModuleRebuiltRoutesReuseBusinessResources(t *testing.T) {
 
 func TestModuleServiceConstructionReportsMigrationFailure(t *testing.T) {
 	ctx := context.Background()
-	database := &db.Module{Config: &db.Config{Driver: db.DriverSQLite, DB: ":memory:", MaxIdleConns: 1, MaxOpenConns: 1}}
+	database := &db.Module{
+		Config: &db.Config{Driver: db.DriverSQLite, DB: ":memory:", MaxIdleConns: 1, MaxOpenConns: 1},
+	}
 	if err := database.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

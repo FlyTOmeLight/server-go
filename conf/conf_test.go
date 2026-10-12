@@ -13,7 +13,11 @@ import (
 func configFile(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(path, []byte("AppName='test'\nAppCode=100\nRunMode='release'\n"+content), 0600); err != nil {
+	if err := os.WriteFile(
+		path,
+		[]byte("AppName='test'\nAppCode=100\nRunMode='release'\n"+content),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -39,8 +43,14 @@ func TestLoadAndIsolation(t *testing.T) {
 		t.Fatal(section)
 	}
 	var keys []string
-	manager.Subscribe(func(previous, next *Config, changed []string) (func(), error) { keys = changed; return nil, nil })
-	os.WriteFile(path, []byte("AppName='test'\nAppCode=100\nRunMode='release'\n[NewSection]\nEnabled=true\n"), 0600)
+	manager.Subscribe(
+		func(previous, next *Config, changed []string) (func(), error) { keys = changed; return nil, nil },
+	)
+	os.WriteFile(
+		path,
+		[]byte("AppName='test'\nAppCode=100\nRunMode='release'\n[NewSection]\nEnabled=true\n"),
+		0o600,
+	)
 	if err := manager.Reload(); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +71,7 @@ func TestInvalidReplacementPreservesSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(path, []byte("AppName=''"), 0600)
+	os.WriteFile(path, []byte("AppName=''"), 0o600)
 	for i := 0; i < 2; i++ {
 		if err := manager.Reload(); err == nil {
 			t.Fatal("invalid reload accepted")
@@ -137,7 +147,7 @@ func TestWatchAndClose(t *testing.T) {
 	if err := manager.Watch(ctx, func(err error) { t.Log(err) }); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(path, []byte("AppName='updated'\nAppCode=100\nRunMode='release'\n"), 0600)
+	os.WriteFile(path, []byte("AppName='updated'\nAppCode=100\nRunMode='release'\n"), 0o600)
 	select {
 	case <-changed:
 	case <-time.After(3 * time.Second):

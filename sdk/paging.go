@@ -7,9 +7,7 @@ import (
 	"strings"
 )
 
-var (
-	re = regexp.MustCompile("[^a-zA-Z0-9_-]")
-)
+var re = regexp.MustCompile("[^a-zA-Z0-9_-]")
 
 const (
 	OrderASC  = "asc"
@@ -24,8 +22,8 @@ const (
 
 // swagger:model PagingResponse
 type PagingResponse struct {
-	Results    interface{} `json:"result"`
-	TotalCount int         `json:"totalCount"`
+	Results    any `json:"result"`
+	TotalCount int `json:"totalCount"`
 }
 
 func NewPagingRequest() PagingRequest {
@@ -42,18 +40,22 @@ type PagingRequest struct {
 	//
 	// Example: 1
 	PageNo int `json:"pageNo"`
+
 	// 每页的大小
 	//
 	// Example: 10
 	PageSize int `json:"pageSize" binding:"max=200"`
+
 	// 排序规则: asc: 升序, desc: 倒序, 默认倒序
 	//
 	// Example: desc
 	Order string `json:"order" binding:"omitempty,oneof=asc desc"`
+
 	// 排序依据
 	//
 	// Example: name
 	OrderBy string `json:"orderBy" binding:"orderby"`
+
 	// mongo 排序规则
 	//
 	// Example: []string{ "{order: desc}", "{id:asc}" }
@@ -111,7 +113,7 @@ func (r PagingRequest) DBOrder() string {
 }
 
 // Paging 对数组做分页处理
-func Paging(arr interface{}, pageNo int, pageSize int) []interface{} {
+func Paging(arr any, pageNo int, pageSize int) []any {
 	offset := (pageNo - 1) * pageSize
 	if offset < 0 {
 		offset = 0
@@ -125,7 +127,7 @@ func Paging(arr interface{}, pageNo int, pageSize int) []interface{} {
 		limit = reflect.ValueOf(arr).Len()
 	}
 
-	paged := make([]interface{}, 0)
+	paged := make([]any, 0)
 	for i := offset; i < limit; i++ {
 		paged = append(paged, reflect.ValueOf(arr).Index(i).Interface())
 	}

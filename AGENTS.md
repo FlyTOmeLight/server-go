@@ -24,7 +24,7 @@
 
 - 根模块与四个带 `go.mod` 的示例是独立模块。修改模块路径或依赖时，同步检查示例的 `require`、本地 `replace`、Makefile 的链接变量和 `scripts/gen_code.py`。
 - 代码生成器以 `examples/example-hello-world` 为模板。修改模板或生成器后，在临时目录生成独立项目，执行 `go mod tidy` 并构建服务端与 CLI。
-- Go 代码修改后执行 `gofmt`，并在受影响模块执行 `go test ./...`、`go vet ./...`。根模块测试需要 `CGO_ENABLED=1` 以使用 SQLite；共享状态和生命周期改动对受影响包执行 `go test -race`。
+- Go 代码修改后执行 `gorgeous ./...`，并用 `gorgeous -d ./...` 检查格式，以符合推送钩子的要求。在受影响模块执行 `go test ./...`、`go vet ./...`。根模块测试需要 `CGO_ENABLED=1` 以使用 SQLite；共享状态和生命周期改动对受影响包执行 `go test -race`。
 - 跨模块改动必须检查根模块和四个示例。最小服务应能启动，并通过 `/hello` 请求返回 `{"message":"hello"}`。
 - 发布文件只包含公开依赖、示例值和环境变量占位符。代码索引、运行日志、数据库和本地构建产物由 `.gitignore` 排除。
 

@@ -28,10 +28,13 @@ type connectionStats struct{ closed chan struct{} }
 func (s *connectionStats) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
 	return ctx
 }
+
 func (s *connectionStats) HandleRPC(context.Context, stats.RPCStats) {}
+
 func (s *connectionStats) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
 	return ctx
 }
+
 func (s *connectionStats) HandleConn(_ context.Context, event stats.ConnStats) {
 	if _, closed := event.(*stats.ConnEnd); closed {
 		s.closed <- struct{}{}
@@ -65,7 +68,8 @@ func TestPublishEventUsesTopicAndClosesEachOwnedConnection(t *testing.T) {
 		}
 		select {
 		case request := <-publisher.requests:
-			if request.PubsubName != "component" || request.Topic != "actual-topic" || string(request.Data) != "payload" {
+			if request.PubsubName != "component" || request.Topic != "actual-topic" ||
+				string(request.Data) != "payload" {
 				t.Fatalf("wrong published event: %v", request)
 			}
 		case <-ctx.Done():

@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/FlyTOmeLight/server-go/pkg/modbus"
 	"github.com/tbrandon/mbserver"
+
+	"github.com/FlyTOmeLight/server-go/pkg/modbus"
 )
 
 type modbusRegisterFunc func(context.Context, uint8, int) (any, error)
@@ -20,12 +21,16 @@ func (f modbusRegisterFunc) GetRegister(ctx context.Context, slaveID uint8, regi
 
 func TestModbusHostCancellationWaitsForAPIAndClosesConnection(t *testing.T) {
 	called, stopped := make(chan struct{}), make(chan struct{})
-	service := modbus.NewDefaultModbusService("127.0.0.1", 0, modbusRegisterFunc(func(ctx context.Context, _ uint8, _ int) (any, error) {
-		close(called)
-		<-ctx.Done()
-		close(stopped)
-		return nil, ctx.Err()
-	}))
+	service := modbus.NewDefaultModbusService(
+		"127.0.0.1",
+		0,
+		modbusRegisterFunc(func(ctx context.Context, _ uint8, _ int) (any, error) {
+			close(called)
+			<-ctx.Done()
+			close(stopped)
+			return nil, ctx.Err()
+		}),
+	)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	result := make(chan error, 1)

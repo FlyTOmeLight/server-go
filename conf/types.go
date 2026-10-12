@@ -98,19 +98,24 @@ type HTTPServerConfig struct {
 	Trace          HTTPServerTraceConfig
 	UseH2C         bool // 支持HTTP2 无SSL
 	AuthType       AuthType
+
 	// ConsoleEnable 是否开启Console API反向代理功能
 	// 该反向代理会将前端API请求（路径包含/api）转换为内部OpenAPI请求（路径包含/internal）
 	// 例如：POST /example/api/v1/GetProject => POST /example/internal/v1/GetProject
-	ConsoleEnable     bool
+	ConsoleEnable bool
+
 	ConsoleProxyNames []string
+
 	// AltoHandlerAPIError 是否开启针对 /{appName}/api/* 接口的自动状态码处理功能
 	// 与ConsoleEnable互斥，仅当ConsoleEnable=false时生效
 	// 当开启时，会拦截所有 /{appName}/api/* 接口的响应：
 	//   - 将所有非200的HTTP状态码统一改为200，但保持响应体内容不变
 	//   - 对于 errors.Error 类型的错误，会规范化处理，自动设置 RequestID 并确保 StatusCode 字段正确设置
 	AltoHandlerAPIError bool
-	Assets              []HTTPServerAssetConfig
-	//开启针对 /{appName}/api/* 接口的自动状态码处理功能 （白名单）
+
+	Assets []HTTPServerAssetConfig
+
+	// 开启针对 /{appName}/api/* 接口的自动状态码处理功能 （白名单）
 	AllowAPIPathNoHandlerAPIError []string
 }
 

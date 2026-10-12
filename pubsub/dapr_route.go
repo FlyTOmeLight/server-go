@@ -8,10 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gin-gonic/gin"
-
 	dapr "github.com/dapr/go-sdk/client"
 	daprc "github.com/dapr/go-sdk/service/common"
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -19,12 +18,10 @@ const (
 	PubSubKey          = "pubsub.Subscription"
 )
 
-var (
-	topicAntiPattern = strings.NewReplacer(
-		"/", "__",
-		":", "_",
-		"?", "_",
-	)
+var topicAntiPattern = strings.NewReplacer(
+	"/", "__",
+	":", "_",
+	"?", "_",
 )
 
 type Subscription = daprc.Subscription
@@ -72,7 +69,12 @@ func copySubscription(subscription Subscription) Subscription {
 //
 //	registry := pubsub.NewRegistry()
 //	registry.OnEvent(engine, "path_of_api", nil, ReceiveEvent)
-func (r *Registry) OnEvent(engine *gin.Engine, relativePath string, configHandler ConfigHandler, handlers ...gin.HandlerFunc) {
+func (r *Registry) OnEvent(
+	engine *gin.Engine,
+	relativePath string,
+	configHandler ConfigHandler,
+	handlers ...gin.HandlerFunc,
+) {
 	r.OnEventWithGroup(&engine.RouterGroup, relativePath, configHandler, handlers...)
 }
 
@@ -84,7 +86,12 @@ func (r *Registry) OnEvent(engine *gin.Engine, relativePath string, configHandle
 //	g.POST("", Create)
 //	g.GET("", List)
 //	registry.OnEventWithGroup(g, "path_of_api", nil, ReceiveEvent)
-func (r *Registry) OnEventWithGroup(group *gin.RouterGroup, relativePath string, configHandler ConfigHandler, handlers ...gin.HandlerFunc) {
+func (r *Registry) OnEventWithGroup(
+	group *gin.RouterGroup,
+	relativePath string,
+	configHandler ConfigHandler,
+	handlers ...gin.HandlerFunc,
+) {
 	topic := ValidTopicName(relativePath)
 	route := strings.TrimPrefix(group.BasePath(), "/") + "/" + strings.TrimPrefix(relativePath, "/")
 	subscription := &Subscription{

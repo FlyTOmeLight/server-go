@@ -31,7 +31,9 @@ func Install(engine *gin.Engine, config *conf.Config) error {
 
 	switch config.RunMode {
 	case conf.RunModeDebug, conf.RunModeTest:
-		engine.Use(middleware.Debug(config.HTTPServer.Trace.PrefixFilters, config.HTTPServer.Trace.SuffixFilters))
+		engine.Use(
+			middleware.Debug(config.HTTPServer.Trace.PrefixFilters, config.HTTPServer.Trace.SuffixFilters),
+		)
 	}
 	if config.HTTPServer.PprofEnable {
 		pprof.Register(engine, "/pprof")

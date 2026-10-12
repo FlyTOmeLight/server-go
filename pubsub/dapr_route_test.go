@@ -39,7 +39,12 @@ func TestRegistriesOwnSeparateSubscriptions(t *testing.T) {
 		subscription.Metadata = metadata
 		return subscription
 	}, func(c *gin.Context) { c.Status(http.StatusNoContent) })
-	second.OnEventWithGroup(secondEngine.Group("/v1"), "/second", nil, func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	second.OnEventWithGroup(
+		secondEngine.Group("/v1"),
+		"/second",
+		nil,
+		func(c *gin.Context) { c.Status(http.StatusNoContent) },
+	)
 	metadata[MetadataRawPayload] = "false"
 	for _, test := range []struct {
 		registry *Registry
@@ -50,7 +55,8 @@ func TestRegistriesOwnSeparateSubscriptions(t *testing.T) {
 		{registry: second, topic: "second", route: "v1/second"},
 	} {
 		subscriptions := discover(t, test.registry.Subscribe())
-		if len(subscriptions) != 1 || subscriptions[0].Topic != test.topic || subscriptions[0].Route != test.route {
+		if len(subscriptions) != 1 || subscriptions[0].Topic != test.topic ||
+			subscriptions[0].Route != test.route {
 			t.Fatalf("registry contains other service's subscriptions: %+v", subscriptions)
 		}
 		if test.registry == first && subscriptions[0].Metadata[MetadataRawPayload] != "true" {
@@ -71,7 +77,12 @@ func TestRegistryConcurrentRegistrationAndDiscovery(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			registry.OnEvent(events, fmt.Sprintf("/event/%d", i), nil, func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			registry.OnEvent(
+				events,
+				fmt.Sprintf("/event/%d", i),
+				nil,
+				func(c *gin.Context) { c.Status(http.StatusNoContent) },
+			)
 		}()
 		go func() {
 			defer wg.Done()

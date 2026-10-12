@@ -65,7 +65,12 @@ func New(ttl time.Duration) *Controller {
 // HTTP statuses >=400) are shared with current waiters but allow later retries.
 // A canceled waiter does not cancel the original operation. execute runs on the
 // caller's goroutine.
-func (c *Controller) Do(ctx context.Context, key Key, fingerprint [32]byte, execute func() (Response, error)) (Response, error) {
+func (c *Controller) Do(
+	ctx context.Context,
+	key Key,
+	fingerprint [32]byte,
+	execute func() (Response, error),
+) (Response, error) {
 	if err := ctx.Err(); err != nil {
 		return Response{}, err
 	}

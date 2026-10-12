@@ -3,6 +3,7 @@ package table
 import (
 	"context"
 	"errors"
+
 	"github.com/FlyTOmeLight/server-go/db"
 )
 

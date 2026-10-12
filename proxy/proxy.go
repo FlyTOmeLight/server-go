@@ -6,8 +6,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/gin-gonic/gin"
+
+	"github.com/FlyTOmeLight/server-go/logger"
 )
 
 func Reverse(rawURL string) gin.HandlerFunc {
@@ -59,14 +60,19 @@ func ReverseWithDirector(director func(r *http.Request)) gin.HandlerFunc {
 	return ReverseWithModifyHandler(director, nil)
 }
 
-func ReverseWithModifyHandler(director func(r *http.Request), modifyResponse func(*http.Response) error) gin.HandlerFunc {
+func ReverseWithModifyHandler(
+	director func(r *http.Request),
+	modifyResponse func(*http.Response) error,
+) gin.HandlerFunc {
 	proxy := &httputil.ReverseProxy{
 		Director:       director,
 		ModifyResponse: modifyResponse,
 		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
-			logger.FromContext(request.Context()).Errorf(request.Context(), "ProxyError req: %#v, err: %v", request, err)
+			logger.FromContext(request.Context()).
+				Errorf(request.Context(), "ProxyError req: %#v, err: %v", request, err)
 			writer.WriteHeader(http.StatusBadGateway)
-		}}
+		},
+	}
 	return ReverseWithProxy(proxy)
 }
 

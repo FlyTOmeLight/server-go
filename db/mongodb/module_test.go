@@ -12,7 +12,16 @@ func TestModuleRejectsMissingConfigAndCancelledInitialization(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	module := &Module{Config: &Config{Host: "127.0.0.1", Port: 1, User: "user", Password: "password", DB: "db", Collection: "items"}}
+	module := &Module{
+		Config: &Config{
+			Host:       "127.0.0.1",
+			Port:       1,
+			User:       "user",
+			Password:   "password",
+			DB:         "db",
+			Collection: "items",
+		},
+	}
 	if err := module.Initialize(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled initialization: %v", err)
 	}

@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	"github.com/FlyTOmeLight/server-go/cli"
-	"github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
 	"github.com/spf13/cobra"
+
+	"github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
 )
 
 type DatasetCommandBuilder struct{}

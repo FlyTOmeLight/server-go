@@ -17,14 +17,14 @@ const (
 
 type RenderType int
 
-func JSONToMap(obj interface{}) map[string]interface{} {
-	var result map[string]interface{}
+func JSONToMap(obj any) map[string]any {
+	var result map[string]any
 	_ = StructDecode(obj, &result, "json")
 	return result
 }
 
-func FormToStringMap(obj interface{}) map[string]string {
-	var result map[string]interface{}
+func FormToStringMap(obj any) map[string]string {
+	var result map[string]any
 	_ = StructDecode(obj, &result, "form")
 
 	stringMap := make(map[string]string, len(result))
@@ -42,13 +42,12 @@ func FormToStringMap(obj interface{}) map[string]string {
 			} else {
 				stringMap[k] = fmt.Sprint(v)
 			}
-
 		}
 	}
 	return stringMap
 }
 
-func StructDecode(in interface{}, out interface{}, tag string) error {
+func StructDecode(in any, out any, tag string) error {
 	cfg := mapstructure.DecoderConfig{
 		TagName: tag,
 		Result:  out,

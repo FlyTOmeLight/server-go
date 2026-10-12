@@ -31,38 +31,70 @@ func idempotenceHandler(controller *idempotence.Controller, next gin.HandlerFunc
 		mediaType, _, _ := mime.ParseMediaType(c.GetHeader(constants.HeaderContentType))
 		orgID := c.GetString(constants.KeyOrgID)
 		userID := c.GetString(constants.KeyUserID)
-		if clientToken == "" || c.Request.Method != http.MethodPost || mediaType != constants.ContentTypeJSON || orgID == "" || userID == "" {
+		if clientToken == "" || c.Request.Method != http.MethodPost || mediaType != constants.ContentTypeJSON ||
+			orgID == "" ||
+			userID == "" {
 			next(c)
 			return
 		}
 		if controller == nil {
-			errors.AbortWithError(c, errors.NewError(http.StatusServiceUnavailable, "IdempotenceUnavailable", "idempotence controller is not configured"))
+			errors.AbortWithError(
+				c,
+				errors.NewError(
+					http.StatusServiceUnavailable,
+					"IdempotenceUnavailable",
+					"idempotence controller is not configured",
+				),
+			)
 			return
 		}
 		body, err := c.GetRawData()
 		if err != nil {
-			errors.AbortWithError(c, errors.NewError(http.StatusBadRequest, "InvalidRequestBody", "cannot read request body"))
+			errors.AbortWithError(
+				c,
+				errors.NewError(
+					http.StatusBadRequest,
+					"InvalidRequestBody",
+					"cannot read request body",
+				),
+			)
 			return
 		}
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 		// Query parameters (including the token) and content type are part of
 		// the request fingerprint, while the operation key uses the actual path.
-		fingerprint := sha256.Sum256(append([]byte(c.Request.URL.RequestURI()+"\x00"+mediaType+"\x00"), body...))
-		key := idempotence.Key{OrgID: orgID, UserID: userID, Operation: c.Request.Method + " " + c.Request.URL.Path, Token: clientToken}
+		fingerprint := sha256.Sum256(
+			append([]byte(c.Request.URL.RequestURI()+"\x00"+mediaType+"\x00"), body...),
+		)
+		key := idempotence.Key{
+			OrgID:     orgID,
+			UserID:    userID,
+			Operation: c.Request.Method + " " + c.Request.URL.Path,
+			Token:     clientToken,
+		}
 		executed := false
-		response, err := controller.Do(c.Request.Context(), key, fingerprint, func() (idempotence.Response, error) {
-			executed = true
-			writer := &idempotenceWriter{ResponseWriter: c.Writer}
-			original := c.Writer
-			c.Writer = writer
-			defer func() { c.Writer = original }()
-			next(c)
-			if lastErr := c.Errors.Last(); lastErr != nil {
-				return idempotence.Response{}, lastErr.Err
-			}
-			writer.WriteHeaderNow()
-			return idempotence.Response{Status: writer.Status(), Header: writer.header, Body: writer.body.Bytes()}, nil
-		})
+		response, err := controller.Do(
+			c.Request.Context(),
+			key,
+			fingerprint,
+			func() (idempotence.Response, error) {
+				executed = true
+				writer := &idempotenceWriter{ResponseWriter: c.Writer}
+				original := c.Writer
+				c.Writer = writer
+				defer func() { c.Writer = original }()
+				next(c)
+				if lastErr := c.Errors.Last(); lastErr != nil {
+					return idempotence.Response{}, lastErr.Err
+				}
+				writer.WriteHeaderNow()
+				return idempotence.Response{
+					Status: writer.Status(),
+					Header: writer.header,
+					Body:   writer.body.Bytes(),
+				}, nil
+			},
+		)
 		if err != nil {
 			if executed {
 				// The original request keeps its error for the outer renderer.
@@ -70,11 +102,32 @@ func idempotenceHandler(controller *idempotence.Controller, next gin.HandlerFunc
 			}
 			switch {
 			case stderr.Is(err, idempotence.ErrConflict):
-				errors.AbortWithError(c, errors.NewError(http.StatusConflict, "IdempotentParameterMismatch", err.Error()))
+				errors.AbortWithError(
+					c,
+					errors.NewError(
+						http.StatusConflict,
+						"IdempotentParameterMismatch",
+						err.Error(),
+					),
+				)
 			case stderr.Is(err, context.Canceled), stderr.Is(err, context.DeadlineExceeded):
-				errors.AbortWithError(c, errors.NewError(http.StatusRequestTimeout, "IdempotenceWaitCanceled", err.Error()))
+				errors.AbortWithError(
+					c,
+					errors.NewError(
+						http.StatusRequestTimeout,
+						"IdempotenceWaitCanceled",
+						err.Error(),
+					),
+				)
 			case stderr.Is(err, idempotence.ErrClosed), stderr.Is(err, idempotence.ErrExecutionFailed):
-				errors.AbortWithError(c, errors.NewError(http.StatusServiceUnavailable, "IdempotenceUnavailable", err.Error()))
+				errors.AbortWithError(
+					c,
+					errors.NewError(
+						http.StatusServiceUnavailable,
+						"IdempotenceUnavailable",
+						err.Error(),
+					),
+				)
 			default:
 				errors.AbortWithError(c, err)
 			}

@@ -9,12 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/FlyTOmeLight/server-go/errors"
-	"github.com/FlyTOmeLight/server-go/logger"
-	"github.com/FlyTOmeLight/server-go/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
+
+	"github.com/FlyTOmeLight/server-go/errors"
+	"github.com/FlyTOmeLight/server-go/logger"
+	"github.com/FlyTOmeLight/server-go/version"
 )
 
 const parameterSplitSet = "."
@@ -169,7 +170,8 @@ func NewApplyCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringArrayVarP(&filenames, "filename", "f", []string{}, "that contains the configuration to apply")
-	cmd.Flags().StringVarP(&directory, "directory", "d", "", "Process a directory. This flag can't be used together with -f")
+	cmd.Flags().
+		StringVarP(&directory, "directory", "d", "", "Process a directory. This flag can't be used together with -f")
 	return cmd
 }
 
@@ -194,7 +196,14 @@ func apply(filename string) error {
 		}
 		if err != nil {
 			logger.Errorf(context.TODO(), "decode yaml error: %v \n", err)
-			errs = append(errs, errors.NewError(http.StatusInternalServerError, "InvalidYaml", fmt.Sprintf("decode yaml error: %v", err)))
+			errs = append(
+				errs,
+				errors.NewError(
+					http.StatusInternalServerError,
+					"InvalidYaml",
+					fmt.Sprintf("decode yaml error: %v", err),
+				),
+			)
 			break
 		}
 
@@ -262,7 +271,8 @@ func walkDir(directory string) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && (strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml")) {
+		if !info.IsDir() &&
+			(strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml")) {
 			err = apply(path)
 			if err != nil {
 				return err

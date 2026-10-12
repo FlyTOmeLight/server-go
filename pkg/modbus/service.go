@@ -216,7 +216,11 @@ func (svc *DefaultModbusService) readFrame(ctx context.Context, frame *mbserver.
 }
 
 // 读取数据，并根据数据类型写入寄存器
-func (svc *DefaultModbusService) readDBData(ctx context.Context, slaveID uint8, regAddr int) ([]byte, int, mbserver.Exception) {
+func (svc *DefaultModbusService) readDBData(
+	ctx context.Context,
+	slaveID uint8,
+	regAddr int,
+) ([]byte, int, mbserver.Exception) {
 	regValue, err := svc.api.GetRegister(ctx, slaveID, regAddr)
 	bytes := make([]byte, 8)
 	if err != nil {

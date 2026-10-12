@@ -17,10 +17,14 @@ func TestImportDoesNotConfigureLogging(t *testing.T) {
 		return
 	}
 	cwd := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cwd, "conf", "logger"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(cwd, "conf", "logger"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cwd, "conf", "logger", "http.toml"), []byte("not a valid logging config"), 0600); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(cwd, "conf", "logger", "http.toml"),
+		[]byte("not a valid logging config"),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 	binary, err := filepath.Abs(os.Args[0])
@@ -32,7 +36,8 @@ func TestImportDoesNotConfigureLogging(t *testing.T) {
 	cmd := exec.CommandContext(ctx, binary, "-test.run=^TestImportDoesNotConfigureLogging$")
 	cmd.Dir = cwd
 	for _, value := range os.Environ() {
-		if !strings.HasPrefix(value, "CONSOLE_LOG_LEVEL=") && !strings.HasPrefix(value, "SERVER_GO_IMPORT_PROBE=") {
+		if !strings.HasPrefix(value, "CONSOLE_LOG_LEVEL=") &&
+			!strings.HasPrefix(value, "SERVER_GO_IMPORT_PROBE=") {
 			cmd.Env = append(cmd.Env, value)
 		}
 	}

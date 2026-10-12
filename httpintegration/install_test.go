@@ -30,7 +30,7 @@ func TestInstallLeavesDisabledFeaturesAndDaprUnregistered(t *testing.T) {
 
 func TestInstallEnablesConfiguredRoutesAndProtectsAssets(t *testing.T) {
 	assets := t.TempDir()
-	if err := os.WriteFile(filepath.Join(assets, "file.txt"), []byte("asset"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(assets, "file.txt"), []byte("asset"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	engine := gin.New()

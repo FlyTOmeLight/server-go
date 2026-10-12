@@ -52,7 +52,11 @@ func GetLocalIP(preferNIC string) string {
 			}
 		}
 	}
-	logger.Warnf(context.Background(), "get ip of %s failed, will use first non loopback ip address", preferNICPattern.String())
+	logger.Warnf(
+		context.Background(),
+		"get ip of %s failed, will use first non loopback ip address",
+		preferNICPattern.String(),
+	)
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		logger.Warnf(context.Background(), "get ip failed, err %v", err)

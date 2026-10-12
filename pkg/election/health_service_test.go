@@ -8,14 +8,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/FlyTOmeLight/server-go/conf"
 	serrors "github.com/FlyTOmeLight/server-go/errors"
-	"github.com/gin-gonic/gin"
 )
 
 type standbyElection struct{ *DummyAppElection }
 
-func (standbyElection) IsLeader() bool    { return false }
+func (standbyElection) IsLeader() bool { return false }
+
 func (standbyElection) GetLeader() string { return "another-instance" }
 
 func TestLeaderHealthRoutesCanBeRegisteredOnFreshRouters(t *testing.T) {
@@ -36,7 +38,10 @@ func TestLeaderHealthRoutesCanBeRegisteredOnFreshRouters(t *testing.T) {
 					t.Fatal(err)
 				}
 				writer := httptest.NewRecorder()
-				engine.ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/v1/election/isleader", nil))
+				engine.ServeHTTP(
+					writer,
+					httptest.NewRequest(http.MethodGet, "/v1/election/isleader", nil),
+				)
 				if writer.Code != test.status {
 					t.Fatalf("status=%d body=%s", writer.Code, writer.Body.String())
 				}

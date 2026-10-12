@@ -2,13 +2,14 @@ package dataset
 
 import (
 	"context"
-	"github.com/jinzhu/copier"
 
 	"github.com/FlyTOmeLight/server-go/errors"
-	"github.com/FlyTOmeLight/server-go/examples/example-service1/internal/table"
-	sdk "github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
 	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
+	"github.com/jinzhu/copier"
+
+	"github.com/FlyTOmeLight/server-go/examples/example-service1/internal/table"
+	sdk "github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
 )
 
 type Service struct{ store *table.Store }

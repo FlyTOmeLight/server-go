@@ -24,7 +24,7 @@ const (
 
 type RenderType = string
 
-func FormattedPrint(obj interface{}, renderType RenderType) {
+func FormattedPrint(obj any, renderType RenderType) {
 	switch renderType {
 	case RenderTypeJSON:
 		PrintJSON(obj)
@@ -43,53 +43,53 @@ func FormattedPrint(obj interface{}, renderType RenderType) {
 	}
 }
 
-func PrintJSON(obj interface{}) {
+func PrintJSON(obj any) {
 	out := formattedToJSON(obj)
 	fmt.Println(out)
 }
 
-func PrintYAML(obj interface{}) {
+func PrintYAML(obj any) {
 	out := formattedToYAML(obj)
 	fmt.Println(out)
 }
 
-func PrintTable(obj interface{}) {
+func PrintTable(obj any) {
 	t := formattedToTable(obj)
 	t.Render()
 	fmt.Println()
 }
 
-func PrintCSV(obj interface{}) {
+func PrintCSV(obj any) {
 	t := formattedToTable(obj)
 	t.RenderCSV()
 	fmt.Println()
 }
 
-func PrintHTML(obj interface{}) {
+func PrintHTML(obj any) {
 	t := formattedToTable(obj)
 	t.RenderHTML()
 	fmt.Println()
 }
 
-func PrintMarkdown(obj interface{}) {
+func PrintMarkdown(obj any) {
 	t := formattedToTable(obj)
 	t.RenderMarkdown()
 	fmt.Println()
 }
 
-func formattedToJSON(obj interface{}) string {
+func formattedToJSON(obj any) string {
 	bs, _ := json.Marshal(obj)
 	var out bytes.Buffer
 	_ = json.Indent(&out, bs, "", "\t")
 	return out.String()
 }
 
-func formattedToYAML(obj interface{}) string {
+func formattedToYAML(obj any) string {
 	out, _ := yaml.Marshal(obj)
 	return string(out)
 }
 
-func formattedToTable(obj interface{}) table.Writer {
+func formattedToTable(obj any) table.Writer {
 	t := table.NewWriter()
 	t.SetStyle(table.StyleRounded)
 	t.SetOutputMirror(os.Stdout)
@@ -116,7 +116,7 @@ func formattedToTable(obj interface{}) table.Writer {
 	return t
 }
 
-func row(m map[string]interface{}) ([]interface{}, []interface{}) {
+func row(m map[string]any) ([]any, []any) {
 	var keys []string
 	for k := range m {
 		keys = append(keys, k)

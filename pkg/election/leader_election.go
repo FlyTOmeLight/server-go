@@ -7,14 +7,19 @@ import "context"
 type LeaderElection interface {
 	// 添加成为leader的回调
 	WithStartedLeadingCallback(cb func(context.Context)) LeaderElection
+
 	// 添加时区leader的回调
 	WithStoppedLeadingCallback(cb func()) LeaderElection
+
 	// 添加leader变化的回调
 	WithNewLeaderCallback(cb func(string)) LeaderElection
+
 	// 获取当前Leader
 	GetLeader() string
+
 	// 判断自己是否是leader
 	IsLeader() bool
+
 	// 注册一个函数，当成为leader的时候执行，当失去leader的时候取消
 	// 注意：
 	// 1. 函数中需要监听context.Done()，当为true的时候，说明已经失去leader了
@@ -24,6 +29,7 @@ type LeaderElection interface {
 
 	// 开始选举，同步运行，会阻塞程序，在失去leader的时候会继续尝试竞选成为leader
 	Run(ctx context.Context)
+
 	// 开始选举，异步运行，不会阻塞程序，在失去leader的时候会继续尝试竞选成为leader
 	RunAsync(ctx context.Context)
 }

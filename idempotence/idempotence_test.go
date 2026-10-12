@@ -23,7 +23,11 @@ func TestDoConcurrentReplayAndConflict(t *testing.T) {
 		executions.Add(1)
 		close(entered)
 		<-release
-		return Response{Status: http.StatusCreated, Header: http.Header{"Location": {"/item/1"}}, Body: []byte("created")}, nil
+		return Response{
+			Status: http.StatusCreated,
+			Header: http.Header{"Location": {"/item/1"}},
+			Body:   []byte("created"),
+		}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -33,7 +37,9 @@ func TestDoConcurrentReplayAndConflict(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			response, err := controller.Do(ctx, key, fingerprint, execute)
-			if err != nil || response.Status != http.StatusCreated || response.Header.Get("Location") != "/item/1" || string(response.Body) != "created" {
+			if err != nil || response.Status != http.StatusCreated ||
+				response.Header.Get("Location") != "/item/1" ||
+				string(response.Body) != "created" {
 				t.Errorf("unexpected replay: %+v, %v", response, err)
 			}
 		}()
@@ -163,7 +169,12 @@ func TestPanickingOperationDoesNotStrandOrRepeat(t *testing.T) {
 				t.Error("expected execute panic to propagate")
 			}
 		}()
-		_, _ = controller.Do(context.Background(), key, fingerprint, func() (Response, error) { panic("unknown effect") })
+		_, _ = controller.Do(
+			context.Background(),
+			key,
+			fingerprint,
+			func() (Response, error) { panic("unknown effect") },
+		)
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

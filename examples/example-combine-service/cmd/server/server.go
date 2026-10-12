@@ -4,6 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	server "github.com/FlyTOmeLight/server-go"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/db"
@@ -13,10 +18,6 @@ import (
 	"github.com/FlyTOmeLight/server-go/host"
 	"github.com/FlyTOmeLight/server-go/httpintegration"
 	"github.com/FlyTOmeLight/server-go/logger"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 func run() (result error) {
@@ -64,6 +65,7 @@ func run() (result error) {
 	}
 	return h.Run(ctx)
 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

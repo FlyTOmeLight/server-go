@@ -9,7 +9,7 @@ import (
 )
 
 type HTTPBinder struct {
-	req     interface{}
+	req     any
 	context *gin.Context
 	errs    []error
 }
@@ -83,7 +83,7 @@ func (b *HTTPBinder) JSON() *HTTPBinder {
 	return b
 }
 
-func Bind(c *gin.Context, req interface{}) *HTTPBinder {
+func Bind(c *gin.Context, req any) *HTTPBinder {
 	return &HTTPBinder{
 		context: c,
 		req:     req,

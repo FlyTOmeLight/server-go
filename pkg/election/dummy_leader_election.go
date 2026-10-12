@@ -11,6 +11,7 @@ import (
 type DummyAppElection struct {
 	// 当前节点ID
 	ID string
+
 	// 要执行的函数
 	leaderTasks []func(context.Context)
 }

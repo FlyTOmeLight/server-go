@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/gookit/goutil/arrutil"
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
 	serrors "github.com/FlyTOmeLight/server-go/errors"
+	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
@@ -90,9 +90,11 @@ func NewConsoleProxy(config *conf.HTTPServerConfig, appCode int) *httputil.Rever
 			IdleConnTimeout:       time.Millisecond * time.Duration(config.IdleTimeout),  // 空闲连接超时
 		},
 		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
-			logger.FromContext(request.Context()).Errorf(request.Context(), "ProxyError req: %#v, err: %v", request, err)
+			logger.FromContext(request.Context()).
+				Errorf(request.Context(), "ProxyError req: %#v, err: %v", request, err)
 			writer.WriteHeader(http.StatusBadGateway)
-		}}
+		},
+	}
 }
 
 func modifyRequest(r *http.Request, listen string) {
@@ -116,11 +118,18 @@ func modifyRequest(r *http.Request, listen string) {
 }
 
 func modifyResponse(resp *http.Response, appCode int) error {
-	logger.FromContext(resp.Request.Context()).Debugf(resp.Request.Context(), "ProxyModifiedResponse url: %s", resp.Request.URL)
-	ignoredContentType := []string{"application/zip", "application/pdf", "application/octet-stream", "text/event-stream"}
+	logger.FromContext(resp.Request.Context()).
+		Debugf(resp.Request.Context(), "ProxyModifiedResponse url: %s", resp.Request.URL)
+	ignoredContentType := []string{
+		"application/zip",
+		"application/pdf",
+		"application/octet-stream",
+		"text/event-stream",
+	}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if arrutil.Contains(ignoredContentType, contentType) {
-		logger.FromContext(resp.Request.Context()).Debugf(resp.Request.Context(), "ProxyModifiedResponse ignored content type %s", contentType)
+		logger.FromContext(resp.Request.Context()).
+			Debugf(resp.Request.Context(), "ProxyModifiedResponse ignored content type %s", contentType)
 		return nil
 	}
 

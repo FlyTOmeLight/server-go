@@ -1,11 +1,11 @@
 package auth
 
 import (
-	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/gin-gonic/gin"
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 func Use(engine *core.Engine, config *conf.Config) {

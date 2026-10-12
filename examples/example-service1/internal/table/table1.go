@@ -2,6 +2,7 @@ package table
 
 import (
 	"context"
+
 	"github.com/FlyTOmeLight/server-go/db"
 	"github.com/FlyTOmeLight/server-go/sdk"
 	"gorm.io/plugin/soft_delete"
@@ -35,6 +36,7 @@ func (t *DatasetData) TableName() string {
 type Store struct{ database *db.DB }
 
 func New(database *db.DB) *Store { return &Store{database: database} }
+
 func (s *Store) AutoMigrate(ctx context.Context) error {
 	return s.database.WithContext(ctx).AutoMigrate(&DatasetData{})
 }
@@ -58,7 +60,11 @@ func (s *Store) GetDataset(ctx context.Context, name string) (*DatasetData, erro
 	return &t, nil
 }
 
-func (s *Store) ListDataset(ctx context.Context, filters DatasetFilter, paging sdk.PagingRequest) ([]*DatasetData, error) {
+func (s *Store) ListDataset(
+	ctx context.Context,
+	filters DatasetFilter,
+	paging sdk.PagingRequest,
+) ([]*DatasetData, error) {
 	sql := s.database.WithContext(ctx).
 		Where(filters).
 		Offset(paging.Offset()).

@@ -27,7 +27,11 @@ func TestStartReturnsBindFailure(t *testing.T) {
 	defer reserved.Close()
 	host, portString, _ := net.SplitHostPort(reserved.Addr().String())
 	port, _ := strconv.Atoi(portString)
-	service := NewDefaultModbusService(host, port, registerFunc(func(context.Context, uint8, int) (any, error) { return uint16(42), nil }))
+	service := NewDefaultModbusService(
+		host,
+		port,
+		registerFunc(func(context.Context, uint8, int) (any, error) { return uint16(42), nil }),
+	)
 	if err := service.Start(context.Background()); err == nil {
 		t.Fatal("expected a bind error")
 	}
@@ -42,12 +46,20 @@ func TestStartReturnsBindFailure(t *testing.T) {
 func TestServiceHandlesFragmentedTCPFramesAndStopsConnections(t *testing.T) {
 	type contextKey struct{}
 	ctx := context.WithValue(context.Background(), contextKey{}, "inherited")
-	service := NewDefaultModbusService("127.0.0.1", 0, registerFunc(func(ctx context.Context, slaveID uint8, register int) (any, error) {
-		if ctx.Value(contextKey{}) != "inherited" || slaveID != 1 || register != 10 {
-			t.Errorf("register request lost context or addressing: slave=%d register=%d", slaveID, register)
-		}
-		return uint16(42), nil
-	}))
+	service := NewDefaultModbusService(
+		"127.0.0.1",
+		0,
+		registerFunc(func(ctx context.Context, slaveID uint8, register int) (any, error) {
+			if ctx.Value(contextKey{}) != "inherited" || slaveID != 1 || register != 10 {
+				t.Errorf(
+					"register request lost context or addressing: slave=%d register=%d",
+					slaveID,
+					register,
+				)
+			}
+			return uint16(42), nil
+		}),
+	)
 	if err := service.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -93,14 +105,18 @@ func TestServiceHandlesFragmentedTCPFramesAndStopsConnections(t *testing.T) {
 
 func TestStopCancelsRegisterAPIAndRetainsCompletionAfterTimeout(t *testing.T) {
 	started, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	service := NewDefaultModbusService("127.0.0.1", 0, registerFunc(func(ctx context.Context, _ uint8, _ int) (any, error) {
-		close(started)
-		<-ctx.Done()
-		close(canceled)
-		// Simulate cleanup that outlives the caller's first Stop deadline.
-		<-release
-		return nil, ctx.Err()
-	}))
+	service := NewDefaultModbusService(
+		"127.0.0.1",
+		0,
+		registerFunc(func(ctx context.Context, _ uint8, _ int) (any, error) {
+			close(started)
+			<-ctx.Done()
+			close(canceled)
+			// Simulate cleanup that outlives the caller's first Stop deadline.
+			<-release
+			return nil, ctx.Err()
+		}),
+	)
 	if err := service.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +160,11 @@ func TestStopCancelsRegisterAPIAndRetainsCompletionAfterTimeout(t *testing.T) {
 }
 
 func TestRegisterReadValidationAndBoolEncoding(t *testing.T) {
-	service := NewDefaultModbusService("127.0.0.1", 0, registerFunc(func(context.Context, uint8, int) (any, error) { return true, nil }))
+	service := NewDefaultModbusService(
+		"127.0.0.1",
+		0,
+		registerFunc(func(context.Context, uint8, int) (any, error) { return true, nil }),
+	)
 	if err := service.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}

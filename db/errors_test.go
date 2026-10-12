@@ -2,12 +2,14 @@ package db_test
 
 import (
 	"errors"
-	"github.com/FlyTOmeLight/server-go/db"
-	serrors "github.com/FlyTOmeLight/server-go/errors"
+	"testing"
+
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
-	"testing"
+
+	"github.com/FlyTOmeLight/server-go/db"
+	serrors "github.com/FlyTOmeLight/server-go/errors"
 )
 
 func TestNewDBError(t *testing.T) {

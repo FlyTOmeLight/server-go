@@ -1,8 +1,9 @@
 package middleware
 
 import (
-	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/gin-gonic/gin"
+
+	"github.com/FlyTOmeLight/server-go/errors"
 )
 
 func APINotFound() gin.HandlerFunc {

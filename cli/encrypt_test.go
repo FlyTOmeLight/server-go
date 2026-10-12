@@ -3,9 +3,9 @@ package cli
 import (
 	"testing"
 
-	"github.com/FlyTOmeLight/server-go/conf"
-
 	"github.com/stretchr/testify/assert"
+
+	"github.com/FlyTOmeLight/server-go/conf"
 )
 
 func TestEncryptCommand(t *testing.T) {

@@ -17,7 +17,7 @@ func (s *String) String() string {
 }
 
 // LoadFn Caller should guarantee the uniqueness of the key
-type LoadFn func(key fmt.Stringer) (interface{}, error)
+type LoadFn func(key fmt.Stringer) (any, error)
 
 type Cache struct {
 	*cache.Cache
@@ -28,7 +28,7 @@ func NewCache(defaultExpiration, cleanupInterval time.Duration, loadFn LoadFn) *
 	return &Cache{Cache: cache.New(defaultExpiration, cleanupInterval), load: loadFn}
 }
 
-func (c *Cache) Lookup(key fmt.Stringer) (interface{}, error) {
+func (c *Cache) Lookup(key fmt.Stringer) (any, error) {
 	internalKey := key.String()
 	if value, exist := c.Get(internalKey); exist {
 		return value, nil

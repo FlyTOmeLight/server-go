@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -16,6 +15,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+
+	"github.com/FlyTOmeLight/server-go/logger"
 )
 
 // 基于k8s实现的选举
@@ -23,23 +24,31 @@ type K8sLeaderElection struct {
 	/**********  配置参数  ***************/
 	// 选举使用的锁所在的namespace
 	namespace string
+
 	// 当前节点的id
 	id string
+
 	// app名称，将用于选举的锁的名称，跨应用不可重复
 	appName string
+
 	// kubeconfig的文件路径, 默认使用inClusterConfig
 	kubeConfigFilePath string
+
 	// leader超时时间, 默认30s， renewDeadline被设置成了与leaseDuration相同
 	leaseDuration time.Duration
+
 	/************************************/
 
 	/**********  回调函数  ****************/
 	// 成为leader之后的回调
 	startLeaderCallback func(context.Context)
+
 	// 失去leader之后的回调
 	stopLeaderCallback func()
+
 	// leader切换时的回调
 	leaderChangeCallback func(string)
+
 	/******************/
 
 	leaderElector *leaderelection.LeaderElector
@@ -47,6 +56,7 @@ type K8sLeaderElection struct {
 
 	// 在leader上运行的任务列表
 	leaderTasks []func(context.Context)
+
 	// 选举已经启动
 	started atomic.Bool
 }
@@ -109,7 +119,6 @@ func (e *K8sLeaderElection) createClient() {
 		if err != nil {
 			panic(err)
 		}
-
 	}
 	e.client, err = clientset.NewForConfig(cfg)
 	if err != nil {
@@ -240,7 +249,6 @@ func (e *K8sLeaderElection) Run(ctx context.Context) {
 			continue
 		}
 	}
-
 }
 
 // 设置kubeconfig文件路径, 默认使用inClusterConfig

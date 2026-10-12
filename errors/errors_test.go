@@ -71,7 +71,14 @@ func TestIsStatusCode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, IsStatusCode(tt.args.err, tt.args.targetCode), "IsStatusCode(%v, %v)", tt.args.err, tt.args.targetCode)
+			assert.Equalf(
+				t,
+				tt.want,
+				IsStatusCode(tt.args.err, tt.args.targetCode),
+				"IsStatusCode(%v, %v)",
+				tt.args.err,
+				tt.args.targetCode,
+			)
 		})
 	}
 }

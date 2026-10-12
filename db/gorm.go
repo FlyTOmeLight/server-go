@@ -178,7 +178,6 @@ func newGaussDB(config *Config) (*DB, error) {
 }
 
 func newKingbase(config *Config) (*gorm.DB, error) {
-
 	formatter := "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
 	if config.DSNParams != "" {
 		formatter += " " + config.DSNParams

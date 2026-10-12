@@ -48,7 +48,10 @@ func TestIdempotenceAuthorizationAndIdentityScopes(t *testing.T) {
 	}
 	handler := func(c *gin.Context) {
 		executions++
-		c.JSON(http.StatusCreated, gin.H{"org": c.GetString(constants.KeyOrgID), "owner": c.GetString(constants.KeyUserID)})
+		c.JSON(
+			http.StatusCreated,
+			gin.H{"org": c.GetString(constants.KeyOrgID), "owner": c.GetString(constants.KeyUserID)},
+		)
 	}
 	engine.POST("/create", authorize, Idempotent(controller, handler))
 	engine.POST("/another", authorize, Idempotent(controller, handler))
@@ -114,11 +117,17 @@ func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 			engine := gin.New()
 			engine.Use(identityMiddleware, gin.Recovery(), errors.ErrorHandler(nil))
 			executions := 0
-			engine.POST("/create", Idempotent(controller, func(c *gin.Context) { executions++; tc.handler(c) }))
+			engine.POST(
+				"/create",
+				Idempotent(controller, func(c *gin.Context) { executions++; tc.handler(c) }),
+			)
 			var original *httptest.ResponseRecorder
 			for range 2 {
 				w := httptest.NewRecorder()
-				engine.ServeHTTP(w, idempotentRequest("/create?clientToken=token", "org", "alice", `{}`))
+				engine.ServeHTTP(
+					w,
+					idempotentRequest("/create?clientToken=token", "org", "alice", `{}`),
+				)
 				if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.body) {
 					t.Fatalf("unexpected response: %d %s", w.Code, w.Body.String())
 				}
@@ -126,7 +135,16 @@ func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 					original = w
 					continue
 				}
-				if w.Body.String() != original.Body.String() || w.Header().Get("Content-Type") != original.Header().Get("Content-Type") || w.Header().Get("Location") != original.Header().Get("Location") || strings.Join(w.Header().Values("Set-Cookie"), ";") != strings.Join(original.Header().Values("Set-Cookie"), ";") {
+				if w.Body.String() != original.Body.String() ||
+					w.Header().Get("Content-Type") != original.Header().Get("Content-Type") ||
+					w.Header().Get("Location") != original.Header().Get("Location") ||
+					strings.Join(
+						w.Header().Values("Set-Cookie"),
+						";",
+					) != strings.Join(
+						original.Header().Values("Set-Cookie"),
+						";",
+					) {
 					t.Fatalf("incomplete replay: headers=%v body=%s", w.Header(), w.Body.String())
 				}
 			}
@@ -195,7 +213,8 @@ func TestIdempotenceConcurrentWaitCancellation(t *testing.T) {
 type failedBody struct{}
 
 func (failedBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
-func (failedBody) Close() error             { return nil }
+
+func (failedBody) Close() error { return nil }
 
 func TestIdempotenceBodyReadFailureDoesNotExecute(t *testing.T) {
 	controller := idempotence.New(time.Minute)

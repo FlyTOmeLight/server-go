@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/logger"
-	"github.com/gin-gonic/gin"
 )
 
 type testService struct {
@@ -28,7 +29,9 @@ func (s *testService) RegisterRoutes(router *gin.RouterGroup) error {
 	router.GET("/business", s.handle)
 	return nil
 }
+
 func (s *testService) Start(context.Context) error { s.starts.Add(1); return nil }
+
 func (s *testService) Stop(ctx context.Context) error {
 	s.stops.Add(1)
 	if s.stop != nil {
@@ -42,9 +45,15 @@ func newTestHost(t *testing.T, service Service) (*HTTPHost, *conf.Manager) {
 	return newTestHostWithHTTPConfig(t, service, conf.HTTPServerConfig{})
 }
 
-func newTestHostWithHTTPConfig(t *testing.T, service Service, httpConfig conf.HTTPServerConfig) (*HTTPHost, *conf.Manager) {
+func newTestHostWithHTTPConfig(
+	t *testing.T,
+	service Service,
+	httpConfig conf.HTTPServerConfig,
+) (*HTTPHost, *conf.Manager) {
 	t.Helper()
-	manager, err := conf.NewManagerFromConfig(&conf.Config{AppName: "test", AppCode: 100, RunMode: conf.RunModeRelease, HTTPServer: httpConfig})
+	manager, err := conf.NewManagerFromConfig(
+		&conf.Config{AppName: "test", AppCode: 100, RunMode: conf.RunModeRelease, HTTPServer: httpConfig},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +73,7 @@ func newTestHostWithHTTPConfig(t *testing.T, service Service, httpConfig conf.HT
 	})
 	return h, manager
 }
+
 func startTestHost(t *testing.T, h *HTTPHost) (context.CancelFunc, <-chan error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,6 +91,7 @@ func startTestHost(t *testing.T, h *HTTPHost) (context.CancelFunc, <-chan error)
 		time.Sleep(time.Millisecond)
 	}
 }
+
 func waitStopped(t *testing.T, done <-chan error) {
 	t.Helper()
 	select {
@@ -204,7 +215,9 @@ func TestHostInstancesAndConstructorSocket(t *testing.T) {
 }
 
 func TestConstructionDoesNotMissReplacement(t *testing.T) {
-	manager, err := conf.NewManagerFromConfig(&conf.Config{AppName: "test", AppCode: 100, RunMode: conf.RunModeRelease})
+	manager, err := conf.NewManagerFromConfig(
+		&conf.Config{AppName: "test", AppCode: 100, RunMode: conf.RunModeRelease},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +241,12 @@ func TestConstructionDoesNotMissReplacement(t *testing.T) {
 	}
 	constructed := make(chan result, 1)
 	go func() {
-		h, err := NewHTTPHost(manager, log, setup, &testService{handle: func(c *gin.Context) { c.String(200, "ok") }})
+		h, err := NewHTTPHost(
+			manager,
+			log,
+			setup,
+			&testService{handle: func(c *gin.Context) { c.String(200, "ok") }},
+		)
 		constructed <- result{h, err}
 	}()
 	select {

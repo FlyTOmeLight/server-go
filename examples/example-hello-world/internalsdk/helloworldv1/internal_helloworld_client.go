@@ -3,10 +3,9 @@ package helloworldv1
 import (
 	"errors"
 
-	"resty.dev/v3"
-
 	"github.com/FlyTOmeLight/server-go/internalsdk"
 	core "github.com/FlyTOmeLight/server-go/pkg"
+	"resty.dev/v3"
 
 	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/sdk/go/helloworldv1"
 )

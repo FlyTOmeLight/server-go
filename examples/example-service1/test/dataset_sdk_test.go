@@ -1,10 +1,12 @@
 package test
 
 import (
-	"github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
+	"testing"
+
 	"github.com/FlyTOmeLight/server-go/sdk"
 	"github.com/stretchr/testify/assert"
-	"testing"
+
+	"github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
 )
 
 func TestDataset(t *testing.T) {

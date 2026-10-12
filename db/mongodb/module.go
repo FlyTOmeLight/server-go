@@ -23,7 +23,10 @@ func (m *Module) Initialize(ctx context.Context) error {
 	if m.Config.InternalQueryExecMaxBlockingSortBytes > 0 {
 		err := client.Database("admin").RunCommand(ctx, bson.D{
 			{Key: "setParameter", Value: 1},
-			{Key: "internalQueryExecMaxBlockingSortBytes", Value: m.Config.InternalQueryExecMaxBlockingSortBytes},
+			{
+				Key:   "internalQueryExecMaxBlockingSortBytes",
+				Value: m.Config.InternalQueryExecMaxBlockingSortBytes,
+			},
 		}).Err()
 		if err != nil {
 			return errors.Join(err, client.Disconnect(ctx))

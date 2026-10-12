@@ -13,7 +13,14 @@ func TestFileLogging(t *testing.T) {
 	for _, rotation := range []bool{false, true} {
 		t.Run(map[bool]string{false: "plain", true: "rotating"}[rotation], func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "nested", "app.log")
-			l, err := NewLogger(&Config{Level: "Info", Outputs: []Output{{Type: "File", Level: "Warn", Path: path, Rotation: rotation}}})
+			l, err := NewLogger(
+				&Config{
+					Level: "Info",
+					Outputs: []Output{
+						{Type: "File", Level: "Warn", Path: path, Rotation: rotation},
+					},
+				},
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -46,7 +53,11 @@ func TestInvalidConfig(t *testing.T) {
 
 func TestParseConfigFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "logger.toml")
-	if err := os.WriteFile(path, []byte("Level = 'Warn'\n[[Outputs]]\ntype = 'Console'\nlevel = 'Error'\n"), 0600); err != nil {
+	if err := os.WriteFile(
+		path,
+		[]byte("Level = 'Warn'\n[[Outputs]]\ntype = 'Console'\nlevel = 'Error'\n"),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 	config, err := ParseConfigFile(path)

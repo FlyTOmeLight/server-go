@@ -19,7 +19,7 @@ func (m StringMap) Value() (driver.Value, error) {
 }
 
 // Scan scan value into map
-func (m *StringMap) Scan(value interface{}) error {
+func (m *StringMap) Scan(value any) error {
 	if value == nil {
 		return nil
 	}
