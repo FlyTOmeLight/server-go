@@ -1,0 +1,4 @@
+core:
+  access_key: test-ak
+  secret_key: test-sk
+  endpoint: http://127.0.0.1:8030

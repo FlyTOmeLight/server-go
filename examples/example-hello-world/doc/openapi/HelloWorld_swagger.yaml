@@ -1,0 +1,348 @@
+basePath: /helloworld/internal
+definitions:
+  helloworldv1.CreateModuleRequest:
+    properties:
+      description:
+        description: 描述
+        maxLength: 200
+        type: string
+      name:
+        description: 名称
+        example: name-1
+        maxLength: 32
+        type: string
+      projectID:
+        description: 项目ID
+        example: project1
+        maxLength: 20
+        type: string
+    required:
+    - name
+    - projectID
+    type: object
+  helloworldv1.CreateModuleResponse:
+    properties:
+      createdAt:
+        description: 创建时间
+        type: string
+      description:
+        description: 描述
+        example: this is a description
+        type: string
+      id:
+        description: ID,唯一标识
+        example: id1
+        type: string
+      name:
+        description: 名称
+        example: name-1
+        type: string
+      projectID:
+        description: 项目ID
+        example: project1
+        type: string
+      updatedAt:
+        description: 更新时间
+        type: string
+      userID:
+        description: 用户ID
+        example: user1
+        type: string
+    type: object
+  helloworldv1.DeleteModuleRequest:
+    properties:
+      id:
+        example: id1
+        maxLength: 20
+        type: string
+    required:
+    - id
+    type: object
+  helloworldv1.GetModuleRequest:
+    properties:
+      id:
+        example: id1
+        maxLength: 20
+        type: string
+    required:
+    - id
+    type: object
+  helloworldv1.GetModuleResponse:
+    properties:
+      createdAt:
+        description: 创建时间
+        type: string
+      description:
+        description: 描述
+        example: this is a description
+        type: string
+      id:
+        description: ID,唯一标识
+        example: id1
+        type: string
+      name:
+        description: 名称
+        example: name-1
+        type: string
+      projectID:
+        description: 项目ID
+        example: project1
+        type: string
+      updatedAt:
+        description: 更新时间
+        type: string
+      userID:
+        description: 用户ID
+        example: user1
+        type: string
+    type: object
+  helloworldv1.ListModuleRequest:
+    properties:
+      filter:
+        description: 搜索内容
+        example: name-1
+        maxLength: 100
+        type: string
+      order:
+        description: |-
+          排序规则: asc: 升序, desc: 倒序, 默认倒序
+
+          Example: desc
+        enum:
+        - asc
+        - desc
+        type: string
+      orderBy:
+        description: |-
+          排序依据
+
+          Example: name
+        type: string
+      orders:
+        description: |-
+          mongo 排序规则
+
+          Example: []string{ "{order: desc}", "{id:asc}" }
+        example:
+        - '[{create_ad:desc}'
+        - '{id:asc}]'
+        items:
+          type: string
+        type: array
+      pageNo:
+        description: |-
+          页码
+
+          Example: 1
+        type: integer
+      pageSize:
+        description: |-
+          每页的大小
+
+          Example: 10
+        maximum: 200
+        type: integer
+      projectID:
+        description: 项目ID
+        example: project1
+        maxLength: 20
+        type: string
+    type: object
+  helloworldv1.ListModuleResponse:
+    properties:
+      result:
+        description: 当前页结果
+        items:
+          $ref: '#/definitions/helloworldv1.Module'
+        type: array
+      totalCount:
+        description: 总数
+        example: 10
+        type: integer
+    type: object
+  helloworldv1.Module:
+    properties:
+      createdAt:
+        description: 创建时间
+        type: string
+      description:
+        description: 描述
+        example: this is a description
+        type: string
+      id:
+        description: ID,唯一标识
+        example: id1
+        type: string
+      name:
+        description: 名称
+        example: name-1
+        type: string
+      projectID:
+        description: 项目ID
+        example: project1
+        type: string
+      updatedAt:
+        description: 更新时间
+        type: string
+      userID:
+        description: 用户ID
+        example: user1
+        type: string
+    type: object
+  helloworldv1.UpdateModuleRequest:
+    properties:
+      description:
+        description: 描述
+        example: this is a description
+        maxLength: 200
+        type: string
+      id:
+        example: id1
+        maxLength: 20
+        type: string
+    required:
+    - id
+    type: object
+info:
+  contact: {}
+  title: HelloWorldService Module OpenAPI
+paths:
+  /v1/CreateModule:
+    post:
+      consumes:
+      - application/json
+      description: Create Module
+      parameters:
+      - description: Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/helloworldv1.CreateModuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/helloworldv1.CreateModuleResponse'
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: 创建示例模块
+      tags:
+      - Module
+  /v1/DeleteModule:
+    post:
+      description: Delete Module
+      parameters:
+      - description: Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/helloworldv1.DeleteModuleRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: 删除示例模块
+      tags:
+      - Module
+  /v1/GetModule:
+    post:
+      description: Get Module
+      parameters:
+      - description: Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/helloworldv1.GetModuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/helloworldv1.GetModuleResponse'
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: 获取示例模块详细信息
+      tags:
+      - Module
+  /v1/ListModule:
+    post:
+      description: List Modules
+      parameters:
+      - description: Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/helloworldv1.ListModuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/helloworldv1.ListModuleResponse'
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: 获取示例模块列表
+      tags:
+      - Module
+  /v1/UpdateModule:
+    post:
+      consumes:
+      - application/json
+      description: Update Module
+      parameters:
+      - description: Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/helloworldv1.UpdateModuleRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: 更新示例模块
+      tags:
+      - Module
+swagger: "2.0"

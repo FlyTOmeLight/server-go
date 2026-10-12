@@ -1,0 +1,7 @@
+AppName = "minimal-service"
+AppCode = 100
+RunMode = "release"
+
+[HTTPServer]
+Listen = "127.0.0.1:8080"
+AuthType = "Fake"

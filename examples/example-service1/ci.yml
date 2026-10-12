@@ -1,0 +1,13 @@
+Global:
+  tool: build_submitter
+
+Default:
+  profile: [build]
+
+
+Profiles:
+  - profile:
+    name: build
+    env: DECK_CENTOS7U5_K3
+    command: make -f deploy/Makefile
+    release: True

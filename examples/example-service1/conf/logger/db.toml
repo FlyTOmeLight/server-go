@@ -1,0 +1,36 @@
+Level = "Debug"  # 全局日志级别，默认值为Info
+
+# 按级别分发的文件输出配置
+[[Outputs]]
+Type = "File"               # File/Console，输出到文件还是控制台
+Level = "Info"              # Debug/Info/Warn/Error/Panic/Fatal, 大于等于当前级别的日志会对该配置生效
+Path = "./logs/trace/info.log"    # Type = File时生效，当前配置的日志输出路径
+Rotation = true             # Type = File时生效，是否开启日志文件滚动，生产环境必须开启
+# MaxSize is the maximum size in megabytes of the log file before it gets rotated. It defaults to 100 megabytes.
+# 日志文件滚动前，一个文件的最大容量，默认值为100M。
+MaxSize = 100                # Rotation = true时生效
+# MaxBackups is the maximum number of old log files to retain.
+# The default is to retain all old log files (though MaxAge may still cause them to get deleted.)
+# 历史文件保留最多的文件数，默认是全保留，直到达到 MaxAge（最长保留天数）
+MaxBackups = 10              # Rotation = true时生效
+# MaxAge is the maximum number of days to retain old log files based on the timestamp encoded in their filename.
+# Note that a day is defined as 24 hours and may not exactly correspond to calendar days due to daylight savings, leap seconds, etc.
+# The default is not to remove old log files based on age.
+# 历史文件保留最长天数，单位为天，一天的定义是24小时。默认为不按时间清理。
+MaxAge = 7                 # Rotation = true时生效
+# Compress determines if the rotated log files should be compressed using gzip. The default is not to perform compression.
+# 是否压缩，默认 false，默认gzip压缩。
+Compress = false
+
+[[Outputs]]
+Type = "File"
+Level = "Warn"
+Path = "./logs/trace/error.log"
+Rotation = true
+MaxSize = 100
+MaxBackups = 10
+MaxAge = 15
+
+[[Outputs]]
+type = "Console"
+level = "Debug"

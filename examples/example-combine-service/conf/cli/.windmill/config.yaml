@@ -1,0 +1,4 @@
+core:
+  access_key: test-ak
+  secret_key: test-sk
+  endpoint: localhost:8000

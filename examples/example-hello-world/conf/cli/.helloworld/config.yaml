@@ -1,0 +1,3 @@
+core:
+    endpoint: http://localhost:8089/hello-world
+    api_key: debug

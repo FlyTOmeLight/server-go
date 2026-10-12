@@ -1,0 +1,335 @@
+basePath: /example-service1/v1
+definitions:
+  trainv1.CreateDatasetRequest:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      fileFormat:
+        enum:
+        - Parquet
+        - Zip
+        - Tar
+        - HDF5
+        - Petastorm
+        - TFRecord
+        - File
+        - Folder
+        maxLength: 64
+        type: string
+      localName:
+        type: string
+      projectName:
+        type: string
+    required:
+    - localName
+    type: object
+  trainv1.Dataset:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      fileFormat:
+        type: string
+      localName:
+        type: string
+      name:
+        type: string
+      projectName:
+        type: string
+      tags:
+        additionalProperties:
+          type: string
+        type: object
+      updatedAt:
+        type: string
+    type: object
+  trainv1.GetDatasetResponse:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      fileFormat:
+        type: string
+      localName:
+        type: string
+      name:
+        type: string
+      projectName:
+        type: string
+      tags:
+        additionalProperties:
+          type: string
+        type: object
+      updatedAt:
+        type: string
+    type: object
+  trainv1.ListDatasetResponse:
+    properties:
+      result:
+        items:
+          $ref: '#/definitions/trainv1.Dataset'
+        type: array
+      totalCount:
+        type: integer
+    type: object
+  trainv1.UpdateDatasetRequest:
+    properties:
+      description:
+        type: string
+      localName:
+        type: string
+      projectName:
+        type: string
+    type: object
+info:
+  contact: {}
+  title: Example service dataset open api
+paths:
+  /v1/workspaces/:workspaceID/projects/:projectName/datasets:
+    get:
+      description: List datasets
+      parameters:
+      - in: query
+        name: filter
+        type: string
+      - description: |-
+          排序规则: asc: 升序, desc: 倒序, 默认倒序
+
+          Example: desc
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - description: |-
+          排序依据
+
+          Example: name
+        in: query
+        name: orderBy
+        type: string
+      - description: |-
+          mongo 排序规则
+
+          Example: []string{ "{order: desc}", "{id:asc}" }
+        example:
+        - '[{create_ad:desc}'
+        - '{id:asc}]'
+        in: query
+        items:
+          type: string
+        name: orders
+        type: array
+      - description: |-
+          页码
+
+          Example: 1
+        in: query
+        name: pageNo
+        type: integer
+      - description: |-
+          每页的大小
+
+          Example: 10
+        in: query
+        maximum: 200
+        name: pageSize
+        type: integer
+      - in: query
+        name: projectName
+        type: string
+      - description: Workspace id
+        in: path
+        name: workspaceID
+        required: true
+        type: string
+      - description: Project Local Name
+        in: path
+        name: projectName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/trainv1.ListDatasetResponse'
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: List datasets
+      tags:
+      - dataset
+    post:
+      consumes:
+      - application/json
+      description: Create a dataset
+      parameters:
+      - description: Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/trainv1.CreateDatasetRequest'
+      - description: Workspace id
+        in: path
+        name: workspaceID
+        required: true
+        type: string
+      - description: Project Local Name
+        in: path
+        name: projectName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/trainv1.Dataset'
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: Create a dataset
+      tags:
+      - dataset
+  /v1/workspaces/:workspaceID/projects/:projectName/datasets/:localName:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a dataset
+      parameters:
+      - in: query
+        name: localName
+        type: string
+      - in: query
+        name: projectName
+        type: string
+      - description: Workspace id
+        in: path
+        name: workspaceID
+        required: true
+        type: string
+      - description: Project Local Name
+        in: path
+        name: projectName
+        required: true
+        type: string
+      - description: Dataset Local Name
+        in: path
+        name: localName
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: Delete a dataset, and it's all artifact
+      tags:
+      - dataset
+    get:
+      description: Get a dataset
+      parameters:
+      - in: query
+        name: localName
+        type: string
+      - in: query
+        name: projectName
+        type: string
+      - description: Workspace id
+        in: path
+        name: workspaceID
+        required: true
+        type: string
+      - description: Project Local Name
+        in: path
+        name: projectName
+        required: true
+        type: string
+      - description: Dataset Local Name
+        in: path
+        name: localName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/trainv1.GetDatasetResponse'
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: Get a dataset with latest artifact
+      tags:
+      - dataset
+    put:
+      consumes:
+      - application/json
+      description: Update a project
+      parameters:
+      - description: Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/trainv1.UpdateDatasetRequest'
+      - description: Workspace id
+        in: path
+        name: workspaceID
+        required: true
+        type: string
+      - description: Project Local Name
+        in: path
+        name: projectName
+        required: true
+        type: string
+      - description: Dataset Local Name
+        in: path
+        name: localName
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Invalid Params
+          schema:
+            type: string
+        "500":
+          description: Internal Error
+          schema:
+            type: string
+      summary: Update a dataset
+      tags:
+      - project
+swagger: "2.0"

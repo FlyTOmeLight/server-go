@@ -1,0 +1,478 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "title": "Example service dataset open api",
+        "contact": {}
+    },
+    "basePath": "/example-service1/v1",
+    "paths": {
+        "/v1/workspaces/:workspaceID/projects/:projectName/datasets": {
+            "get": {
+                "description": "List datasets",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dataset"
+                ],
+                "summary": "List datasets",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "filter",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "排序规则: asc: 升序, desc: 倒序, 默认倒序\n\nExample: desc",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序依据\n\nExample: name",
+                        "name": "orderBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": [
+                            "[{create_ad:desc}",
+                            "{id:asc}]"
+                        ],
+                        "description": "mongo 排序规则\n\nExample: []string{ \"{order: desc}\", \"{id:asc}\" }",
+                        "name": "orders",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码\n\nExample: 1",
+                        "name": "pageNo",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 200,
+                        "type": "integer",
+                        "description": "每页的大小\n\nExample: 10",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "projectName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace id",
+                        "name": "workspaceID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Project Local Name",
+                        "name": "projectName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/trainv1.ListDatasetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Params",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a dataset",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dataset"
+                ],
+                "summary": "Create a dataset",
+                "parameters": [
+                    {
+                        "description": "Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/trainv1.CreateDatasetRequest"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace id",
+                        "name": "workspaceID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Project Local Name",
+                        "name": "projectName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/trainv1.Dataset"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Params",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/workspaces/:workspaceID/projects/:projectName/datasets/:localName": {
+            "get": {
+                "description": "Get a dataset",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dataset"
+                ],
+                "summary": "Get a dataset with latest artifact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "localName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "projectName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace id",
+                        "name": "workspaceID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Project Local Name",
+                        "name": "projectName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset Local Name",
+                        "name": "localName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/trainv1.GetDatasetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Params",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update a project",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "project"
+                ],
+                "summary": "Update a dataset",
+                "parameters": [
+                    {
+                        "description": "Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/trainv1.UpdateDatasetRequest"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace id",
+                        "name": "workspaceID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Project Local Name",
+                        "name": "projectName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset Local Name",
+                        "name": "localName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Invalid Params",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a dataset",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dataset"
+                ],
+                "summary": "Delete a dataset, and it's all artifact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "localName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "projectName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workspace id",
+                        "name": "workspaceID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Project Local Name",
+                        "name": "projectName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dataset Local Name",
+                        "name": "localName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Invalid Params",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "trainv1.CreateDatasetRequest": {
+            "type": "object",
+            "required": [
+                "localName"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "fileFormat": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "enum": [
+                        "Parquet",
+                        "Zip",
+                        "Tar",
+                        "HDF5",
+                        "Petastorm",
+                        "TFRecord",
+                        "File",
+                        "Folder"
+                    ]
+                },
+                "localName": {
+                    "type": "string"
+                },
+                "projectName": {
+                    "type": "string"
+                }
+            }
+        },
+        "trainv1.Dataset": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "fileFormat": {
+                    "type": "string"
+                },
+                "localName": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "projectName": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "trainv1.GetDatasetResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "fileFormat": {
+                    "type": "string"
+                },
+                "localName": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "projectName": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "trainv1.ListDatasetResponse": {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/trainv1.Dataset"
+                    }
+                },
+                "totalCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "trainv1.UpdateDatasetRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "localName": {
+                    "type": "string"
+                },
+                "projectName": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

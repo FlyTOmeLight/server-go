@@ -1,0 +1,17 @@
+kind: Model
+metadata:
+  localName: model001
+  modelStoreName: ms002
+  displayName: 模型
+  description: test model store
+  category: Image/OCR
+  modelFormats:
+    - PaddlePaddle
+    - PyTorch
+  schemaUri:
+  artifact:
+    uri: /Users/dongling01/Downloads/download-tmp/posun_postprocess/1
+    alias:
+    tags:
+      k1: v1
+  locationStyle: Triton
