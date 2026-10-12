@@ -6,7 +6,7 @@
 
 ## 业务项目组织
 
-新建业务服务或调整业务目录时，读取 [Go 项目组织约定](docs/go-project-layout.md)。采用 `cmd` + `internal`，按 Controller、Service、Table、SDK 的实际职责组织；框架接口和配置路径以当前实现为准。
+新建业务服务、调整目录或编写 SDK 时，读取 [Go 项目组织约定](docs/go-project-layout.md) 的对应章节。采用 `cmd` + `internal`，按 Controller、Service、Table、SDK 的实际职责组织；框架接口和配置路径以当前实现为准。
 
 ## 框架与业务边界
 
