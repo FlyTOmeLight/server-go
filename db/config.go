@@ -15,7 +15,11 @@ const (
 )
 
 type Config struct {
-	Driver          string
+	Driver string
+
+	// DSN is an optional PostgreSQL connection string or URL.
+	DSN string
+
 	Host            string
 	Port            int
 	User            string
@@ -77,6 +81,9 @@ func (c *Config) checkWithSQLite() error {
 }
 
 func (c *Config) checkWithPostgreSQL() error {
+	if c.DSN != "" {
+		return nil
+	}
 	if c.Host == "" {
 		return errors.New("DBConfig.Host is empty")
 	}

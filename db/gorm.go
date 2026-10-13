@@ -140,7 +140,10 @@ func newSQLite(config *Config) (*DB, error) {
 
 func newPostgreSQL(config *Config) (*DB, error) {
 	formatter := "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai"
-	args := fmt.Sprintf(formatter, config.Host, config.User, config.Password, config.DB, config.Port)
+	args := config.DSN
+	if args == "" {
+		args = fmt.Sprintf(formatter, config.Host, config.User, config.Password, config.DB, config.Port)
+	}
 
 	db, err := gorm.Open(NewAIBaseDialector("postgres", postgres.New(postgres.Config{
 		DSN:                  args,

@@ -106,6 +106,10 @@ go vet ./...
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
 
+## v0.3.2
+
+`db.Config.DSN` 支持完整 PostgreSQL URL 或连接字符串，保留调用方指定的 TLS、search_path、时区及其他驱动参数。未设置 DSN 时继续使用分字段配置。
+
 ## v0.3.1
 
 HTTPHost 统一安装请求日志和 Recovery，返回标准 404/405；响应已提交后不追加错误 JSON。新增静态 Bearer 凭据与身份读取、严格单文档 JSON 绑定（1 MiB 上限）、分页大小解析及 SDK 标准错误解码。`HTTPBinder.JSON()` 现在拒绝未知字段和连续 JSON 文档，使用该接口的服务需确认请求符合约定。详见上方通用 HTTP 行为。
