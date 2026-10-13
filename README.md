@@ -166,7 +166,17 @@ Controller 对声明了静态 `default` tag 的请求，在绑定前调用 `defa
 make check
 ```
 
-gorgeous 的安装路径为 `github.com/fsgo/go_fmt/cmd/gorgeous`，CI 固定工具版本。检查覆盖根模块与四个独立示例的格式、测试和 vet、并发路径的竞态检测、所有可运行示例及生成项目的实际启动、HTTP/SDK/CLI 请求与 SIGTERM 退出。PostgreSQL 检查创建独立临时容器，验证真实数据库 CRUD、字段类型、默认值和参数错误；缺少 Docker 时检查失败。生成项目通过临时 `replace` 引用当前工作树。检查结束清理进程、容器和临时文件，不修改现有模块的依赖文件。GitHub Actions 在 push 和 PR 时执行同一条 `make check`。
+格式工具使用 [FlyTOmeLight/go_fmt](https://github.com/FlyTOmeLight/go_fmt) v0.9.0，CI 固定到该版本的提交 `9d389e31b15509ae9cbdff326499929f715db78f`。在 server-go 仓库外安装：
+
+```sh
+git clone --depth 1 --branch v0.9.0 https://github.com/FlyTOmeLight/go_fmt.git
+cd go_fmt
+go install ./cmd/gorgeous
+```
+
+该仓库保留原模块路径，因此通过仓库源码安装。将 `GOBIN`（未设置时为 `$(go env GOPATH)/bin`）加入 `PATH`。
+
+检查覆盖根模块与四个独立示例的格式、测试和 vet、并发路径的竞态检测、所有可运行示例及生成项目的实际启动、HTTP/SDK/CLI 请求与 SIGTERM 退出。PostgreSQL 检查创建独立临时容器，验证真实数据库 CRUD、字段类型、默认值和参数错误；缺少 Docker 时检查失败。生成项目通过临时 `replace` 引用当前工作树。检查结束清理进程、容器和临时文件，不修改现有模块的依赖文件。GitHub Actions 在 push 和 PR 时执行同一条 `make check`。
 
 单独检查当前模块时仍可使用：
 
