@@ -1,99 +1,12 @@
-# app.toml: 应用主配置文件
 AppName = "helloworld"
-AppCode = 100  # 按实际情况修改
-RunMode = "debug"          # debug/test/release
+AppCode = 100
+RunMode = "debug"
 
 [HTTPServer]
-# 监听地址，必填
 Listen = "127.0.0.1:8080"
-# 读超时时间（单位ms），选填，默认20s
-ReadTimeout = 60000
-# 写超时时间（单位ms），选填，默认10s
-WriteTimeout = 40000
-# Idle超时时间（单位ms），选填，默认10s
-IdleTimeout = 10000 # 10s
-# 最大header空间，选填，默认100k
-MaxHeaderBytes = 100000 # 100k
-# 对外接口通用前缀，配置后所有接口path将默认加上该前缀，选填，默认为空
-APIBasePath = ""
-# 是否开启pprof
-PprofEnable = false
-# 是否开启swagger接口
-SwaggerEnable = true
-# 这是个重要的配置，决定是否开启Console API反向代理功能
-# 当设置为true时，会为ConsoleProxyNames中的每个服务名字注册反向代理路由
-# 路由格式为：/{appName}/api/*any，支持GET和POST方法
-# 由于internal一定会被转化成api请求可控性较低，因此更推荐使用autoHandleAPIError开关
-# 该反向代理会将前端API请求（路径包含/api）转换为内部OpenAPI请求（路径包含/internal）
-# 例如：POST /{appName}/api/v1/GetProject => POST /{appName}/internal/v1/GetProject
-# 同时会修改响应格式，将OpenAPI响应适配为前端需要的统一格式
-# 该功能用于解决OpenAPI和前端API规范不一致的问题
-# 注意，开启后不要再手动注册前端请求POST /{appName}/api/*，会造成路由冲突
-ConsoleEnable = false
-# 是否开启针对 /{appName}/api/* 接口的自动状态码处理功能
-# 与ConsoleEnable互斥，仅当ConsoleEnable=false时生效
-# 当开启时，会拦截所有 /{appName}/api/* 接口的响应：
-#   - 将所有非200的HTTP状态码统一改为200，但保持响应体内容不变
-#   - 对于 errors.Error 类型的错误，会规范化处理，自动设置 RequestID 并确保 StatusCode 字段正确设置
-altoHandlerAPIError = true
-UseH2C = false
-AuthType = "Fake" # Fake/AuthCenter
-
-[HTTPServer.Trace]
-# 根据接口前缀过滤，符合条件的接口不开启trace log
-PrefixFilters = ["/examples", "/assets"]
-# 根据接口后缀过滤，符合条件的接口不开启trace log
-SuffixFilters = ["/metrics", "/ping", "/healthz"]
-
-# 伪鉴权配置，可选，不配会有一组默认值
-# [FakeAuth]
-# OrgID = "test-org-id"               # 可选，默认值："test-org-id"
-# UserID = "test-user-id"             # 可选，默认值："test-user-id"
-# UserName = "test-user-name"         # 可选，默认值："test-user-name"
-# UserRole = "test-user-role"         # 可选，默认值："test-user-role"
+AuthType = "Fake"
 
 [DB]
 Driver = "SQLite"
-DB = "fake.db"
+DB = "example.db"
 AutoMigrate = true
-
-#[DB]
-#Driver = "MySQL"                # 支持MySQL, SQLite, PostgreSQL, ClickHouse, 选填，默认为MySQL
-#Host = "127.0.0.1"
-#Port = 3306
-#User = "example"
-#Password = "${env: DB_PASSWORD:}"
-#DB = "mydb"
-##可拓展的dsn params 可参考 https://github.com/go-sql-driver/mysql/blob/master/dsn.go
-#DSNParams = "collation=utf8mb4_unicode_ci&parseTime=true&loc=Local&parseTime=True"
-#ConnMaxIdleTime = 100
-#ConnMaxLifeTime = 100
-#MaxIdleConns = 10
-#MaxOpenConns = 10
-#AutoMigrate = true
-
-[Redis]
-Addr = "127.0.0.1:6379"
-Username = "root"
-Password = "${env: REDIS_PASSWORD:}"
-DB = 9
-# Maximum number of retries before giving up.
-# Default is 3 retries; -1 (not 0) disables retries.
-MaxRetries = 3
-# Minimum backoff between each retry.
-# Default is 8 milliseconds; -1 disables backoff.
-MinRetryBackoff = 8
-# Dial timeout for establishing new connections.
-# Default is 5 seconds.
-DialTimeout = 5
-# Timeout for socket reads. If reached, commands will fail
-# with a timeout instead of blocking. Use value -1 for no timeout and 0 for default.
-# Default is 3 seconds.
-ReadTimeout = 3
-# Timeout for socket writes. If reached, commands will fail
-# with a timeout instead of blocking.
-# Default is ReadTimeout.
-WriteTimeout = 3
-# Maximum number of socket connections.
-# Default is 10 connections per every available CPU as reported by runtime.GOMAXPROCS.
-PoolSize = 10

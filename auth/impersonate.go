@@ -1,9 +1,8 @@
 package auth
 
 import (
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/constants"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 // Impersonate
@@ -11,8 +10,8 @@ import (
 // 限于服务内部模块间调用，调用方通过header将需要鉴权通过的orgID和userID传给下游服务。
 // 调用方仍然用常规的AKSK鉴权方式发起调用，例如用服务/资源账号，同时通过header指定要代表的租户。
 // 被调用方收到请求，检查调用账号是一个服务账号，将impersonate header指定的租户账号设置为鉴权账号。
-func Impersonate() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func Impersonate() core.HandlerFunc {
+	return func(c *core.Context) {
 		orgID := c.GetString(constants.KeyOrgID)
 		userID := c.GetString(constants.KeyUserID)
 		if orgID != "" && userID != "" {

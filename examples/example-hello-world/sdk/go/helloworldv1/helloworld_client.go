@@ -1,12 +1,11 @@
 package helloworldv1
 
 import (
-	"encoding/json"
+	"bytes"
 	"errors"
 	"net/http"
 	"strings"
 
-	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
@@ -37,12 +36,7 @@ func responseError(status int, body []byte) error {
 	if status < http.StatusBadRequest {
 		return nil
 	}
-	var detail serrors.Error
-	if err := json.Unmarshal(body, &detail); err != nil || detail.Code == "" {
-		return serrors.NewError(status, "UnexpectedResponse", http.StatusText(status))
-	}
-	detail.Status = status
-	return &detail
+	return sdk.DecodeError(status, bytes.NewReader(body))
 }
 
 func NewClientWithConfig(config *sdk.Config) (*Client, error) {

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/FlyTOmeLight/server-go/cli"
@@ -37,18 +38,14 @@ func (b *DatasetCommandBuilder) NewCommand() *cobra.Command {
 
 func createDatasetCommand() *cobra.Command {
 	var req trainv1.CreateDatasetRequest
-	var uri string
-	var tags map[string]string
-	var alias []string
-	var artifactDesc string
 
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "create dataset",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return createDataset(&req)
+			return createDataset(cmd.Context(), &req)
 		},
-		Example: cli.DefaultName() + " dataset create --project-name=yy --local-name=xx --artifact-uri=zz",
+		Example: cli.DefaultName() + " dataset create --project-name=yy --local-name=xx",
 	}
 
 	cmd.Flags().StringVar(&req.LocalName, "local-name", "", "Dataset localName (required)")
@@ -57,15 +54,8 @@ func createDatasetCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&req.FileFormat, "file-format", "", "Dataset file format")
 
-	cmd.Flags().StringVar(&uri, "artifact-uri", "", "Dataset artifactUri")
-	cmd.Flags().StringVar(&artifactDesc, "--artifact-description", "", "Dataset artifact Description")
-	cmd.Flags().StringArrayVar(&alias, "alias", []string{}, "Dataset alias")
-	cmd.Flags().StringToStringVar(&tags, "tags", map[string]string{}, "Dataset tags, --tags=tag1")
-
 	_ = cmd.MarkFlagRequired("local-name")
 	_ = cmd.MarkFlagRequired("project-name")
-	_ = cmd.MarkFlagRequired("artifact-uri")
-	_ = cmd.MarkFlagRequired("category")
 
 	return cmd
 }
@@ -76,7 +66,7 @@ func listDatasetCommand() *cobra.Command {
 		Use:   "list",
 		Short: "list dataset",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return listDataset(&req)
+			return listDataset(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " dataset list --project-name=yy",
 	}
@@ -100,7 +90,7 @@ func getDatasetCommand() *cobra.Command {
 		Use:   "get",
 		Short: "get dataset",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return getDataset(&req)
+			return getDataset(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " dataset get --project-name=yy --local-name=xx",
 	}
@@ -116,7 +106,6 @@ func getDatasetCommand() *cobra.Command {
 func updateDatasetCommand() *cobra.Command {
 	var req trainv1.UpdateDatasetRequest
 	var description string
-	var category string
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "update dataset",
@@ -124,7 +113,7 @@ func updateDatasetCommand() *cobra.Command {
 			if cmd.Flags().Lookup("description").Changed {
 				req.Description = &description
 			}
-			return updateDataset(&req)
+			return updateDataset(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " dataset update --project-name=yy --local-name=xx --description=update",
 	}
@@ -132,7 +121,6 @@ func updateDatasetCommand() *cobra.Command {
 	cmd.Flags().StringVar(&req.ProjectName, "project-name", "", "Project name (required)")
 	cmd.Flags().StringVar(&req.LocalName, "local-name", "", "Dataset localName (required)")
 	cmd.Flags().StringVar(&description, "description", "", "Dataset description")
-	cmd.Flags().StringVar(&category, "category", "", "Dataset category")
 
 	_ = cmd.MarkFlagRequired("local-name")
 	_ = cmd.MarkFlagRequired("project-name")
@@ -147,7 +135,7 @@ func deleteDatasetCommand() *cobra.Command {
 		Use:   "delete",
 		Short: "delete dataset",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return deleteDataset(&req)
+			return deleteDataset(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " dataset get --project-name=yy --local-name=xx",
 	}
@@ -160,8 +148,8 @@ func deleteDatasetCommand() *cobra.Command {
 	return cmd
 }
 
-func createDataset(req *trainv1.CreateDatasetRequest) error {
-	resp, err := client.CreateDataset(req)
+func createDataset(ctx context.Context, req *trainv1.CreateDatasetRequest) error {
+	resp, err := client.CreateDataset(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -170,8 +158,8 @@ func createDataset(req *trainv1.CreateDatasetRequest) error {
 	return nil
 }
 
-func listDataset(req *trainv1.ListDatasetRequest) error {
-	resp, err := client.ListDataset(req)
+func listDataset(ctx context.Context, req *trainv1.ListDatasetRequest) error {
+	resp, err := client.ListDataset(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -180,8 +168,8 @@ func listDataset(req *trainv1.ListDatasetRequest) error {
 	return nil
 }
 
-func getDataset(req *trainv1.GetDatasetRequest) error {
-	resp, err := client.GetDataset(req)
+func getDataset(ctx context.Context, req *trainv1.GetDatasetRequest) error {
+	resp, err := client.GetDataset(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -190,8 +178,8 @@ func getDataset(req *trainv1.GetDatasetRequest) error {
 	return nil
 }
 
-func updateDataset(req *trainv1.UpdateDatasetRequest) error {
-	err := client.UpdateDataset(req)
+func updateDataset(ctx context.Context, req *trainv1.UpdateDatasetRequest) error {
+	err := client.UpdateDataset(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -200,8 +188,8 @@ func updateDataset(req *trainv1.UpdateDatasetRequest) error {
 	return nil
 }
 
-func deleteDataset(req *trainv1.DeleteDatasetRequest) error {
-	err := client.DeleteDataset(req)
+func deleteDataset(ctx context.Context, req *trainv1.DeleteDatasetRequest) error {
+	err := client.DeleteDataset(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -214,6 +202,6 @@ func applyDataset() {
 	var req trainv1.CreateDatasetRequest
 	cli.RegisterApplyHandler("Dataset", &req, func(args any) error {
 		initClient()
-		return createDataset(&req)
+		return createDataset(context.Background(), args.(*trainv1.CreateDatasetRequest))
 	})
 }

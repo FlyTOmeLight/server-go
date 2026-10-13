@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 type testLicense struct{ authorized bool }
@@ -27,7 +29,7 @@ func TestLicenseAuth(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			engine := gin.New()
 			engine.Use(LicenseAuth(tc.client))
-			engine.GET("/", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			engine.GET("/", func(c *core.Context) { c.Status(http.StatusNoContent) })
 			result := httptest.NewRecorder()
 			engine.ServeHTTP(result, httptest.NewRequest(http.MethodGet, "/", nil))
 			if result.Code != tc.status {

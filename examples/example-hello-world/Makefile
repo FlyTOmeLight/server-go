@@ -1,128 +1,42 @@
-# init project path
-HOMEDIR := $(shell pwd)
-# build output
-OUTDIR  := $(HOMEDIR)/output
-# server use server ended name
+GO ?= go
+OUTDIR := output
 SVCNAME := helloworld-server
-# CLI use short name
 CLINAME := helloworld
-# Swagger name
 SWAG_DOC_PREFIX := HelloWorld
-
-# init command params
-GOROOT    := $(shell go env GOROOT)
-GO        := $(GOROOT)/bin/go
-GOPATH    := $(shell $(GO) env GOPATH)
-GOINSTALL := $(GO) install
-GOGET     := $(GO) get
-GOMOD     := $(GO) mod
-GOBUILD   := $(GO) build
-GOTEST    := $(GO) test -gcflags="-N -l"
-GOPKGS    := $$($(GO) list ./...| grep -vE "vendor")
-SWAG      := $(GOPATH)/bin/swag
-
-# test cover files
-COVPROF := $(HOMEDIR)/covprof.out  # coverage profile
-COVFUNC := $(HOMEDIR)/covfunc.txt  # coverage profile information for each function
-COVHTML := $(HOMEDIR)/covhtml.html # HTML representation of coverage profile
-
-# flags to inject into binaries
-APP_VERSION := 1.0.0
-GIT_BRANCH  = $(shell git rev-parse --abbrev-ref HEAD)
-GIT_COMMIT  = $(shell git rev-parse HEAD)
-BUILD_DATE  := $(shell date "+%Y-%m-%d %H:%M:%S")
+SWAG := $(shell $(GO) env GOPATH)/bin/swag
+FRAMEWORK_DIR := $(shell $(GO) list -m -f '{{.Dir}}' github.com/FlyTOmeLight/server-go)
+SWAG_SCAN_DIRS := $(shell ls -d internal/app/* | paste -sd ',' -)
+SWAG_SDK_DIRS := $(shell ls -d sdk/go/* | paste -sd ',' -)
 VERSION_VAR := github.com/FlyTOmeLight/server-go/version
-GOMODULE    := $(shell $(GO) list -m)
+LD_FLAGS = -X $(VERSION_VAR).AppVersion=1.0.0
 
-# gin controller directories that swag scans for openapi comments
-SWAG_SCAN_DIRS := $(shell ls -d $(HOMEDIR)/internal/app/* | tr '\n' ',' | sed 's/,$$//')
-SWAGGER_VAR    := github.com/FlyTOmeLight/server-go/swagger
-
-LD_FLAGS = " \
-    -X main.CliName=${CLINAME} \
-	-X '$(VERSION_VAR).AppVersion=${APP_VERSION}' \
-    -X '$(VERSION_VAR).GitBranch=${GIT_BRANCH}' \
-	-X '$(VERSION_VAR).GitCommit=${GIT_COMMIT}' \
-	-X '$(VERSION_VAR).BuildDate=${BUILD_DATE}' \
-    -X '$(VERSION_VAR).BuildPipeline=${AGILE_PIPELINE_NAME}' \
-	-X '$(VERSION_VAR).BuildNumber=${AGILE_PIPELINE_BUILD_NUMBER}' \
-	-X '$(SWAGGER_VAR).DocPrefix=${SWAG_DOC_PREFIX}' \
-    "
-
-all: clean prepare compile doc package
-
-prepare: check-var install-doc
-
-check-var:
-	$(info GOROOT: $(GOROOT))
-	$(info GOPATH: $(GOPATH))
-	$(info GOBIN: $(GOBIN))
-	$(info SWAG: $(SWAG))
-	$(info GOMODULE: $(GOMODULE))
-
-install-doc:
-	$(GOINSTALL) github.com/swaggo/swag/cmd/swag@v1.8.4
-
+.PHONY: all build compile run test check package clean
+all: build package
 compile: build
-
-# Native server builds enable CGO for SQLite; CLI builds remain portable.
 build:
-	$(GOMOD) tidy
-	CGO_ENABLED=1 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${SVCNAME} cmd/server/server.go
-
-	CGO_ENABLED=0 $(GOBUILD) -v -ldflags=$(LD_FLAGS) -o $(HOMEDIR)/${CLINAME} cmd/cli/cli.go
-
-doc:
-	$(SWAG) init -d $(SWAG_SCAN_DIRS) -g controller.go --instanceName=${SWAG_DOC_PREFIX} --parseDependency --parseInternal -o $(HOMEDIR)/doc/openapi
-
-upgrade:
-	$(GOGET) -u $(shell $(GO) list -u -f '{{if (and (not (or .Main .Indirect)) .Update)}}{{.Path}}{{end}}' -m github.com/FlyTOmeLight/...)
-
-# enable CGO for sqlite integration tests
+	mkdir -p $(OUTDIR)/bin
+	CGO_ENABLED=1 $(GO) build -ldflags="$(LD_FLAGS)" -o $(OUTDIR)/bin/$(SVCNAME) ./cmd/server
+	CGO_ENABLED=0 $(GO) build -ldflags="$(LD_FLAGS)" -o $(OUTDIR)/bin/$(CLINAME) ./cmd/cli
+run:
+	CGO_ENABLED=1 $(GO) run ./cmd/server
 test:
-	CGO_ENABLED=1 $(GOTEST) -cover $(GOPKGS) -coverpkg $(GOMODULE)/...
-
+	CGO_ENABLED=1 $(GO) test ./...
 check:
 	@diff=$$(gorgeous -d ./...) || exit $$?; if [ -n "$$diff" ]; then printf '%s\n' "$$diff"; exit 1; fi
 	CGO_ENABLED=1 $(GO) test ./...
 	$(GO) vet ./...
-	CGO_ENABLED=1 $(GO) test -race ./internal/service ./sdk/go/...
-
-# package layout like
-# 	bin/				  for binary executables
-#		helloworld		  cli program name
-#		helloworld-server server program name
-# 	conf/ 				  server configuration
-#   deploy/				  server deploy files
-#   log/				  server logs
-#   doc/				  readme, openapi spec etc
-package: package-bin package-cfg package-deploy package-log package-doc
-
-package-bin:
-	mkdir -p $(OUTDIR)/bin
-	mv $(HOMEDIR)/${SVCNAME}* $(OUTDIR)/bin
-	mv $(HOMEDIR)/${CLINAME}* $(OUTDIR)/bin
-
-package-cfg:
+	CGO_ENABLED=1 $(GO) test -race ./service ./sdk/go/...
+package: build
 	mkdir -p $(OUTDIR)/conf/server
-	cp -r $(HOMEDIR)/conf/server/* $(OUTDIR)/conf/server
-	cp -r $(HOMEDIR)/conf/cli/. $(OUTDIR)/bin/
-
-package-deploy:
-	mkdir -p $(OUTDIR)/deploy
-	cp -r $(HOMEDIR)/deploy/* $(OUTDIR)/deploy
-
-package-log:
-	mkdir -p $(OUTDIR)/log
-
-package-doc:
-	mkdir -p $(OUTDIR)/doc
-	cp $(HOMEDIR)/doc/openapi/* $(OUTDIR)/doc
-	rm $(OUTDIR)/doc/*.go
-
+	cp conf/server/config.toml $(OUTDIR)/conf/server/
+	cp -R deploy $(OUTDIR)/
+	mkdir -p $(OUTDIR)/doc/openapi
+	cp doc/openapi/*.json doc/openapi/*.yaml $(OUTDIR)/doc/openapi/
 clean:
-	$(GO) clean
 	rm -rf $(OUTDIR)
 
-# avoid filename conflict and speed up build
-.PHONY: all prepare check-var git set-env compile build doc upgrade test check package clean
+.PHONY: doc install-doc
+install-doc:
+	$(GO) install github.com/swaggo/swag/cmd/swag@v1.8.4
+doc:
+	$(SWAG) init -d $(SWAG_SCAN_DIRS),$(SWAG_SDK_DIRS),$(FRAMEWORK_DIR)/sdk -g controller.go --instanceName=$(SWAG_DOC_PREFIX) --parseInternal -o doc/openapi

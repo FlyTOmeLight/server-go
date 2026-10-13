@@ -3,12 +3,12 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 // Healthz checks the owning host's readiness without process-wide configuration.
-func Healthz(ready func() bool) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func Healthz(ready func() bool) core.HandlerFunc {
+	return func(c *core.Context) {
 		if ready != nil && ready() {
 			c.String(http.StatusOK, "healthz")
 			return

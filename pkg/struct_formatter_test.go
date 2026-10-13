@@ -1,4 +1,4 @@
-package core
+package core_test
 
 import (
 	"encoding/json"
@@ -6,18 +6,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
 func TestStructDecode(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
-		err := StructDecode(nil, nil, "")
+		err := core.StructDecode(nil, nil, "")
 		assert.NotNil(t, err)
 	})
 
 	t.Run("empty in", func(t *testing.T) {
 		var out map[string]any
-		err := StructDecode(nil, &out, "json")
+		err := core.StructDecode(nil, &out, "json")
 		assert.Nil(t, err)
 	})
 
@@ -26,7 +27,7 @@ func TestStructDecode(t *testing.T) {
 			"key1": "value1",
 			"key2": "value2",
 		}
-		err := StructDecode(&in, nil, "")
+		err := core.StructDecode(&in, nil, "")
 		assert.NotNil(t, err)
 	})
 
@@ -36,7 +37,7 @@ func TestStructDecode(t *testing.T) {
 			"key2": "value2",
 		}
 		var out map[string]string
-		err := StructDecode(&in, &out, "")
+		err := core.StructDecode(&in, &out, "")
 		assert.Nil(t, err)
 	})
 
@@ -52,7 +53,7 @@ func TestStructDecode(t *testing.T) {
 			OrgID:         "test",
 			UserID:        "test",
 		}
-		out := FormToStringMap(&req)
+		out := core.FormToStringMap(&req)
 		t.Logf("out: %v", out)
 	})
 }
@@ -79,7 +80,7 @@ func TestNilFieldDecode(t *testing.T) {
 		var mapdata map[string]string
 		json.Unmarshal(bytes, &mapdata)
 
-		out := FormToStringMap(&req)
+		out := core.FormToStringMap(&req)
 		_, ok := out["UserID"]
 		assert.False(t, ok)
 		t.Logf("out: %v %v", out, mapdata)

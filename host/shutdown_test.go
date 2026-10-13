@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"golang.org/x/net/http2"
 
 	"github.com/FlyTOmeLight/server-go/conf"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 func TestShutdownTimeoutJoinsHandlersAndGivesStopItsOwnBudget(t *testing.T) {
@@ -31,7 +31,7 @@ func TestShutdownTimeoutJoinsHandlersAndGivesStopItsOwnBudget(t *testing.T) {
 			var releaseOnce sync.Once
 			var finished atomic.Bool
 			stopResult := make(chan error, 1)
-			svc := &testService{handle: func(c *gin.Context) {
+			svc := &testService{handle: func(c *core.Context) {
 				close(entered)
 				<-c.Request.Context().Done()
 				close(canceled)
@@ -117,7 +117,7 @@ func TestShutdownTimeoutJoinsHandlersAndGivesStopItsOwnBudget(t *testing.T) {
 
 func TestH2CShutdownDrainsResponseAndClosesIdleConnection(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
-	svc := &testService{handle: func(c *gin.Context) {
+	svc := &testService{handle: func(c *core.Context) {
 		close(entered)
 		<-release
 		c.String(http.StatusOK, "complete")
@@ -125,6 +125,22 @@ func TestH2CShutdownDrainsResponseAndClosesIdleConnection(t *testing.T) {
 	h, _ := newTestHostWithHTTPConfig(t, svc, conf.HTTPServerConfig{UseH2C: true})
 	cancel, done := startTestHost(t, h)
 	defer cancel()
+	// Enabling cleartext HTTP/2 must keep ordinary HTTP/1 clients working.
+	response, err := shutdownClient(t, false).Get("http://" + h.Address() + "/ping")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, readErr := io.Copy(io.Discard, response.Body)
+	closeErr := response.Body.Close()
+	if response.ProtoMajor != 1 || response.StatusCode != http.StatusOK || errors.Join(readErr, closeErr) != nil {
+		t.Fatalf(
+			"HTTP/1 request on H2C host failed: protocol=%s status=%d read=%v close=%v",
+			response.Proto,
+			response.StatusCode,
+			readErr,
+			closeErr,
+		)
+	}
 	connectionClosed := make(chan struct{}, 1)
 	client := shutdownClientObserved(t, true, func() { connectionClosed <- struct{}{} })
 	responseDone := make(chan error, 1)

@@ -1,6 +1,6 @@
 AppName = "minimal-service"
 AppCode = 100
-RunMode = "release"
+RunMode = "debug"
 
 [HTTPServer]
 Listen = "127.0.0.1:8080"

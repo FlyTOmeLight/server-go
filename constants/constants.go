@@ -23,7 +23,7 @@ const (
 	QueryClientToken = "clientToken"
 )
 
-// gin.Context keys
+// core.Context keys
 const (
 	KeyRequestID = "RequestID"
 

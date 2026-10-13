@@ -3,20 +3,20 @@ package middleware
 import (
 	"context"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/FlyTOmeLight/server-go/constants"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func RequestID() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func RequestID() core.HandlerFunc {
+	return func(c *core.Context) {
 		_ = GetRequestID(c)
 		c.Next()
 	}
 }
 
-func GetRequestID(c *gin.Context) string {
+func GetRequestID(c *core.Context) string {
 	requestID := c.GetHeader(constants.HeaderRequestID)
 	if requestID == "" {
 		requestID = uuid.NewString()

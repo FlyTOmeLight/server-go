@@ -3,11 +3,11 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func Ping() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func Ping() core.HandlerFunc {
+	return func(c *core.Context) {
 		c.String(http.StatusOK, "pong")
 	}
 }

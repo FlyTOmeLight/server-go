@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
@@ -21,7 +19,7 @@ const (
 	maxLength = 8192
 )
 
-func shouldLogBody(c *gin.Context) bool {
+func shouldLogBody(c *core.Context) bool {
 	// Usually chunked or compressed, not readable
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding
 	transferEncoding := c.Request.Header.Get("Transfer-Encoding")
@@ -59,7 +57,7 @@ func shouldLogBody(c *gin.Context) bool {
 	return false
 }
 
-func noLog(c *gin.Context, prefixFilters []string, suffixFilters []string) bool {
+func noLog(c *core.Context, prefixFilters []string, suffixFilters []string) bool {
 	for _, prefix := range prefixFilters {
 		if strings.HasPrefix(c.Request.RequestURI, prefix) {
 			return true
@@ -73,8 +71,8 @@ func noLog(c *gin.Context, prefixFilters []string, suffixFilters []string) bool 
 	return false
 }
 
-func Debug(prefixFilters []string, suffixFilters []string) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func Debug(prefixFilters []string, suffixFilters []string) core.HandlerFunc {
+	return func(c *core.Context) {
 		if noLog(c, prefixFilters, suffixFilters) {
 			c.Next()
 			return

@@ -6,20 +6,20 @@ import (
 	"fmt"
 
 	"github.com/gin-contrib/pprof"
-	"github.com/gin-gonic/gin"
 
 	"github.com/FlyTOmeLight/server-go/auth"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/console"
 	"github.com/FlyTOmeLight/server-go/metrics"
 	"github.com/FlyTOmeLight/server-go/middleware"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/swagger"
 )
 
 // Install configures one engine before its business routes are registered.
 // The host must install its error handling and recovery before calling Install.
 // Dapr subscriptions and route-level idempotence are assembled separately.
-func Install(engine *gin.Engine, config *conf.Config) error {
+func Install(engine *core.Engine, config *conf.Config) error {
 	if engine == nil || config == nil {
 		return errors.New("HTTP integrations require an engine and config")
 	}

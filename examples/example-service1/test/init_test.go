@@ -66,7 +66,7 @@ func runTests(m *testing.M, directory string) int {
 		panic(err)
 	}
 	defer log.Close()
-	svc, err := service.NewExampleService(ctx, database)
+	svc, err := service.NewExampleService(ctx, database, true)
 	if err != nil {
 		panic(err)
 	}

@@ -1,9 +1,9 @@
 package module
 
 import (
-	"context"
 	"time"
 
+	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/db"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 
@@ -11,36 +11,36 @@ import (
 	sdk "github.com/FlyTOmeLight/server-go/examples/example-hello-world/sdk/go/helloworldv1"
 )
 
-type ModuleService struct{ database *db.DB }
+type Service struct{ database *db.DB }
 
-func NewModuleService(database *db.DB) *ModuleService { return &ModuleService{database: database} }
+func NewModuleService(database *db.DB) *Service { return &Service{database: database} }
 
-func (s *ModuleService) CreateModule(
-	ctx context.Context,
-	userID string,
+func (s *Service) CreateModule(
+	ctx *core.Context,
 	req *sdk.CreateModuleRequest,
 ) (*sdk.CreateModuleResponse, error) {
+	userID := ctx.GetString(constants.KeyUserID)
 	now := db.UTCTime{Time: time.Now().UTC()}
-	data := table.ModuleData{BaseData: db.BaseData{
+	data := table.ModuleData{
 		ID: core.NewID("ex"), Name: req.Name, Description: &req.Description,
 		UserID: userID, ProjectID: req.ProjectID, CreatedAt: now, UpdatedAt: now,
-	}}
-	if err := table.CreateModule(ctx, s.database, &data); err != nil {
+	}
+	if err := table.CreateModule(ctx.Request.Context(), s.database, &data); err != nil {
 		return nil, err
 	}
 	result := moduleResponse(&data)
 	return &result, nil
 }
 
-func (s *ModuleService) ListModule(ctx context.Context, req *sdk.ListModuleRequest) (*sdk.ListModuleResponse, error) {
+func (s *Service) ListModule(ctx *core.Context, req *sdk.ListModuleRequest) (*sdk.ListModuleResponse, error) {
 	filter := table.ModuleFilter{ProjectID: req.ProjectID, Filter: req.Filter}
-	count, err := table.CountModule(ctx, s.database, filter)
+	count, err := table.CountModule(ctx.Request.Context(), s.database, filter)
 	if err != nil {
 		return nil, err
 	}
 	results := make([]sdk.Module, 0)
 	if count > 0 {
-		list, err := table.ListModule(ctx, s.database, filter, req.PagingRequest)
+		list, err := table.ListModule(ctx.Request.Context(), s.database, filter, req.PagingRequest)
 		if err != nil {
 			return nil, err
 		}
@@ -51,8 +51,8 @@ func (s *ModuleService) ListModule(ctx context.Context, req *sdk.ListModuleReque
 	return &sdk.ListModuleResponse{TotalCount: count, Results: results}, nil
 }
 
-func (s *ModuleService) GetModule(ctx context.Context, req *sdk.GetModuleRequest) (*sdk.GetModuleResponse, error) {
-	data, err := table.GetModule(ctx, s.database, table.ModuleFilter{ID: req.ID})
+func (s *Service) GetModule(ctx *core.Context, req *sdk.GetModuleRequest) (*sdk.GetModuleResponse, error) {
+	data, err := table.GetModule(ctx.Request.Context(), s.database, table.ModuleFilter{ID: req.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -60,26 +60,24 @@ func (s *ModuleService) GetModule(ctx context.Context, req *sdk.GetModuleRequest
 	return &result, nil
 }
 
-func (s *ModuleService) UpdateModule(ctx context.Context, req *sdk.UpdateModuleRequest) error {
-	if _, err := table.GetModule(ctx, s.database, table.ModuleFilter{ID: req.ID}); err != nil {
+func (s *Service) UpdateModule(ctx *core.Context, req *sdk.UpdateModuleRequest) error {
+	if _, err := table.GetModule(ctx.Request.Context(), s.database, table.ModuleFilter{ID: req.ID}); err != nil {
 		return err
 	}
 	data := table.ModuleData{
-		BaseData: db.BaseData{
-			ID:          req.ID,
-			Description: req.Description,
-			UpdatedAt:   db.UTCTime{Time: time.Now().UTC()},
-		},
+		ID:          req.ID,
+		Description: req.Description,
+		UpdatedAt:   db.UTCTime{Time: time.Now().UTC()},
 	}
-	return table.UpdateModule(ctx, s.database, &data)
+	return table.UpdateModule(ctx.Request.Context(), s.database, &data)
 }
 
-func (s *ModuleService) DeleteModule(ctx context.Context, req *sdk.DeleteModuleRequest) error {
+func (s *Service) DeleteModule(ctx *core.Context, req *sdk.DeleteModuleRequest) error {
 	filter := table.ModuleFilter{ID: req.ID}
-	if _, err := table.GetModule(ctx, s.database, filter); err != nil {
+	if _, err := table.GetModule(ctx.Request.Context(), s.database, filter); err != nil {
 		return err
 	}
-	return table.DeleteModule(ctx, s.database, filter)
+	return table.DeleteModule(ctx.Request.Context(), s.database, filter)
 }
 
 func moduleResponse(data *table.ModuleData) sdk.Module {

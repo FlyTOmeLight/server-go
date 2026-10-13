@@ -18,7 +18,7 @@ func TestDataset(t *testing.T) {
 }
 
 func CreateDataset(t *testing.T) {
-	dataset, err := client.CreateDataset(&trainv1.CreateDatasetRequest{
+	dataset, err := client.CreateDataset(t.Context(), &trainv1.CreateDatasetRequest{
 		ProjectName: sdkProjectName,
 		LocalName:   sdkDatasetName,
 		Description: "a desc",
@@ -31,7 +31,7 @@ func CreateDataset(t *testing.T) {
 }
 
 func ListDataset(t *testing.T) {
-	dataset, err := client.ListDataset(&trainv1.ListDatasetRequest{
+	dataset, err := client.ListDataset(t.Context(), &trainv1.ListDatasetRequest{
 		ProjectName:   sdkProjectName,
 		PagingRequest: sdk.NewPagingRequest(),
 	})
@@ -47,7 +47,7 @@ func ListDataset(t *testing.T) {
 
 func GetDataset(t *testing.T) {
 	name := "projects/" + sdkProjectName + "/datasets/" + sdkDatasetName
-	dataset, err := client.GetDataset(trainv1.NewDatasetName(name))
+	dataset, err := client.GetDataset(t.Context(), trainv1.NewDatasetName(name))
 	assert.Nil(t, err)
 	assert.NotNil(t, dataset)
 	assert.Equal(t, name, dataset.Name)
@@ -60,12 +60,12 @@ func UpdateDataset(t *testing.T) {
 
 	req := trainv1.NewUpdateDatasetRequest(name)
 	req.Description = &desc
-	err := client.UpdateDataset(req)
+	err := client.UpdateDataset(t.Context(), req)
 	assert.Nil(t, err)
 }
 
 func DeleteDataset(t *testing.T) {
 	name := "projects/" + sdkProjectName + "/datasets/" + sdkDatasetName
-	err := client.DeleteDataset(trainv1.NewDatasetName(name))
+	err := client.DeleteDataset(t.Context(), trainv1.NewDatasetName(name))
 	assert.Nil(t, err)
 }

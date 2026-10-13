@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
 	core "github.com/FlyTOmeLight/server-go/pkg"
@@ -24,11 +22,11 @@ func Use(engine *core.Engine, config *conf.Config) {
 	}
 }
 
-func FakeAuth() gin.HandlerFunc {
+func FakeAuth() core.HandlerFunc {
 	return FakeAuthWithID("", "", "", "")
 }
 
-func FakeAuthWithID(orgID, userID, userName, userRole string) gin.HandlerFunc {
+func FakeAuthWithID(orgID, userID, userName, userRole string) core.HandlerFunc {
 	if orgID == "" {
 		orgID = "test-org-id"
 	}
@@ -41,7 +39,7 @@ func FakeAuthWithID(orgID, userID, userName, userRole string) gin.HandlerFunc {
 	if userRole == "" {
 		userRole = "test-user-role"
 	}
-	return func(c *gin.Context) {
+	return func(c *core.Context) {
 		c.Set(constants.KeyOrgID, orgID)
 		c.Set(constants.KeyUserID, userID)
 		c.Set(constants.KeyUserName, userName)
@@ -50,8 +48,8 @@ func FakeAuthWithID(orgID, userID, userName, userRole string) gin.HandlerFunc {
 	}
 }
 
-func AuthWithAuthCenter() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func AuthWithAuthCenter() core.HandlerFunc {
+	return func(c *core.Context) {
 		orgID := c.GetHeader(constants.HeaderOrgID)
 		c.Set(constants.KeyOrgID, orgID)
 

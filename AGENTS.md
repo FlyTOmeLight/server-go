@@ -13,8 +13,9 @@
 ## 框架与业务边界
 
 - 框架根模块只放跨项目复用的能力。业务项目使用自己的 module path，把领域逻辑放在自己的 `internal/` 中，通过发布版本引用本框架。
-- 启动入口显式构造配置和日志，再用 `server.NewBootstrap` 初始化所需资源模块；失败回滚，退出逆序关闭。HTTP 服务通过 `host.NewHTTPHost` 装配 `host.Service`。`RegisterRoutes` 只安装路由，`Start(ctx)` 启动所属任务，`Stop(ctx)` 取消并等待任务。进程入口处理信号，调用 `Run(ctx)`，并安排 `Close`。
-- 配置使用 `conf.Manager` 实例和独立快照；基础设施配置由装配代码从快照解析，资源通过构造函数注入。配置路径、占位符和动态更新范围见 [conf/README.md](conf/README.md)。
+- 当前工作树使用 `app.Run(ctx, options, build)` 统一创建配置与日志、监听配置、运行 HTTP 和清理资源。业务声明类型化配置，由 `app.Run` 按字段名一次解析后传给装配函数；同名 key 无需 tag，异名映射才使用 `mapstructure` tag。业务装配通过 `runtime.Initialize` 初始化资源，通过 `runtime.AddService` 交付服务；构造函数清理尚未交付的部分资源。可组合服务放在与 `cmd` 同级的公开 `service/`，私有业务留在 `internal/`。底层 `server.NewBootstrap` 负责失败回滚与逆序关闭，`host.NewHTTPHost` 装配 `host.Service`。`RegisterRoutes` 只安装路由，`Start(ctx)` 启动所属任务，`Stop(ctx)` 取消并等待任务。进程入口处理信号和退出码；`app.Run` 接管资源清理。应用入口从 v0.5.0 开始提供，正式消费使用发布版本。
+- 配置使用 `conf.Manager` 实例和独立快照；应用入口一次解析业务配置结构体，装配代码使用类型化字段，资源通过构造函数注入。配置路径、占位符和动态更新范围见 [conf/README.md](conf/README.md)。
+- HTTP 类型优先使用 `pkg/gin.go` 定义的 `core.Engine`、`core.Router`、`core.RouterGroup`、`core.Context`、`core.HandlerFunc`；未封装的 Gin 函数、常量和类型仍直接使用 Gin。
 - HTTP 参数、响应和错误沿用框架现有契约。修改前检查 `pkg/gin.go`、`response.go`、`errors/errors.go` 及相关 SDK 调用方。
 - 日志使用仓库内 `logger` 包，复用 Zap 和 Lumberjack。修改日志时保留请求 ID、级别过滤与文件轮转。许可证中间件依赖 `middleware.LicenseAuthorizer`；客户端创建、启动和关闭由业务项目负责。
 - 数据库仅使用公开驱动。新增驱动同时更新配置检查、数据库装配、类型映射和相关测试。

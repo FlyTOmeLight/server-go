@@ -5,17 +5,16 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	serrors "github.com/FlyTOmeLight/server-go/errors"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 // 用于检查当前节点是否是leader， 可用于有状态控制面服务的readiness probe，以避免从节点接收到请求
 // 使用示例：
 //
 //	engine.GET("/election/isleader", election.IsLeader(e))
-func IsLeader(e LeaderElection) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func IsLeader(e LeaderElection) core.HandlerFunc {
+	return func(c *core.Context) {
 		if e.IsLeader() {
 			c.String(http.StatusOK, "leader")
 			return
@@ -41,7 +40,7 @@ func NewLeaderHealthService(e LeaderElection) *LeaderHealthService {
 	return &LeaderHealthService{e: e}
 }
 
-func (s *LeaderHealthService) RegisterRoutes(group *gin.RouterGroup) error {
+func (s *LeaderHealthService) RegisterRoutes(group *core.RouterGroup) error {
 	if s.e == nil {
 		return errors.New("leader election is required")
 	}

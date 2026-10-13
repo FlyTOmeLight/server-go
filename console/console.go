@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gookit/goutil/arrutil"
 
 	"github.com/FlyTOmeLight/server-go/conf"
@@ -39,9 +38,9 @@ func RegisterConsoleAPI(engine *core.Engine, config *conf.Config) {
 	}
 }
 
-func Reverse(config *conf.HTTPServerConfig, appCode int, engine *core.Engine) gin.HandlerFunc {
+func Reverse(config *conf.HTTPServerConfig, appCode int, engine *core.Engine) core.HandlerFunc {
 	proxy := NewConsoleProxy(config, appCode)
-	return func(c *gin.Context) {
+	return func(c *core.Context) {
 		// WebSocket 请求不能通过普通反向代理，需要直接路由
 		// 检测 Upgrade: websocket 头，如果是 WebSocket 则重写路径并触发重新路由
 		if isWebSocketUpgrade(c.Request) {

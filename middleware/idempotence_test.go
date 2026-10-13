@@ -15,9 +15,10 @@ import (
 	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/idempotence"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func identityMiddleware(c *gin.Context) {
+func identityMiddleware(c *core.Context) {
 	c.Set(constants.KeyOrgID, c.GetHeader("Test-Org"))
 	c.Set(constants.KeyUserID, c.GetHeader("Test-User"))
 	c.Next()
@@ -38,7 +39,7 @@ func TestIdempotenceAuthorizationAndIdentityScopes(t *testing.T) {
 	authorizations := 0
 	executions := 0
 	engine.Use(identityMiddleware)
-	authorize := func(c *gin.Context) {
+	authorize := func(c *core.Context) {
 		authorizations++
 		if c.GetHeader("Revoked") != "" {
 			c.AbortWithStatus(http.StatusForbidden)
@@ -46,7 +47,7 @@ func TestIdempotenceAuthorizationAndIdentityScopes(t *testing.T) {
 		}
 		c.Next()
 	}
-	handler := func(c *gin.Context) {
+	handler := func(c *core.Context) {
 		executions++
 		c.JSON(
 			http.StatusCreated,
@@ -94,11 +95,11 @@ func TestIdempotenceAuthorizationAndIdentityScopes(t *testing.T) {
 func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		handler gin.HandlerFunc
+		handler core.HandlerFunc
 		status  int
 		body    string
 	}{
-		{name: "write string", handler: func(c *gin.Context) {
+		{name: "write string", handler: func(c *core.Context) {
 			c.Header("Content-Type", "text/plain")
 			c.Header("Location", "/created/1")
 			c.Writer.Header().Add("Set-Cookie", "first=1")
@@ -106,7 +107,7 @@ func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 			c.Status(http.StatusCreated)
 			_, _ = c.Writer.WriteString("created")
 		}, status: 201, body: "created"},
-		{name: "rendered error", handler: func(c *gin.Context) {
+		{name: "rendered error", handler: func(c *core.Context) {
 			c.Abort()
 			_ = c.Error(errors.NewError(http.StatusUnprocessableEntity, "InvalidInput", "invalid input"))
 		}, status: 422, body: "invalid input"},
@@ -119,7 +120,7 @@ func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 			executions := 0
 			engine.POST(
 				"/create",
-				Idempotent(controller, func(c *gin.Context) { executions++; tc.handler(c) }),
+				Idempotent(controller, func(c *core.Context) { executions++; tc.handler(c) }),
 			)
 			var original *httptest.ResponseRecorder
 			for range 2 {
@@ -168,7 +169,7 @@ func TestIdempotenceConcurrentWaitCancellation(t *testing.T) {
 	release := make(chan struct{})
 	finished := make(chan struct{})
 	var executions atomic.Int32
-	engine.POST("/create", func(c *gin.Context) {
+	engine.POST("/create", func(c *core.Context) {
 		executions.Add(1)
 		close(entered)
 		<-release
@@ -221,7 +222,7 @@ func TestIdempotenceBodyReadFailureDoesNotExecute(t *testing.T) {
 	defer controller.Close()
 	engine := gin.New()
 	engine.Use(identityMiddleware, Idempotence(controller))
-	engine.POST("/create", func(c *gin.Context) { t.Error("invalid body reached handler") })
+	engine.POST("/create", func(c *core.Context) { t.Error("invalid body reached handler") })
 	req := idempotentRequest("/create?clientToken=token", "org", "alice", `{}`)
 	req.Body = failedBody{}
 	w := httptest.NewRecorder()

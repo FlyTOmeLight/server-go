@@ -1,16 +1,16 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/constants"
-	"github.com/FlyTOmeLight/server-go/errors"
+	serrors "github.com/FlyTOmeLight/server-go/errors"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func Abort(c *gin.Context, err error) {
-	if errDetail, ok := err.(*errors.Error); ok {
+func Abort(c *core.Context, err error) {
+	if errDetail, ok := errors.AsType[*serrors.Error](err); ok {
 		c.Status(errDetail.Status)
 		c.Abort()
 		_ = c.Error(errDetail)
@@ -22,7 +22,7 @@ func Abort(c *gin.Context, err error) {
 	_ = c.Error(err)
 }
 
-func OK(c *gin.Context, resp any) {
+func OK(c *core.Context, resp any) {
 	if resp == nil {
 		c.Data(http.StatusOK, constants.ContentTypeJSON, nil)
 		return
@@ -31,21 +31,21 @@ func OK(c *gin.Context, resp any) {
 }
 
 // OKN means message delivered in Dapr
-func OKN(c *gin.Context) {
+func OKN(c *core.Context) {
 	c.Data(http.StatusNoContent, constants.ContentTypeJSON, nil)
 }
 
 // Forbidden means message forbidden by access controls in Dapr
-func Forbidden(c *gin.Context) {
+func Forbidden(c *core.Context) {
 	c.Data(http.StatusForbidden, constants.ContentTypeJSON, nil)
 }
 
 // NotFound means no pubsub name or topic give in Dapr
-func NotFound(c *gin.Context) {
+func NotFound(c *core.Context) {
 	c.Data(http.StatusNotFound, constants.ContentTypeJSON, nil)
 }
 
 // InternalError means Delivery failed in Dapr
-func InternalError(c *gin.Context) {
+func InternalError(c *core.Context) {
 	c.Data(http.StatusInternalServerError, constants.ContentTypeJSON, nil)
 }

@@ -1,98 +1,91 @@
 package trainv1
 
 import (
+	"bytes"
+	"context"
 	"net/url"
 	"strconv"
 
 	"github.com/FlyTOmeLight/server-go/errors"
+	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
-func (client *Client) CreateDataset(req *CreateDatasetRequest) (*CreateDatasetResponse, error) {
+func (client *Client) CreateDataset(ctx context.Context, req *CreateDatasetRequest) (*CreateDatasetResponse, error) {
 	if req == nil {
 		return nil, errors.ErrorInvalidHTTPRequest
 	}
 	var resp CreateDatasetResponse
-	var sErr errors.Error
-	result, err := client.R().SetBody(req).SetResult(&resp).SetError(&sErr).
+	result, err := client.R().SetContext(ctx).SetBody(req).SetResult(&resp).
 		Post("/v1/projects/" + url.PathEscape(req.ProjectName) + "/datasets")
 	if err != nil {
 		return nil, err
 	}
-	if result.IsError() {
-		sErr.Status = result.StatusCode()
-		return nil, &sErr
+	if result.IsStatusFailure() {
+		return nil, sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return &resp, nil
 }
 
-func (client *Client) ListDataset(req *ListDatasetRequest) (*ListDatasetResponse, error) {
+func (client *Client) ListDataset(ctx context.Context, req *ListDatasetRequest) (*ListDatasetResponse, error) {
 	if req == nil {
 		return nil, errors.ErrorInvalidHTTPRequest
 	}
 	var resp ListDatasetResponse
-	var sErr errors.Error
-	result, err := client.R().SetQueryParams(map[string]string{
+	result, err := client.R().SetContext(ctx).SetQueryParams(map[string]string{
 		"pageNo": strconv.Itoa(req.GetPageNo()), "pageSize": strconv.Itoa(req.GetPageSize()),
 		"order": req.Order, "orderBy": req.OrderBy, "filter": req.Filter,
-	}).SetResult(&resp).SetError(&sErr).Get("/v1/projects/" + url.PathEscape(req.ProjectName) + "/datasets")
+	}).SetResult(&resp).Get("/v1/projects/" + url.PathEscape(req.ProjectName) + "/datasets")
 	if err != nil {
 		return nil, err
 	}
-	if result.IsError() {
-		sErr.Status = result.StatusCode()
-		return nil, &sErr
+	if result.IsStatusFailure() {
+		return nil, sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return &resp, nil
 }
 
-func (client *Client) GetDataset(req *GetDatasetRequest) (*GetDatasetResponse, error) {
+func (client *Client) GetDataset(ctx context.Context, req *GetDatasetRequest) (*GetDatasetResponse, error) {
 	if req == nil {
 		return nil, errors.ErrorInvalidHTTPRequest
 	}
 	var resp GetDatasetResponse
-	var sErr errors.Error
-	result, err := client.R().SetResult(&resp).SetError(&sErr).
+	result, err := client.R().SetContext(ctx).SetResult(&resp).
 		Get("/v1/projects/" + url.PathEscape(req.ProjectName) + "/datasets/" + url.PathEscape(req.LocalName))
 	if err != nil {
 		return nil, err
 	}
-	if result.IsError() {
-		sErr.Status = result.StatusCode()
-		return nil, &sErr
+	if result.IsStatusFailure() {
+		return nil, sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return &resp, nil
 }
 
-func (client *Client) UpdateDataset(req *UpdateDatasetRequest) error {
+func (client *Client) UpdateDataset(ctx context.Context, req *UpdateDatasetRequest) error {
 	if req == nil {
 		return errors.ErrorInvalidHTTPRequest
 	}
-	var sErr errors.Error
-	result, err := client.R().SetBody(req).SetError(&sErr).
+	result, err := client.R().SetContext(ctx).SetBody(req).
 		Put("/v1/projects/" + url.PathEscape(req.ProjectName) + "/datasets/" + url.PathEscape(req.LocalName))
 	if err != nil {
 		return err
 	}
-	if result.IsError() {
-		sErr.Status = result.StatusCode()
-		return &sErr
+	if result.IsStatusFailure() {
+		return sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return nil
 }
 
-func (client *Client) DeleteDataset(req *DeleteDatasetRequest) error {
+func (client *Client) DeleteDataset(ctx context.Context, req *DeleteDatasetRequest) error {
 	if req == nil {
 		return errors.ErrorInvalidHTTPRequest
 	}
-	var sErr errors.Error
-	result, err := client.R().SetError(&sErr).
+	result, err := client.R().SetContext(ctx).
 		Delete("/v1/projects/" + url.PathEscape(req.ProjectName) + "/datasets/" + url.PathEscape(req.LocalName))
 	if err != nil {
 		return err
 	}
-	if result.IsError() {
-		sErr.Status = result.StatusCode()
-		return &sErr
+	if result.IsStatusFailure() {
+		return sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return nil
 }

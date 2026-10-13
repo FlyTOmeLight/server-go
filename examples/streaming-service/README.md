@@ -1,6 +1,6 @@
 # 流式服务
 
-这是根模块中的可运行示例，不需要数据库、模型账户或外部服务。`internal/greeting` 用本地数据源逐步发送文本；将 `GenerateGreeting` 换成接收 context 的模型调用即可接入真实上游。
+这是根模块中的可运行示例，不需要数据库、模型账户或外部服务。`internal/app/greeting` 用本地数据源逐步发送文本；将 `GenerateGreeting` 换成接收 context 的模型调用即可接入真实上游。
 
 ```sh
 cd examples/streaming-service
@@ -21,10 +21,10 @@ curl -N 'http://127.0.0.1:8080/stream?name=world'
 
 生成函数在请求 goroutine 中执行，遵守 context，并在发送失败时返回。客户端关闭连接会取消生成；业务实现若创建自己的 goroutine，应在函数返回前取消并等待它。SSE 路由不使用整段响应幂等缓存。框架退出会先排空 HTTP，再取消剩余请求。
 
-`sdk/greeting.Client.Open(ctx, name)` 直接返回 `io.ReadCloser`，客户端应在读完或提前停止时关闭它，也可取消传入的 context。SDK 使用独立的 35 秒总时限；HTTP 失败由 SDK 关闭响应体。流中途的错误由调用方按 SSE 事件处理。
+`sdk/go/greetingv1.Client.Open(ctx, name)` 直接返回 `io.ReadCloser`，客户端应在读完或提前停止时关闭它，也可取消传入的 context。SDK 使用独立的 35 秒总时限；HTTP 失败由 SDK 关闭响应体。流中途的错误由调用方按 SSE 事件处理。
 
 ```go
-client, err := greeting.NewClient("http://127.0.0.1:8080")
+client, err := greetingv1.NewClient("http://127.0.0.1:8080")
 if err != nil { return err }
 body, err := client.Open(ctx, "world")
 if err != nil { return err }
@@ -32,6 +32,8 @@ defer body.Close()
 // 使用项目选定的 SSE 客户端解码事件；body 保持流式读取。
 ```
 
-将示例复制成独立业务项目时，建立自己的 go.mod，修改本示例 import 路径，并通过 `go get github.com/FlyTOmeLight/server-go@v0.3.0` 引用框架。`stream` 包从 v0.3.0 开始提供。
+`cmd/server` 通过 `app.Run` 调用 `service.Build`；公开服务拥有控制器，HTTP 处理和业务生成分别在 `internal/app/greeting/controller.go` 与 `service.go`。Controller 和业务 Service 使用 `*core.Context`，生成函数和 SDK 使用标准 `context.Context`。
+
+`make build` 输出到 `output/bin`，`make package` 保留配置目录。`app` API 从 v0.5.0 开始提供，复制为独立项目时的引用与版本约定见 [示例索引](../README.md)。
 
 在仓库根目录执行 `make check`，会验证真实网络上的首事件、写入期限、SDK 关闭取消、Console 透传、流内错误以及示例进程启动与退出。

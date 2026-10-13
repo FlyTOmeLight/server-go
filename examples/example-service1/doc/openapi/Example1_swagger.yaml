@@ -1,4 +1,4 @@
-basePath: /example-service1/v1
+basePath: /
 definitions:
   trainv1.CreateDatasetRequest:
     properties:
@@ -88,7 +88,7 @@ info:
   contact: {}
   title: Example service dataset open api
 paths:
-  /v1/workspaces/:workspaceID/projects/:projectName/datasets:
+  /v1/projects/{projectName}/datasets:
     get:
       description: List datasets
       parameters:
@@ -142,11 +142,6 @@ paths:
       - in: query
         name: projectName
         type: string
-      - description: Workspace id
-        in: path
-        name: workspaceID
-        required: true
-        type: string
       - description: Project Local Name
         in: path
         name: projectName
@@ -181,11 +176,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/trainv1.CreateDatasetRequest'
-      - description: Workspace id
-        in: path
-        name: workspaceID
-        required: true
-        type: string
       - description: Project Local Name
         in: path
         name: projectName
@@ -209,7 +199,7 @@ paths:
       summary: Create a dataset
       tags:
       - dataset
-  /v1/workspaces/:workspaceID/projects/:projectName/datasets/:localName:
+  /v1/projects/{projectName}/datasets/{localName}:
     delete:
       consumes:
       - application/json
@@ -220,11 +210,6 @@ paths:
         type: string
       - in: query
         name: projectName
-        type: string
-      - description: Workspace id
-        in: path
-        name: workspaceID
-        required: true
         type: string
       - description: Project Local Name
         in: path
@@ -259,11 +244,6 @@ paths:
       - in: query
         name: projectName
         type: string
-      - description: Workspace id
-        in: path
-        name: workspaceID
-        required: true
-        type: string
       - description: Project Local Name
         in: path
         name: projectName
@@ -295,7 +275,7 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update a project
+      description: Update a dataset
       parameters:
       - description: Request
         in: body
@@ -303,11 +283,6 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/trainv1.UpdateDatasetRequest'
-      - description: Workspace id
-        in: path
-        name: workspaceID
-        required: true
-        type: string
       - description: Project Local Name
         in: path
         name: projectName
@@ -331,5 +306,5 @@ paths:
             type: string
       summary: Update a dataset
       tags:
-      - project
+      - dataset
 swagger: "2.0"

@@ -1,13 +1,12 @@
 package middleware
 
 import (
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/errors"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func APINotFound() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func APINotFound() core.HandlerFunc {
+	return func(c *core.Context) {
 		c.Abort()
 		_ = c.Error(errors.ErrorAPINotFound)
 	}

@@ -6,13 +6,15 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 func TestRecoveryKeepsStreamIntact(t *testing.T) {
 	engine := gin.New()
 	engine.Use(Recovery())
-	engine.GET("/panic", func(c *gin.Context) { panic("secret panic value") })
-	engine.GET("/stream", func(c *gin.Context) {
+	engine.GET("/panic", func(c *core.Context) { panic("secret panic value") })
+	engine.GET("/stream", func(c *core.Context) {
 		c.Header("Content-Type", "text/event-stream")
 		c.Writer.WriteString("data: started\n\n")
 		c.Writer.Flush()

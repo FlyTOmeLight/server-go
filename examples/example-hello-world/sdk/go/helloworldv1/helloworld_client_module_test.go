@@ -16,9 +16,9 @@ import (
 func TestModuleSDKHTTPFailures(t *testing.T) {
 	for _, test := range []struct{ name, contentType, body, code string }{
 		{name: "service error", contentType: "application/json", body: `{"code":"Forbidden","message":"denied","requestId":"request-1"}`, code: "Forbidden"},
-		{name: "HTML", contentType: "text/html", body: "<html>gateway error</html>", code: "UnexpectedResponse"},
-		{name: "invalid JSON", contentType: "application/json", body: "{", code: "UnexpectedResponse"},
-		{name: "empty object", contentType: "application/json", body: "{}", code: "UnexpectedResponse"},
+		{name: "HTML", contentType: "text/html", body: "<html>gateway error</html>", code: "HTTPError"},
+		{name: "invalid JSON", contentType: "application/json", body: "{", code: "HTTPError"},
+		{name: "empty object", contentType: "application/json", body: "{}", code: "HTTPError"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

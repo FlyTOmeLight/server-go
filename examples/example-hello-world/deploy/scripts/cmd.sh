@@ -1,11 +1,6 @@
-# create
-go run ../../cmd/cli/cli.go module create --name=debug_001
-
-# list
-go run ../../cmd/cli/cli.go module list
-
-# get
-go run ../../cmd/cli/cli.go module get --id=debug_001
-
-# delete
-go run ../../cmd/cli/cli.go module delete --id=debug_001
+#!/bin/sh
+set -eu
+# Run from the example root after configuring the CLI endpoint.
+go run ./cmd/cli module create --name=example --project-id=project1
+go run ./cmd/cli module list
+# Use the id returned by create for get, update and delete.

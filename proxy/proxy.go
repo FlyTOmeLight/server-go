@@ -6,13 +6,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/logger"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func Reverse(rawURL string) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func Reverse(rawURL string) core.HandlerFunc {
+	return func(c *core.Context) {
 		targetURL, _ := url.Parse(rawURL)
 
 		director := func(req *http.Request) {
@@ -31,8 +30,8 @@ func Reverse(rawURL string) gin.HandlerFunc {
 // rawURL is localhost:80/api/v1
 // sourcePrefix is /demo
 // the url 'localhost:3000/demo/path1/path2' will be replaced to 'localhost:80/api/v1/path1/path2'
-func ReverseEndpoint(rawURL string, sourcePrefix ...string) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func ReverseEndpoint(rawURL string, sourcePrefix ...string) core.HandlerFunc {
+	return func(c *core.Context) {
 		targetURL, _ := url.Parse(rawURL)
 
 		var prefix string
@@ -56,14 +55,14 @@ func ReverseEndpoint(rawURL string, sourcePrefix ...string) gin.HandlerFunc {
 	}
 }
 
-func ReverseWithDirector(director func(r *http.Request)) gin.HandlerFunc {
+func ReverseWithDirector(director func(r *http.Request)) core.HandlerFunc {
 	return ReverseWithModifyHandler(director, nil)
 }
 
 func ReverseWithModifyHandler(
 	director func(r *http.Request),
 	modifyResponse func(*http.Response) error,
-) gin.HandlerFunc {
+) core.HandlerFunc {
 	proxy := &httputil.ReverseProxy{
 		Director:       director,
 		ModifyResponse: modifyResponse,
@@ -76,8 +75,8 @@ func ReverseWithModifyHandler(
 	return ReverseWithProxy(proxy)
 }
 
-func ReverseWithProxy(proxy *httputil.ReverseProxy) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func ReverseWithProxy(proxy *httputil.ReverseProxy) core.HandlerFunc {
+	return func(c *core.Context) {
 		proxy.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}

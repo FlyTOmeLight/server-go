@@ -7,16 +7,16 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 
 	"github.com/FlyTOmeLight/server-go/errors"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 type HTTPBinder struct {
 	req     any
-	context *gin.Context
+	context *core.Context
 	errs    []error
 }
 
@@ -98,7 +98,7 @@ func (b *HTTPBinder) JSON() *HTTPBinder {
 	return b
 }
 
-func Bind(c *gin.Context, req any) *HTTPBinder {
+func Bind(c *core.Context, req any) *HTTPBinder {
 	return &HTTPBinder{
 		context: c,
 		req:     req,
@@ -181,7 +181,7 @@ func (strictJSONBinding) Bind(r *http.Request, dst any) error {
 }
 
 // BindJSON binds one bounded JSON object and writes a framework error on failure.
-func BindJSON(c *gin.Context, dst any) bool {
+func BindJSON(c *core.Context, dst any) bool {
 	if err := Bind(c, dst).JSON().Error(); err != nil {
 		errors.AbortWithError(c, err)
 		return false
@@ -190,7 +190,7 @@ func BindJSON(c *gin.Context, dst any) bool {
 }
 
 // QueryLimit reads a positive query limit using the caller's pagination policy.
-func QueryLimit(c *gin.Context, fallback, maximum int) (int, bool) {
+func QueryLimit(c *core.Context, fallback, maximum int) (int, bool) {
 	value, err := strconv.Atoi(c.DefaultQuery("limit", strconv.Itoa(fallback)))
 	if err != nil || value < 1 || value > maximum {
 		errors.AbortWithError(c, errors.NewInvalidParameter("invalid page size"))

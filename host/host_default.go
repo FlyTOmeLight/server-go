@@ -7,18 +7,18 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/FlyTOmeLight/server-go/middleware"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/pkg/binder"
 	"github.com/FlyTOmeLight/server-go/version"
 )
@@ -33,7 +33,7 @@ const (
 var ErrRestartRequired = errors.New("configuration change requires process restart")
 
 // Setup installs optional HTTP integrations before business routes are registered.
-type Setup func(*gin.Engine, *conf.Config) error
+type Setup func(*core.Engine, *conf.Config) error
 
 type HTTPHost struct {
 	manager     *conf.Manager
@@ -47,7 +47,7 @@ type HTTPHost struct {
 	running     bool
 	closed      bool
 	ready       atomic.Bool
-	router      atomic.Pointer[gin.Engine]
+	router      atomic.Pointer[core.Engine]
 	unsubscribe func()
 	closeOnce   sync.Once
 	requestMu   sync.Mutex
@@ -69,19 +69,19 @@ func NewHTTPHost(manager *conf.Manager, log *logger.Logger, setup Setup, service
 	return h, nil
 }
 
-func (h *HTTPHost) buildRouter(config *conf.Config) (*gin.Engine, error) {
+func (h *HTTPHost) buildRouter(config *conf.Config) (*core.Engine, error) {
 	engine := gin.New()
 	_ = engine.SetTrustedProxies(nil)
 	engine.HandleMethodNotAllowed = true
 	engine.ContextWithFallback = true
-	engine.Use(func(c *gin.Context) {
+	engine.Use(func(c *core.Context) {
 		c.Request = c.Request.WithContext(logger.WithContext(c.Request.Context(), h.log))
 		c.Set("server.AppCode", config.AppCode)
 		c.Set("server.Debug", config.RunMode == conf.RunModeDebug)
 		c.Next()
 	}, middleware.RequestID(), middleware.RequestLog(), middleware.Recovery(), serrors.ErrorHandler(config))
 	engine.NoRoute(middleware.APINotFound())
-	engine.NoMethod(func(c *gin.Context) {
+	engine.NoMethod(func(c *core.Context) {
 		serrors.Abort(c, http.StatusMethodNotAllowed, "MethodNotAllowed", "method not allowed")
 	})
 	engine.GET("/ping", middleware.Ping())
@@ -176,7 +176,7 @@ func NewHTTPServer(config *conf.Config) *http.Server {
 	if cfg.MaxHeaderBytes == 0 {
 		cfg.MaxHeaderBytes = DefaultMaxHeaderBytes
 	}
-	return &http.Server{
+	server := &http.Server{
 		Addr:              cfg.Listen,
 		ReadTimeout:       time.Duration(cfg.ReadTimeout) * time.Millisecond,
 		ReadHeaderTimeout: time.Duration(cfg.ReadTimeout) * time.Millisecond,
@@ -184,6 +184,12 @@ func NewHTTPServer(config *conf.Config) *http.Server {
 		IdleTimeout:       time.Duration(cfg.IdleTimeout) * time.Millisecond,
 		MaxHeaderBytes:    cfg.MaxHeaderBytes,
 	}
+	if cfg.UseH2C {
+		server.Protocols = new(http.Protocols)
+		server.Protocols.SetHTTP1(true)
+		server.Protocols.SetUnencryptedHTTP2(true)
+	}
+	return server
 }
 
 // Run owns one serve loop. The process entry point owns signal handling.
@@ -203,16 +209,6 @@ func (h *HTTPHost) Run(ctx context.Context) (result error) {
 	requestCtx, cancelRequests := context.WithCancel(context.WithoutCancel(ctx))
 	server.BaseContext = func(net.Listener) context.Context { return requestCtx }
 	server.Handler = h.Handler()
-	if h.config.HTTPServer.UseH2C {
-		http2Server := &http2.Server{}
-		if err := http2.ConfigureServer(server, http2Server); err != nil {
-			h.running = false
-			h.mu.Unlock()
-			cancelRequests()
-			return err
-		}
-		server.Handler = h2c.NewHandler(server.Handler, http2Server)
-	}
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
 		h.running = false
@@ -259,9 +255,9 @@ func (h *HTTPHost) Run(ctx context.Context) (result error) {
 		drainCancel()
 		cancelRequests()
 		cancel()
-		for i := len(started) - 1; i >= 0; i-- {
+		for _, s := range slices.Backward(started) {
 			stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			result = errors.Join(result, started[i].Stop(stopCtx))
+			result = errors.Join(result, s.Stop(stopCtx))
 			stopCancel()
 		}
 		h.mu.Lock()

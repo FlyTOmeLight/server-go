@@ -5,8 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
+
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 var (
@@ -27,8 +28,8 @@ type VersionInfo struct {
 	BuildNumber   string
 }
 
-func Version() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func Version() core.HandlerFunc {
+	return func(c *core.Context) {
 		c.JSON(http.StatusOK, GetVersion())
 	}
 }

@@ -1,12 +1,11 @@
 package middleware
 
 import (
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/conf"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func Asset(assets []conf.HTTPServerAssetConfig, authEnable bool, engine *gin.Engine) {
+func Asset(assets []conf.HTTPServerAssetConfig, authEnable bool, engine *core.Engine) {
 	for _, asset := range assets {
 		if asset.AuthEnable != authEnable {
 			continue

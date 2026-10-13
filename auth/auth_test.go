@@ -9,12 +9,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/FlyTOmeLight/server-go/constants"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 func TestDefaultFakeAuthIsSafeForConcurrentRequests(t *testing.T) {
 	engine := gin.New()
 	engine.Use(FakeAuth())
-	engine.GET("/identity", func(c *gin.Context) {
+	engine.GET("/identity", func(c *core.Context) {
 		for key, want := range map[string]string{
 			constants.KeyOrgID: "test-org-id", constants.KeyUserID: "test-user-id",
 			constants.KeyUserName: "test-user-name", constants.KeyUserRole: "test-user-role",

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 func TestBearerTokensOwnsCredentials(t *testing.T) {
@@ -13,7 +15,7 @@ func TestBearerTokensOwnsCredentials(t *testing.T) {
 	tokens["credential"] = "changed"
 	tokens["later"] = "other"
 	engine := gin.New()
-	engine.GET("/", middleware, func(c *gin.Context) { c.String(200, UserID(c)) })
+	engine.GET("/", middleware, func(c *core.Context) { c.String(200, UserID(c)) })
 	for _, tc := range []struct {
 		header, body string
 		status       int

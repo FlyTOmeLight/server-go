@@ -1,13 +1,12 @@
 package middleware
 
 import (
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func Feature(obj any) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func Feature(obj any) core.HandlerFunc {
+	return func(c *core.Context) {
 		server.OK(c, obj)
 	}
 }

@@ -10,10 +10,12 @@
 project/
 ├── go.mod
 ├── cmd/
-│   ├── server/main.go
-│   └── cli/main.go                 # 有配套 CLI 时创建
+│   ├── server/server.go
+│   └── cli/cli.go                 # 有配套 CLI 时创建
+├── service/
+│   ├── build.go                    # 类型化 Config 与独立应用装配
+│   └── service.go                  # 公开服务构造与生命周期
 ├── internal/
-│   ├── service/                    # server-go 生命周期适配与装配
 │   ├── app/
 │   │   └── order/
 │   │       ├── controller.go       # HTTP 绑定、响应、Swagger
@@ -22,6 +24,7 @@ project/
 │   ├── client/                     # 外部协议、错误与客户端生命周期
 │   ├── config/                     # 本项目的类型化配置和校验
 │   └── workflow/                   # 有复杂运行时才创建相应领域包
+├── command/                        # 有 CLI 时组织领域命令
 ├── sdk/go/orderv1/                 # 确有对外 Go SDK 时创建
 ├── conf/server/config.toml
 ├── doc/openapi/                    # 有 OpenAPI 时创建
@@ -29,7 +32,11 @@ project/
 └── Makefile                       # 有重复构建命令时创建
 ```
 
-`internal/service` 负责框架生命周期适配；`internal/app/order/service.go` 负责订单业务。二者承担不同职责。server-go 不要求业务服务放在仓库根目录的 `service/`。HelloWorld 模板采用 `internal/service`。`example-service1`、`example-service2` 的 `service` 包被组合示例实际导入，因此保留为公开包。
+`service/` 与 `cmd/` 同级，公开服务构造与 `host.Service` 实现，供独立入口和组合服务导入；`internal/app/order/service.go` 负责私有订单业务。公开服务包可以访问自身模块的 `internal` 实现，组合项目只依赖公开构造函数。HelloWorld、example-service1 和 example-service2 都采用这种组织。
+
+所有 HTTP 示例以 HelloWorld 为基准：入口只处理信号与退出码，`service.Build` 通过 `app.Runtime` 接管实际需要的资源，再交付服务。组合应用自行声明整体 `Config`，通过公开服务构造函数注入共享资源；不调用各子服务的独立 `Build` 重复创建连接。迁移开关显式传入数据库服务的构造函数。
+
+无状态小服务采用 `cmd/server`、`service` 和一个 Controller 即可，无需空业务 Service 或 Table。独立 worker 使用 `cmd/worker`、公开 `service` 与私有任务包，继续使用标准 context；没有 HTTP 时不创建 HTTPHost、HTTP 配置或空路由。全部可运行例子见 [examples/README.md](../examples/README.md)。
 
 小服务可以先用 `cmd/server` 与一个领域包。复杂运行时按实际领域拆包，例如任务执行或工作流编排。`internal/pkg` 只是目录习惯；新包优先使用明确的领域名称，避免建立通用工具集合。
 
@@ -37,7 +44,7 @@ project/
 
 | 位置 | 负责 | 依赖约束 |
 | --- | --- | --- |
-| `cmd`、`internal/service` | 配置校验、构造依赖、启动与退出 | 显式装配业务对象和基础设施 |
+| `cmd`、`service` | 配置校验、构造依赖、启动与退出 | 显式装配业务对象和基础设施 |
 | Controller | 路由、参数绑定、HTTP 响应、Swagger | 调用业务逻辑，不直接编排数据库写入 |
 | 业务 Service | 业务默认值、权限规则、事务、跨领域调用 | 使用实际需要的存储和外部客户端 |
 | Table | 持久化模型、过滤条件、查询和更新 | 接收 context 与数据库句柄，不处理 HTTP 响应和用户权限 |
@@ -87,12 +94,12 @@ SDK 方法的路径、HTTP 方法、请求编码、响应结构与 Controller、
 ## 与当前 server-go 接口结合
 
 1. 业务项目有自己的 module path，引用已发布的 `github.com/FlyTOmeLight/server-go`。本地联合开发才使用临时 `replace` 或 `go.work`。
-2. `conf/server/config.toml` 是框架当前默认路径。`SERVER_CONFIG_PATH` 可指定其他文件。Go 官方目录建议没有规定 TOML 文件必须放在哪里。业务配置类型放在 `internal/config`，配置文件不与 Go 配置加载代码混放。
-3. `cmd/server` 使用 `server.NewBootstrap` 装配真正需要的 DB、Redis 等模块。可失败的依赖构造先完成，再创建业务服务；初始化成功后安排退出清理。
-4. 业务服务实现 `host.Service`，通过 `host.NewHTTPHost(manager, log, setup, services...)` 显式装配。`RegisterRoutes(*gin.RouterGroup) error` 只安装路由；可失败的连接和迁移在构造函数或资源模块中完成。
-5. `Start(ctx) error` 启动所属后台任务；失败时清理本次部分启动的资源。`Stop(ctx) error` 取消并等待任务退出。`Run(ctx)` 先排空 HTTP，再取消 worker 并逆序停止服务。进程入口负责信号与资源模块关闭。路由动态更新只重建 handler，不重新启动 worker。
-6. HTTP 入口向业务逻辑传递 `c.Request.Context()`。业务与 Table 使用 `context.Context` 作为第一个参数，GORM 调用 `WithContext(ctx)`，Resty 请求调用 `SetContext(ctx)`。不要只把 `*gin.Context` 存进共享客户端。
-7. 配置、DB、Redis、MongoDB、幂等和订阅集合均由实例拥有。配置使用 `manager.Snapshot().UnmarshalKey`；DB 和客户端显式传给业务对象。可选 HTTP 集成通过 `httpintegration.Install` 或自己的 setup 安装。配置动态更新范围见 [conf/README.md](../conf/README.md)。
+2. `conf/server/config.toml` 是框架当前默认路径。`SERVER_CONFIG_PATH` 可指定其他文件。Go 官方目录建议没有规定 TOML 文件必须放在哪里。装配所需的类型化配置放在 `service/build.go`；配置复杂且有独立业务校验时才拆到 `internal/config`。配置文件不与 Go 配置加载代码混放。
+3. 当前工作树使用 `app.Run(ctx, options, build)` 编排配置、日志、资源、HTTP 和退出清理。业务声明配置结构体，由 `app.Run` 按字段名匹配配置 key，名称不同时用 `mapstructure` tag 映射，一次解析后传给装配函数；业务直接读取类型化字段。装配函数通过 `runtime.Initialize(ctx, modules...)` 初始化真正需要的 DB、Redis 等模块，再显式构造服务并通过 `runtime.AddService` 交付。构造失败前尚未交付的部分资源由构造函数清理。该入口从 v0.5.0 开始提供；消费更早版本时仍使用 `server.NewBootstrap` 和 `host.NewHTTPHost` 显式装配。
+4. 业务服务实现 `host.Service`，通过 `host.NewHTTPHost(manager, log, setup, services...)` 显式装配。`RegisterRoutes(*core.RouterGroup) error` 只安装路由；可失败的连接和迁移在构造函数或资源模块中完成。
+5. `Start(ctx) error` 启动所属后台任务；失败时清理本次部分启动的资源。`Stop(ctx) error` 取消并等待任务退出。`Run(ctx)` 先排空 HTTP，再取消 worker 并逆序停止服务。进程入口负责信号和退出码，`app.Run` 负责已接管资源的关闭。路由动态更新只重建 handler，不重新启动 worker。
+6. HTTP Controller 和对应业务 Service 使用 `*core.Context`，便于读取身份和请求信息。数据库及网络操作使用 `ctx.Request.Context()` 获取的标准 context，传给 GORM 的 `WithContext` 和 SDK 的 context 参数；SDK 与长期任务仍使用 `context.Context`。共享客户端和数据库后台操作不持有会被 Gin 复用的 Context。
+7. 配置、DB、Redis、MongoDB、幂等和订阅集合均由实例拥有。配置由 `app.Run` 一次解析为业务结构体，不在各模块重复调用 `Snapshot().UnmarshalKey`；同名字段无需 `mapstructure` tag。DB 和客户端显式传给业务对象。可选 HTTP 集成通过 `httpintegration.Install` 或自己的 setup 安装。配置动态更新范围见 [conf/README.md](../conf/README.md)。
 8. 后台任务持有明确的取消函数和等待手段。只有确实需要独立部署时才增加 `cmd/worker`，不把独立 worker 入口作为所有新项目的必备目录。
 
 ## 通用 HTTP 能力归属
@@ -105,7 +112,7 @@ SDK 使用 `sdk.DecodeError` 解析框架错误，向调用方保留 `errors.Err
 
 路由风格、业务枚举、数据库字段和外部系统由项目契约决定。分层职责、context 传递和 worker 退出管理遵循本约定。新项目使用显式依赖注入，按领域分配装配职责和共享代码归属。
 
-框架仓库本身属于公共库，需要保留供调用方导入的领域包；业务服务通常是独立程序，私有实现放 `internal`。公共 SDK 或其他包实际需要单独分发时，再考虑独立模块。不要为一个业务服务提前创建多个 go.mod。
+框架仓库本身属于公共库，需要保留供调用方导入的领域包；业务服务的可组合入口放公开 `service/`，私有领域实现放 `internal`。公共 SDK 或其他包实际需要单独分发时，再考虑独立模块。不要为一个业务服务提前创建多个 go.mod。
 
 ## 完成判据
 

@@ -3,14 +3,22 @@ package service
 import (
 	"context"
 
-	"github.com/gin-gonic/gin"
+	"github.com/FlyTOmeLight/server-go/host"
+	core "github.com/FlyTOmeLight/server-go/pkg"
+
+	"github.com/FlyTOmeLight/server-go/examples/example-service2/internal/app/hello"
 )
 
-type ExampleService struct{}
+type ExampleService struct{ controller *hello.Controller }
 
-func NewExampleService() *ExampleService { return &ExampleService{} }
+var _ host.Service = (*ExampleService)(nil)
 
-func (s *ExampleService) RegisterRoutes(router *gin.RouterGroup) error { return nil }
+func NewExampleService() *ExampleService { return &ExampleService{controller: hello.NewController()} }
+
+func (s *ExampleService) RegisterRoutes(router *core.RouterGroup) error {
+	s.controller.RegisterRoutes(router)
+	return nil
+}
 
 func (s *ExampleService) Start(context.Context) error { return nil }
 

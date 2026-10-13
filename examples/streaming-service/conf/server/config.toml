@@ -5,5 +5,5 @@ RunMode = "debug"
 [HTTPServer]
 Listen = "127.0.0.1:8080"
 AuthType = "Fake"
-# 普通请求仍有总写入时限；流式路由按每次发送设置写入时限。
-WriteTimeout = 10000
+
+# 单段 SSE 写入由 stream.NewSSE 控制期限。

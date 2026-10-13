@@ -16,7 +16,7 @@ var _ cli.CommandBuilder = &ModuleCommandBuilder{}
 
 func (b *ModuleCommandBuilder) NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "helloworld",
+		Use: "module",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			initClient()
 			return nil
@@ -45,9 +45,11 @@ func createModuleCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return createModule(cmd.Context(), &req)
 		},
-		Example: cli.DefaultName() + " module create --local-name=xx",
+		Example: cli.DefaultName() + " module create --name=xx --project-id=project1",
 	}
 
+	cmd.Flags().StringVar(&req.ProjectID, "project-id", "", "Project ID (required)")
+	_ = cmd.MarkFlagRequired("project-id")
 	cmd.Flags().StringVar(&req.Name, "name", "", " Module name (required)")
 	cmd.Flags().StringVar(&req.Description, "description", "", " Module description")
 
@@ -187,7 +189,7 @@ func deleteModule(ctx context.Context, req *sdk.DeleteModuleRequest) error {
 
 func applyModule() {
 	var req sdk.CreateModuleRequest
-	cli.RegisterApplyHandler("Example", &req, func(args any) error {
+	cli.RegisterApplyHandler("Module", &req, func(args any) error {
 		initClient()
 		return createModule(context.Background(), args.(*sdk.CreateModuleRequest))
 	})

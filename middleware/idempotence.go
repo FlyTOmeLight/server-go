@@ -14,6 +14,7 @@ import (
 	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/idempotence"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 // Idempotence caches JSON POST responses with a nonempty clientToken. Install
@@ -21,12 +22,12 @@ import (
 // Only successful responses are retained; outer error rendering remains in charge.
 // Identities must come from verified Gin context keys; requests without a verified
 // identity do not use the cache.
-func Idempotence(controller *idempotence.Controller) gin.HandlerFunc {
-	return idempotenceHandler(controller, func(c *gin.Context) { c.Next() })
+func Idempotence(controller *idempotence.Controller) core.HandlerFunc {
+	return idempotenceHandler(controller, func(c *core.Context) { c.Next() })
 }
 
-func idempotenceHandler(controller *idempotence.Controller, next gin.HandlerFunc) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func idempotenceHandler(controller *idempotence.Controller, next core.HandlerFunc) core.HandlerFunc {
+	return func(c *core.Context) {
 		clientToken := c.Query(constants.QueryClientToken)
 		mediaType, _, _ := mime.ParseMediaType(c.GetHeader(constants.HeaderContentType))
 		orgID := c.GetString(constants.KeyOrgID)
@@ -174,6 +175,6 @@ func (w *idempotenceWriter) WriteString(data string) (int, error) {
 
 // Idempotent wraps the final endpoint handler so preceding route-level
 // authentication and authorization always execute, including on cache hits.
-func Idempotent(controller *idempotence.Controller, handler gin.HandlerFunc) gin.HandlerFunc {
+func Idempotent(controller *idempotence.Controller, handler core.HandlerFunc) core.HandlerFunc {
 	return idempotenceHandler(controller, handler)
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 func TestInstallLeavesDisabledFeaturesAndDaprUnregistered(t *testing.T) {
@@ -35,7 +36,7 @@ func TestInstallEnablesConfiguredRoutesAndProtectsAssets(t *testing.T) {
 	}
 	engine := gin.New()
 	identities := make(map[string]string)
-	engine.Use(func(c *gin.Context) {
+	engine.Use(func(c *core.Context) {
 		c.Next()
 		identities[c.Request.URL.Path] = c.GetString(constants.KeyUserID)
 	})
@@ -54,7 +55,7 @@ func TestInstallEnablesConfiguredRoutesAndProtectsAssets(t *testing.T) {
 	if err := Install(engine, config); err != nil {
 		t.Fatal(err)
 	}
-	engine.GET("/business", func(c *gin.Context) { c.String(http.StatusOK, c.GetString(constants.KeyUserID)) })
+	engine.GET("/business", func(c *core.Context) { c.String(http.StatusOK, c.GetString(constants.KeyUserID)) })
 	paths := map[string]bool{}
 	for _, route := range engine.Routes() {
 		key := route.Method + " " + route.Path
@@ -86,7 +87,7 @@ func TestInstallEnablesConfiguredRoutesAndProtectsAssets(t *testing.T) {
 
 func TestInstallRejectsInvalidInputs(t *testing.T) {
 	for _, test := range []struct {
-		engine *gin.Engine
+		engine *core.Engine
 		config *conf.Config
 	}{
 		{config: &conf.Config{}},

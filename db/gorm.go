@@ -12,7 +12,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormlogger "gorm.io/gorm/logger"
 	"gorm.io/plugin/soft_delete"
 )
 
@@ -124,6 +124,7 @@ func newMySQL(config *Config) (*DB, error) {
 	args := fmt.Sprintf(formatter, config.User, config.Password, config.Host, config.Port, config.DB)
 
 	db, err := gorm.Open(NewAIBaseDialector("mysql", mysql.Open(args)), &gorm.Config{
+		Logger:                                   gormLogger{level: gormlogger.Info},
 		DisableAutomaticPing:                     true,
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
@@ -132,6 +133,7 @@ func newMySQL(config *Config) (*DB, error) {
 
 func newSQLite(config *Config) (*DB, error) {
 	db, err := gorm.Open(sqlite.Open(config.DB), &gorm.Config{
+		Logger:                                   gormLogger{level: gormlogger.Info},
 		DisableAutomaticPing:                     true,
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
@@ -148,7 +150,7 @@ func newPostgreSQL(config *Config) (*DB, error) {
 	db, err := gorm.Open(NewAIBaseDialector("postgres", postgres.New(postgres.Config{
 		DSN:                  args,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
-	})), &gorm.Config{DisableAutomaticPing: true})
+	})), &gorm.Config{DisableAutomaticPing: true, Logger: gormLogger{level: gormlogger.Info}})
 	return db, err
 }
 
@@ -156,7 +158,10 @@ func newClickHouse(config *Config) (*DB, error) {
 	formatter := "tcp://%s:%d?database=%s&username=%s&password=%s"
 	args := fmt.Sprintf(formatter, config.Host, config.Port, config.DB, config.User, config.Password)
 
-	db, err := gorm.Open(clickhouse.Open(args), &gorm.Config{DisableAutomaticPing: true})
+	db, err := gorm.Open(
+		clickhouse.Open(args),
+		&gorm.Config{DisableAutomaticPing: true, Logger: gormLogger{level: gormlogger.Info}},
+	)
 	return db, err
 }
 
@@ -174,6 +179,7 @@ func newGaussDB(config *Config) (*DB, error) {
 		DSN:                  dsn,
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	})), &gorm.Config{
+		Logger:                                   gormLogger{level: gormlogger.Info},
 		DisableAutomaticPing:                     true,
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
@@ -200,8 +206,8 @@ func newKingbase(config *Config) (*gorm.DB, error) {
 
 	// 使用 PostgreSQL 方言连接 KingbaseES（人大金仓 PG 兼容模式）
 	db, err := gorm.Open(baseDialector, &gorm.Config{
+		Logger:                                   gormLogger{level: gormlogger.Info},
 		DisableAutomaticPing:                     true,
-		Logger:                                   logger.Default.LogMode(logger.Info),
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {

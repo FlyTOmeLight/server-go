@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/FlyTOmeLight/server-go/errors"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 func TestBoundedStrictJSON(t *testing.T) {
@@ -26,7 +27,7 @@ func TestBoundedStrictJSON(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			engine := gin.New()
-			engine.POST("/", func(c *gin.Context) {
+			engine.POST("/", func(c *core.Context) {
 				var req struct {
 					Name string `json:"name" binding:"required"`
 				}
@@ -65,7 +66,7 @@ func TestQueryLimit(t *testing.T) {
 		{query: "?limit=bad", value: 0, status: 400},
 	} {
 		engine := gin.New()
-		engine.GET("/", func(c *gin.Context) {
+		engine.GET("/", func(c *core.Context) {
 			value, ok := QueryLimit(c, 50, 100)
 			if ok && value != tc.value {
 				t.Errorf("value=%d", value)

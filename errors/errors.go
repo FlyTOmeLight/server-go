@@ -12,6 +12,7 @@ import (
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/logger"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 var (
@@ -240,8 +241,8 @@ func WithMessage(err error, message string) error {
 
 // ErrorHandler 统一拦截异常，按照规范返回错误
 // 如果启用了 AutoHandleAPIError，会自动处理 /{appName}/api/* 接口的响应状态码
-func ErrorHandler(config *conf.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func ErrorHandler(config *conf.Config) core.HandlerFunc {
+	return func(c *core.Context) {
 		// 检查是否需要自动处理 API 错误（将非200状态码改为200）
 		shouldAutoHandle := config != nil && config.HTTPServer.AltoHandlerAPIError &&
 			!config.HTTPServer.ConsoleEnable
@@ -368,7 +369,7 @@ func (w *statusCodeWriter) Status() int {
 
 func (w *statusCodeWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-func AbortWithError(c *gin.Context, err error) {
+func AbortWithError(c *core.Context, err error) {
 	if c.Writer.Written() {
 		c.Abort()
 		return
@@ -389,6 +390,6 @@ func NewResourceIsExists(message string) error {
 }
 
 // Abort sends a named HTTP failure using the framework error contract.
-func Abort(c *gin.Context, status int, code, message string) {
+func Abort(c *core.Context, status int, code, message string) {
 	AbortWithError(c, NewError(status, code, message))
 }

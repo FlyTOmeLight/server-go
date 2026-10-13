@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 func TestContextLoggersAreIsolatedAndPreserveRequestID(t *testing.T) {
@@ -25,7 +27,7 @@ func TestContextLoggersAreIsolatedAndPreserveRequestID(t *testing.T) {
 	}
 	engine := gin.New()
 	engine.ContextWithFallback = true
-	engine.GET("/log", func(c *gin.Context) {
+	engine.GET("/log", func(c *core.Context) {
 		c.Set("RequestID", "request-123")
 		FromContext(c).Warnf(c, "explicit %s", c.GetHeader("Instance"))
 		Infof(c, "package %s", c.GetHeader("Instance"))

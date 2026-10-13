@@ -11,20 +11,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/logger"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 type testService struct {
 	starts, stops atomic.Int32
 	registered    atomic.Int32
-	handle        gin.HandlerFunc
+	handle        core.HandlerFunc
 	stop          func(context.Context) error
 }
 
-func (s *testService) RegisterRoutes(router *gin.RouterGroup) error {
+func (s *testService) RegisterRoutes(router *core.RouterGroup) error {
 	s.registered.Add(1)
 	router.GET("/business", s.handle)
 	return nil
@@ -105,7 +104,7 @@ func waitStopped(t *testing.T, done <-chan error) {
 }
 
 func TestReloadDoesNotRestartLifecycle(t *testing.T) {
-	svc := &testService{handle: func(c *gin.Context) { c.String(200, "business") }}
+	svc := &testService{handle: func(c *core.Context) { c.String(200, "business") }}
 	h, manager := newTestHost(t, svc)
 	cancel, done := startTestHost(t, h)
 	defer func() { cancel(); waitStopped(t, done) }()
@@ -142,7 +141,7 @@ func TestDrainBeforeStoppingServices(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var prematurelyStopped atomic.Bool
-	svc := &testService{handle: func(c *gin.Context) { close(entered); <-release; c.String(200, "complete") }}
+	svc := &testService{handle: func(c *core.Context) { close(entered); <-release; c.String(200, "complete") }}
 	svc.stop = func(context.Context) error {
 		select {
 		case <-release:
@@ -194,9 +193,9 @@ func TestHostInstancesAndConstructorSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	listener.Close()
-	svc := &testService{handle: func(c *gin.Context) { c.String(200, "ok") }}
+	svc := &testService{handle: func(c *core.Context) { c.String(200, "ok") }}
 	h, manager := newTestHost(t, svc)
-	other, _ := newTestHost(t, &testService{handle: func(c *gin.Context) { c.String(200, "other") }})
+	other, _ := newTestHost(t, &testService{handle: func(c *core.Context) { c.String(200, "other") }})
 	next := manager.Snapshot()
 	next.HTTPServer.APIBasePath = "/new"
 	if err := manager.Update(next); err != nil {
@@ -228,7 +227,7 @@ func TestConstructionDoesNotMissReplacement(t *testing.T) {
 	t.Cleanup(log.Close)
 	entered, release := make(chan struct{}), make(chan struct{})
 	var builds atomic.Int32
-	setup := func(*gin.Engine, *conf.Config) error {
+	setup := func(*core.Engine, *conf.Config) error {
 		if builds.Add(1) == 1 {
 			close(entered)
 			<-release
@@ -245,7 +244,7 @@ func TestConstructionDoesNotMissReplacement(t *testing.T) {
 			manager,
 			log,
 			setup,
-			&testService{handle: func(c *gin.Context) { c.String(200, "ok") }},
+			&testService{handle: func(c *core.Context) { c.String(200, "ok") }},
 		)
 		constructed <- result{host: h, err: err}
 	}()

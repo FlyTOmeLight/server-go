@@ -10,7 +10,8 @@ import (
 
 	dapr "github.com/dapr/go-sdk/client"
 	daprc "github.com/dapr/go-sdk/service/common"
-	"github.com/gin-gonic/gin"
+
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 const (
@@ -46,8 +47,8 @@ func ValidTopicName(topic string) string {
 }
 
 // Subscribe returns the Dapr discovery handler for this registry.
-func (r *Registry) Subscribe() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func (r *Registry) Subscribe() core.HandlerFunc {
+	return func(c *core.Context) {
 		r.mu.RLock()
 		subscriptions := make([]Subscription, len(r.subscriptions))
 		for i, subscription := range r.subscriptions {
@@ -70,10 +71,10 @@ func copySubscription(subscription Subscription) Subscription {
 //	registry := pubsub.NewRegistry()
 //	registry.OnEvent(engine, "path_of_api", nil, ReceiveEvent)
 func (r *Registry) OnEvent(
-	engine *gin.Engine,
+	engine *core.Engine,
 	relativePath string,
 	configHandler ConfigHandler,
-	handlers ...gin.HandlerFunc,
+	handlers ...core.HandlerFunc,
 ) {
 	r.OnEventWithGroup(&engine.RouterGroup, relativePath, configHandler, handlers...)
 }
@@ -87,10 +88,10 @@ func (r *Registry) OnEvent(
 //	g.GET("", List)
 //	registry.OnEventWithGroup(g, "path_of_api", nil, ReceiveEvent)
 func (r *Registry) OnEventWithGroup(
-	group *gin.RouterGroup,
+	group *core.RouterGroup,
 	relativePath string,
 	configHandler ConfigHandler,
-	handlers ...gin.HandlerFunc,
+	handlers ...core.HandlerFunc,
 ) {
 	topic := ValidTopicName(relativePath)
 	route := strings.TrimPrefix(group.BasePath(), "/") + "/" + strings.TrimPrefix(relativePath, "/")

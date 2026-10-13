@@ -1,26 +1,7 @@
-# app.toml: 应用主配置文件
-AppName = "ExampleService"
+AppName = "example-service2"
 AppCode = 100
-RunMode = "debug"          # debug/test/release
-Version = "1.0.0"
+RunMode = "debug"
 
 [HTTPServer]
+Listen = "127.0.0.1:8080"
 AuthType = "Fake"
-# 监听地址，必填
-Listen = "0.0.0.0:8080"
-# 读超时时间（单位ms），选填，默认20s
-ReadTimeout = 60000
-# 写超时时间（单位ms），选填，默认10s
-WriteTimeout = 40000
-# Idle超时时间（单位ms），选填，默认10s
-IdleTimeout = 10000 # 10s
-# 最大header空间，选填，默认100k
-MaxHeaderBytes = 100000 # 100k
-# 对外接口通用前缀，配置后所有接口path将默认加上该前缀，选填，默认为空
-APIBasePath = "product-name"
-
-[Permission]
-Endpoint = "http://127.0.0.1:8785"
-AppId = "example-app"
-Switch = false
-CheckType = "exact"

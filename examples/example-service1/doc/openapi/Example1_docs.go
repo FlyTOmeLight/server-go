@@ -16,7 +16,7 @@ const docTemplateExample1 = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/v1/workspaces/:workspaceID/projects/:projectName/datasets": {
+        "/v1/projects/{projectName}/datasets": {
             "get": {
                 "description": "List datasets",
                 "produces": [
@@ -81,13 +81,6 @@ const docTemplateExample1 = `{
                     },
                     {
                         "type": "string",
-                        "description": "Workspace id",
-                        "name": "workspaceID",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
                         "description": "Project Local Name",
                         "name": "projectName",
                         "in": "path",
@@ -139,13 +132,6 @@ const docTemplateExample1 = `{
                     },
                     {
                         "type": "string",
-                        "description": "Workspace id",
-                        "name": "workspaceID",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
                         "description": "Project Local Name",
                         "name": "projectName",
                         "in": "path",
@@ -174,7 +160,7 @@ const docTemplateExample1 = `{
                 }
             }
         },
-        "/v1/workspaces/:workspaceID/projects/:projectName/datasets/:localName": {
+        "/v1/projects/{projectName}/datasets/{localName}": {
             "get": {
                 "description": "Get a dataset",
                 "produces": [
@@ -194,13 +180,6 @@ const docTemplateExample1 = `{
                         "type": "string",
                         "name": "projectName",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Workspace id",
-                        "name": "workspaceID",
-                        "in": "path",
-                        "required": true
                     },
                     {
                         "type": "string",
@@ -239,12 +218,12 @@ const docTemplateExample1 = `{
                 }
             },
             "put": {
-                "description": "Update a project",
+                "description": "Update a dataset",
                 "consumes": [
                     "application/json"
                 ],
                 "tags": [
-                    "project"
+                    "dataset"
                 ],
                 "summary": "Update a dataset",
                 "parameters": [
@@ -256,13 +235,6 @@ const docTemplateExample1 = `{
                         "schema": {
                             "$ref": "#/definitions/trainv1.UpdateDatasetRequest"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "Workspace id",
-                        "name": "workspaceID",
-                        "in": "path",
-                        "required": true
                     },
                     {
                         "type": "string",
@@ -316,13 +288,6 @@ const docTemplateExample1 = `{
                         "type": "string",
                         "name": "projectName",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Workspace id",
-                        "name": "workspaceID",
-                        "in": "path",
-                        "required": true
                     },
                     {
                         "type": "string",
@@ -491,7 +456,7 @@ const docTemplateExample1 = `{
 var SwaggerInfoExample1 = &swag.Spec{
 	Version:          "",
 	Host:             "",
-	BasePath:         "/example-service1/v1",
+	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Example service dataset open api",
 	Description:      "",

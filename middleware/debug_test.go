@@ -15,7 +15,7 @@ func TestDebugBoundsCaptureWithoutTruncatingResponse(t *testing.T) {
 	router := gin.New()
 	router.Use(Debug(nil, nil))
 	payload := strings.Repeat("x", maxLength*3)
-	router.GET("/stream", func(c *gin.Context) {
+	router.GET("/stream", func(c *core.Context) {
 		_, _ = c.Writer.Write([]byte(payload[:maxLength]))
 		_, _ = c.Writer.WriteString(payload[maxLength:])
 		writer := c.Writer.(core.BufferedWriter)

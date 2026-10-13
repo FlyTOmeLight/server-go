@@ -3,10 +3,9 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/logger"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 // LicenseAuthorizer reports the current license state. The caller owns its lifecycle.
@@ -16,8 +15,8 @@ type LicenseAuthorizer interface {
 }
 
 // LicenseAuth checks a license client that has already been initialized by the caller.
-func LicenseAuth(client LicenseAuthorizer) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func LicenseAuth(client LicenseAuthorizer) core.HandlerFunc {
+	return func(c *core.Context) {
 		if client == nil {
 			errors.AbortWithError(
 				c,

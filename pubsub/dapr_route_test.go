@@ -8,26 +8,32 @@ import (
 	"sync"
 	"testing"
 
-	daprc "github.com/dapr/go-sdk/service/common"
 	"github.com/gin-gonic/gin"
+
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func TestSubscription(t *testing.T) {
-	subscription := &daprc.Subscription{
-		PubsubName: "name",
-		Topic:      "topic",
-		Route:      "path/to/route",
-	}
-
-	bytes, err := json.Marshal(subscription)
-	if err != nil {
-		t.Errorf("Json serialize error: %v", err)
-		return
-	}
-
-	json := string(bytes)
-	if json != `{"pubsubname":"name","topic":"topic","route":"path/to/route","match":"","priority":0,"disableTopicValidation":false}` {
-		t.Errorf("Json fields not match, actual: %v", json)
+func TestSubscriptionDiscoveryPreservesConfiguration(t *testing.T) {
+	for _, deadLetterTopic := range []string{"", "failed-events"} {
+		t.Run("dead-letter="+deadLetterTopic, func(t *testing.T) {
+			registry := NewRegistry()
+			engine := gin.New()
+			registry.OnEvent(engine, "/events", func(subscription *Subscription) *Subscription {
+				subscription.PubsubName = "component"
+				subscription.Topic = "topic"
+				subscription.DeadLetterTopic = deadLetterTopic
+				return subscription
+			}, func(c *core.Context) { c.Status(http.StatusNoContent) })
+			subscriptions := discover(t, registry.Subscribe())
+			if len(subscriptions) != 1 {
+				t.Fatalf("discovery returned %d subscriptions", len(subscriptions))
+			}
+			actual := subscriptions[0]
+			if actual.PubsubName != "component" || actual.Topic != "topic" || actual.Route != "/events" ||
+				actual.DeadLetterTopic != deadLetterTopic {
+				t.Fatalf("discovery changed subscription configuration: %#v", actual)
+			}
+		})
 	}
 }
 
@@ -38,12 +44,12 @@ func TestRegistriesOwnSeparateSubscriptions(t *testing.T) {
 	first.OnEvent(firstEngine, "/first", func(subscription *Subscription) *Subscription {
 		subscription.Metadata = metadata
 		return subscription
-	}, func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	}, func(c *core.Context) { c.Status(http.StatusNoContent) })
 	second.OnEventWithGroup(
 		secondEngine.Group("/v1"),
 		"/second",
 		nil,
-		func(c *gin.Context) { c.Status(http.StatusNoContent) },
+		func(c *core.Context) { c.Status(http.StatusNoContent) },
 	)
 	metadata[MetadataRawPayload] = "false"
 	for _, test := range []struct {
@@ -81,7 +87,7 @@ func TestRegistryConcurrentRegistrationAndDiscovery(t *testing.T) {
 				events,
 				fmt.Sprintf("/event/%d", i),
 				nil,
-				func(c *gin.Context) { c.Status(http.StatusNoContent) },
+				func(c *core.Context) { c.Status(http.StatusNoContent) },
 			)
 		}()
 		go func() {
@@ -99,7 +105,7 @@ func TestRegistryConcurrentRegistrationAndDiscovery(t *testing.T) {
 	}
 }
 
-func discover(t *testing.T, handler gin.HandlerFunc) []Subscription {
+func discover(t *testing.T, handler core.HandlerFunc) []Subscription {
 	t.Helper()
 	writer := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(writer)

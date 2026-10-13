@@ -69,9 +69,9 @@ class GeneratorTest(unittest.TestCase):
                     self.assertTrue((target / 'internal' / 'app' / module.lower()).is_dir())
                 self.assertNotIn('github.com/FlyTOmeLight/server-go/examples/example-hello-world',
                                  '\n'.join(path.read_text() for path in target.rglob('*.go')))
-                self.assertTrue((target / 'internal' / 'service' / 'service.go').is_file())
-                self.assertFalse((target / 'service').exists())
-                for lifecycle_test in (target / 'internal' / 'service').glob('*lifecycle_test.go'):
+                self.assertTrue((target / 'service' / 'service.go').is_file())
+                self.assertFalse((target / 'internal' / 'service').exists())
+                for lifecycle_test in (target / 'service').glob('*lifecycle_test.go'):
                     self.assertIn('&db.Module{', lifecycle_test.read_text())
                 spec_file = next((target / 'doc' / 'openapi').glob('*_swagger.json'))
                 spec = json.loads(spec_file.read_text())

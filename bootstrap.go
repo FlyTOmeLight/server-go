@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 )
@@ -76,10 +77,10 @@ func (b *Bootstrap) rollback(ctx context.Context) error {
 func (b *Bootstrap) closeInitialized(ctx context.Context) error {
 	var errs []error
 	failed := make([]Module, 0)
-	for index := len(b.initialized) - 1; index >= 0; index-- {
-		if err := b.initialized[index].Close(ctx); err != nil {
+	for index, v := range slices.Backward(b.initialized) {
+		if err := v.Close(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("close module %d: %w", index, err))
-			failed = append(failed, b.initialized[index])
+			failed = append(failed, v)
 		}
 	}
 	for left, right := 0, len(failed)-1; left < right; left, right = left+1, right-1 {

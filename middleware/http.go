@@ -9,11 +9,12 @@ import (
 
 	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/logger"
+	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 // RequestLog records request metadata without credentials or payloads.
-func RequestLog() gin.HandlerFunc {
-	return func(c *gin.Context) {
+func RequestLog() core.HandlerFunc {
+	return func(c *core.Context) {
 		start := time.Now()
 		c.Next()
 		logger.FromContext(c.Request.Context()).
@@ -23,8 +24,8 @@ func RequestLog() gin.HandlerFunc {
 
 // Recovery returns framework errors before a response starts. Once streaming,
 // it stops handling without adding a JSON document to the response.
-func Recovery() gin.HandlerFunc {
-	return gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, recovered any) {
+func Recovery() core.HandlerFunc {
+	return gin.CustomRecoveryWithWriter(io.Discard, func(c *core.Context, recovered any) {
 		logger.FromContext(c.Request.Context()).
 			Errorf(c.Request.Context(), "http handler panic route=%s stack=%s", c.FullPath(), debug.Stack())
 		errors.AbortWithError(c, errors.ErrorInternalError)
