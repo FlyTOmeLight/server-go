@@ -87,15 +87,15 @@ func TestRunOwnsServicesAndResourcesOnEveryExit(t *testing.T) {
 		},
 		{
 			name: "start failure", startErr: failure,
-			want: []string{"initialize", "routes first", "routes second", "start first", "start second", "stop first", "stop second", "close module"},
+			want: []string{"initialize", "routes first", "routes second", "start first", "start second", "stop second", "stop first", "close module"},
 		},
 		{
-			name: "normal shutdown",
+			name: "canceled startup",
 			want: []string{"initialize", "routes first", "routes second", "start first", "start second", "stop second", "stop first", "close module"},
 		},
 		{
 			name: "shutdown error", stopErr: stopFailure,
-			want: []string{"initialize", "routes first", "routes second", "start first", "start second", "stop second", "stop first", "close module"},
+			want: []string{"initialize", "routes first", "routes second", "start first", "start second", "stop second", "stop second"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,6 +126,9 @@ func TestRunOwnsServicesAndResourcesOnEveryExit(t *testing.T) {
 				return tc.buildErr
 			})
 			wantErr := errors.Join(tc.buildErr, tc.routeErr, tc.startErr, tc.stopErr)
+			if tc.buildErr == nil && tc.routeErr == nil {
+				wantErr = errors.Join(wantErr, context.Canceled)
+			}
 			if wantErr == nil && err != nil {
 				t.Fatal(err)
 			}
@@ -133,6 +136,9 @@ func TestRunOwnsServicesAndResourcesOnEveryExit(t *testing.T) {
 				if cause != nil && !errors.Is(err, cause) {
 					t.Fatalf("lost error %v: %v", cause, err)
 				}
+			}
+			if tc.buildErr == nil && tc.routeErr == nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("startup cancellation error = %v", err)
 			}
 			if !reflect.DeepEqual(events, tc.want) {
 				t.Fatalf("events = %v, want %v", events, tc.want)

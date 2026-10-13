@@ -1,40 +1,57 @@
 package auth
 
 import (
+	"errors"
+	"net/http"
+	"strings"
+
 	"github.com/FlyTOmeLight/server-go/constants"
+	serrors "github.com/FlyTOmeLight/server-go/errors"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-// Impersonate
-// 效果类似STS鉴权方式，提供上游服务代理用户调用下游服务的能力。
-// 限于服务内部模块间调用，调用方通过header将需要鉴权通过的orgID和userID传给下游服务。
-// 调用方仍然用常规的AKSK鉴权方式发起调用，例如用服务/资源账号，同时通过header指定要代表的租户。
-// 被调用方收到请求，检查调用账号是一个服务账号，将impersonate header指定的租户账号设置为鉴权账号。
-func Impersonate() core.HandlerFunc {
+// Impersonate must follow authentication. authorize must verify that the current
+// caller is a service account allowed to act as the requested tenant and user.
+// Without impersonation headers the authenticated identity is left unchanged.
+func Impersonate(authorize func(c *core.Context, orgID, userID string) error) (core.HandlerFunc, error) {
+	if authorize == nil {
+		return nil, errors.New("impersonation requires a service account authorizer")
+	}
 	return func(c *core.Context) {
-		orgID := c.GetString(constants.KeyOrgID)
-		userID := c.GetString(constants.KeyUserID)
-		if orgID != "" && userID != "" {
+		orgID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateOrgID))
+		userID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateUserID))
+		if orgID == "" && userID == "" {
 			c.Next()
 			return
 		}
 
-		if val := c.Request.Header.Get(constants.HeaderImpersonateOrgID); val != "" {
-			c.Set(constants.KeyImpersonateOriginOrgID, val)
-			c.Set(constants.KeyOrgID, val)
+		if c.GetString(constants.KeyUserID) == "" {
+			serrors.Abort(
+				c,
+				http.StatusUnauthorized,
+				"Unauthorized",
+				"authenticated service account required",
+			)
+			return
 		}
-
-		if val := c.Request.Header.Get(constants.HeaderImpersonateUserID); val != "" {
-			c.Set(constants.KeyImpersonateOriginUserID, val)
-			c.Set(constants.KeyUserID, val)
+		if orgID == "" || userID == "" {
+			serrors.Abort(
+				c,
+				http.StatusForbidden,
+				"AccessDenied",
+				"complete impersonation identity required",
+			)
+			return
 		}
-
-		orgID = c.GetString(constants.KeyOrgID)
-		userID = c.GetString(constants.KeyUserID)
-		if orgID != "" && userID != "" {
-			c.Set(constants.KeyAuthMode, "Impersonate")
+		if err := authorize(c, orgID, userID); err != nil {
+			serrors.Abort(c, http.StatusForbidden, "AccessDenied", "impersonation is not permitted")
+			return
 		}
-
+		c.Set(constants.KeyImpersonateOriginOrgID, c.GetString(constants.KeyOrgID))
+		c.Set(constants.KeyImpersonateOriginUserID, c.GetString(constants.KeyUserID))
+		c.Set(constants.KeyOrgID, orgID)
+		c.Set(constants.KeyUserID, userID)
+		c.Set(constants.KeyAuthMode, "Impersonate")
 		c.Next()
-	}
+	}, nil
 }

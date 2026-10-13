@@ -97,7 +97,7 @@ SDK 方法的路径、HTTP 方法、请求编码、响应结构与 Controller、
 2. `conf/server/config.toml` 是框架当前默认路径。`SERVER_CONFIG_PATH` 可指定其他文件。Go 官方目录建议没有规定 TOML 文件必须放在哪里。装配所需的类型化配置放在 `service/build.go`；配置复杂且有独立业务校验时才拆到 `internal/config`。配置文件不与 Go 配置加载代码混放。
 3. 当前工作树使用 `app.Run(ctx, options, build)` 编排配置、日志、资源、HTTP 和退出清理。业务声明配置结构体，由 `app.Run` 按字段名匹配配置 key，名称不同时用 `mapstructure` tag 映射，一次解析后传给装配函数；业务直接读取类型化字段。装配函数通过 `runtime.Initialize(ctx, modules...)` 初始化真正需要的 DB、Redis 等模块，再显式构造服务并通过 `runtime.AddService` 交付。构造失败前尚未交付的部分资源由构造函数清理。该入口从 v0.5.0 开始提供；消费更早版本时仍使用 `server.NewBootstrap` 和 `host.NewHTTPHost` 显式装配。
 4. 业务服务实现 `host.Service`，通过 `host.NewHTTPHost(manager, log, setup, services...)` 显式装配。`RegisterRoutes(*core.RouterGroup) error` 只安装路由；可失败的连接和迁移在构造函数或资源模块中完成。
-5. `Start(ctx) error` 启动所属后台任务；失败时清理本次部分启动的资源。`Stop(ctx) error` 取消并等待任务退出。`Run(ctx)` 先排空 HTTP，再取消 worker 并逆序停止服务。进程入口负责信号和退出码，`app.Run` 负责已接管资源的关闭。路由动态更新只重建 handler，不重新启动 worker。
+5. `Start(ctx) error` 启动所属后台任务，启动期间响应取消；失败时清理本次部分启动的资源。装配与服务启动共享 `app.Options.InitTimeout` 预算。`Stop(ctx) error` 取消并等待任务退出，能处理部分启动并允许失败后重试；返回 nil 才确认依赖可以关闭。`Run(ctx)` 先排空 HTTP，再取消 worker 并逆序停止服务，停止超时后继续等待退出；停止仍失败时保留依赖并返回错误。进程入口负责信号和退出码，`app.Run` 负责已接管资源的关闭。路由动态更新只重建 handler，不重新启动 worker。
 6. HTTP Controller 和对应业务 Service 使用 `*core.Context`，便于读取身份和请求信息。数据库及网络操作使用 `ctx.Request.Context()` 获取的标准 context，传给 GORM 的 `WithContext` 和 SDK 的 context 参数；SDK 与长期任务仍使用 `context.Context`。共享客户端和数据库后台操作不持有会被 Gin 复用的 Context。
 7. 配置、DB、Redis、MongoDB、幂等和订阅集合均由实例拥有。配置由 `app.Run` 一次解析为业务结构体，不在各模块重复调用 `Snapshot().UnmarshalKey`；同名字段无需 `mapstructure` tag。DB 和客户端显式传给业务对象。可选 HTTP 集成通过 `httpintegration.Install` 或自己的 setup 安装。配置动态更新范围见 [conf/README.md](../conf/README.md)。
 8. 后台任务持有明确的取消函数和等待手段。只有确实需要独立部署时才增加 `cmd/worker`，不把独立 worker 入口作为所有新项目的必备目录。

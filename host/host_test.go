@@ -20,6 +20,7 @@ type testService struct {
 	starts, stops atomic.Int32
 	registered    atomic.Int32
 	handle        core.HandlerFunc
+	start         func(context.Context) error
 	stop          func(context.Context) error
 }
 
@@ -29,7 +30,13 @@ func (s *testService) RegisterRoutes(router *core.RouterGroup) error {
 	return nil
 }
 
-func (s *testService) Start(context.Context) error { s.starts.Add(1); return nil }
+func (s *testService) Start(ctx context.Context) error {
+	s.starts.Add(1)
+	if s.start != nil {
+		return s.start(ctx)
+	}
+	return nil
+}
 
 func (s *testService) Stop(ctx context.Context) error {
 	s.stops.Add(1)

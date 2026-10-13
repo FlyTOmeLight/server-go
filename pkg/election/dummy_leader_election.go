@@ -55,7 +55,7 @@ func (e *DummyAppElection) RunOnLeader(task func(context.Context)) {
 	e.leaderTasks = append(e.leaderTasks, task)
 }
 
-func (e *DummyAppElection) Run(ctx context.Context) {
+func (e *DummyAppElection) Run(ctx context.Context) error {
 	// The application owns cancellation. Wait for every owned task to stop.
 	var tasks sync.WaitGroup
 	for _, task := range e.leaderTasks {
@@ -68,8 +68,14 @@ func (e *DummyAppElection) Run(ctx context.Context) {
 	<-ctx.Done()
 	tasks.Wait()
 	logger.Infof(ctx, "app election canceled")
+	return nil
 }
 
-func (e *DummyAppElection) RunAsync(ctx context.Context) {
-	go e.Run(ctx)
+func (e *DummyAppElection) RunAsync(ctx context.Context) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		done <- e.Run(ctx)
+		close(done)
+	}()
+	return done
 }

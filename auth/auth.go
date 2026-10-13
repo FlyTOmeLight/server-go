@@ -1,25 +1,34 @@
 package auth
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-func Use(engine *core.Engine, config *conf.Config) {
-	engine.Use(Impersonate())
-
-	// 优先级：Fake > AuthCenter
+// Use installs development identities. Production authentication must be
+// installed explicitly, with its verifier, before protected routes.
+func Use(engine *core.Engine, config *conf.Config) error {
+	if engine == nil || config == nil {
+		return errors.New("authentication requires an engine and config")
+	}
 	switch config.HTTPServer.AuthType {
-	case conf.AuthTypeFake:
+	case "", conf.AuthTypeFake:
 		engine.Use(FakeAuthWithID(
 			config.FakeAuth.OrgID,
 			config.FakeAuth.UserID,
 			config.FakeAuth.UserName,
 			config.FakeAuth.UserRole))
-	case conf.AuthTypeAuthCenter:
-		engine.Use(AuthWithAuthCenter())
+	default:
+		return fmt.Errorf(
+			"authentication mode %q requires an explicit authentication handler",
+			config.HTTPServer.AuthType,
+		)
 	}
+	return nil
 }
 
 func FakeAuth() core.HandlerFunc {
@@ -44,18 +53,6 @@ func FakeAuthWithID(orgID, userID, userName, userRole string) core.HandlerFunc {
 		c.Set(constants.KeyUserID, userID)
 		c.Set(constants.KeyUserName, userName)
 		c.Set(constants.KeyUserRole, userRole)
-		c.Next()
-	}
-}
-
-func AuthWithAuthCenter() core.HandlerFunc {
-	return func(c *core.Context) {
-		orgID := c.GetHeader(constants.HeaderOrgID)
-		c.Set(constants.KeyOrgID, orgID)
-
-		userID := c.GetHeader(constants.HeaderUserID)
-		c.Set(constants.KeyUserID, userID)
-
 		c.Next()
 	}
 }

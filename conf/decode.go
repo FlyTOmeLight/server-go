@@ -87,6 +87,50 @@ func ResolveValue(text string) (string, error) {
 	return result, resolveErr
 }
 
+func resolveSettings(settings map[string]any) (map[string]any, error) {
+	resolved := make(map[string]any, len(settings))
+	for key, value := range settings {
+		next, err := resolveSetting(value)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", key, err)
+		}
+		resolved[key] = next
+	}
+	return resolved, nil
+}
+
+func resolveSetting(value any) (any, error) {
+	data := reflect.ValueOf(value)
+	if !data.IsValid() {
+		return value, nil
+	}
+	switch data.Kind() {
+	case reflect.String:
+		return ResolveValue(data.String())
+	case reflect.Map:
+		if data.Type().Key().Kind() != reflect.String {
+			return value, nil
+		}
+		settings := make(map[string]any, data.Len())
+		for entries := data.MapRange(); entries.Next(); {
+			settings[entries.Key().String()] = entries.Value().Interface()
+		}
+		return resolveSettings(settings)
+	case reflect.Slice, reflect.Array:
+		resolved := make([]any, data.Len())
+		for index := range resolved {
+			next, err := resolveSetting(data.Index(index).Interface())
+			if err != nil {
+				return nil, fmt.Errorf("item %d: %w", index, err)
+			}
+			resolved[index] = next
+		}
+		return resolved, nil
+	default:
+		return value, nil
+	}
+}
+
 // resolvePlaceholder 按占位符类型解析实际值，kind 不区分大小写
 func resolvePlaceholder(kind, spec string) (string, error) {
 	switch strings.ToLower(kind) {

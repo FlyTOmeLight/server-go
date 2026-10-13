@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	// 指定kubeconfig文件路径, k8s环境不需要指定，会默认使用InClusterConfig
 	kubeconfigPath := flag.String("kubeconfig", "", "kubeconfig file path")
 	// 选举进行的namespace，k8s运行中不需要指定，会自动获取当前程序所在的namespace
@@ -31,6 +39,18 @@ func main() {
 	defer stop()
 	ctx, cancel := context.WithTimeout(signalCtx, *runTime)
 	defer cancel()
-	service.New(service.Config{AppName: *appName, Kubeconfig: *kubeconfigPath, Namespace: *namespace, ID: *id, LeaseDuration: *leaseDuration, Local: *local}).
-		Run(ctx)
+	worker, err := service.New(
+		service.Config{
+			AppName:       *appName,
+			Kubeconfig:    *kubeconfigPath,
+			Namespace:     *namespace,
+			ID:            *id,
+			LeaseDuration: *leaseDuration,
+			Local:         *local,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	return worker.Run(ctx)
 }

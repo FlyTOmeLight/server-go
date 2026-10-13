@@ -325,9 +325,21 @@ func (m *TaskManager) Exec(ctx context.Context) error {
 		return err
 	}
 	if m.autoSync {
+		synced := make(map[string]*PeriodTask)
 		for _, handler := range handlers {
 			tasks, err := handler(ctx)
-			if err := m.SyncTasks(ctx, tasks, err); err != nil {
+			if err != nil {
+				return err
+			}
+			for name, task := range tasks {
+				if _, exists := synced[name]; exists {
+					return fmt.Errorf("multiple sync handlers returned task %s", name)
+				}
+				synced[name] = task
+			}
+		}
+		if len(handlers) > 0 {
+			if err := m.SyncTasks(ctx, synced, nil); err != nil {
 				return err
 			}
 		}
