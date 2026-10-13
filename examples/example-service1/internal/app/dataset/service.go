@@ -1,7 +1,6 @@
 package dataset
 
 import (
-	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/jinzhu/copier"
@@ -15,10 +14,6 @@ type Service struct{ store *table.Store }
 func New(store *table.Store) *Service { return &Service{store: store} }
 
 func (s *Service) CreateDataset(ctx *core.Context, req *sdk.CreateDatasetRequest) (*sdk.GetDatasetResponse, error) {
-	if req.LocalName == "" {
-		return nil, errors.NewInvalidParameter("localName is missing")
-	}
-
 	data := &table.DatasetData{
 		ID:          core.NewID("ds"),
 		Name:        req.GetName(),

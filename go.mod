@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/creasty/defaults v1.11.0
 	github.com/dapr/go-sdk v1.15.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gin-contrib/pprof v1.5.6

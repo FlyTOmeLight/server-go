@@ -1,0 +1,18 @@
+AppName = "postgresql-service"
+AppCode = 100
+RunMode = "release"
+
+[HTTPServer]
+Listen = "${env: LISTEN_ADDR:127.0.0.1:18080}"
+ReadTimeout = 10000
+WriteTimeout = 10000
+IdleTimeout = 60000
+
+[DB]
+Driver = "PostgreSQL"
+DSN = "${env: DATABASE_URL:postgres://notes:notes-local@127.0.0.1:55432/notes?sslmode=disable}"
+MaxIdleConns = 2
+MaxOpenConns = 10
+ConnMaxIdleTime = 60
+ConnMaxLifeTime = 300
+AutoMigrate = true

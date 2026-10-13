@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.5.0
+go get github.com/FlyTOmeLight/server-go@v0.6.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -41,6 +41,7 @@ go run ./cmd/server
 | 示例 | 适用场景 |
 | --- | --- |
 | [minimal-service](examples/minimal-service/README.md) | 只需要 HTTP 和配置 |
+| [postgresql-service](examples/postgresql-service/README.md) | PostgreSQL CRUD、请求校验、默认值与 Go SDK |
 | [example-hello-world](examples/example-hello-world/README.md) | SQLite CRUD、Go SDK 与 CLI；生成器使用此模板 |
 | [example-service1](examples/example-service1/README.md) | REST 数据集 CRUD、SDK 与 CLI |
 | [example-service2](examples/example-service2/README.md) | 无状态 HTTP 服务与公开构造函数 |
@@ -63,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.5.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.6.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -107,9 +108,9 @@ HTTP Controller 和对应业务 Service 使用 `*core.Context`；数据库和 SD
 
 `app.Run` 从 v0.5.0 开始提供；正式消费使用发布版本，本地联合开发可使用 `replace`。
 
-## 当前工作树的接口调整
+## v0.6.0 接口调整
 
-本次设计修复记录在 [issues #1–#9](https://github.com/FlyTOmeLight/server-go/issues)。消费已有发布版本时，仍按对应版本的接口调用；以下调整尚未发布：
+本次设计修复记录在 [issues #1–#9](https://github.com/FlyTOmeLight/server-go/issues)，已发布为 [v0.6.0](https://github.com/FlyTOmeLight/server-go/releases/tag/v0.6.0)：
 
 - `HTTPHost.Run(ctx)` 默认限制服务启动为 15 秒；`RunWithStartupTimeout(ctx, timeout)` 可指定启动预算。`Start` 必须响应取消；`Stop` 返回 nil 才表示全部任务已退出，失败后允许再次等待或清理。
 - `NewLeaderElection`、`NewK8sLeaderElection` 返回实例和错误；`Run(ctx)` 返回错误，`RunAsync(ctx)` 返回完成结果 channel。Kubernetes 配置错误直接失败，本地单节点运行显式使用 `NewDummyAppElection` 或示例的 `--local`。
@@ -132,6 +133,16 @@ HTTPHost 默认安装请求 ID、请求日志、Recovery 和标准错误处理�
 
 Bearer 凭据、严格 JSON 绑定、分页解析、HTTP 中间件和 SDK 错误解码从 v0.3.1 开始提供；SSE 从 v0.3.0 开始提供。正式消费使用发布版本，本地联合开发可使用 Go workspace。
 
+## 当前工作树的请求约定
+
+SDK 的请求结构体用 `binding` tag 声明必填、长度、范围和枚举，用 `json`、`form`、`uri` 指定参数来源。`binder.All()` 合并正文、query 和 URI 后统一校验，路径字段使用 `json:"-"`。优先复用已有 validator；跨业务通用的校验可加入 `pkg/binder`，数据库存在性、权限等领域规则留在 Service。
+
+Controller 对声明了静态 `default` tag 的请求，在绑定前调用 `defaults.Set(&req)` 并处理错误。客户端显式传入的零值会覆盖默认值；局部更新要保留未传字段，不能直接补默认值。完整示例见 [PostgreSQL 服务](examples/postgresql-service/README.md) 和 [请求约定](docs/go-project-layout.md)。这批请求处理改动将在合入 main 后发布；service1 当前需要本地 `replace` 使用本次 `binder.All` 修复。
+
+## 发布约定
+
+影响调用方的修复和功能合入 main 后发布版本；纯文档和测试变更可合并到下一次发布。兼容修复使用 patch，新增能力使用 minor；v0.x 阶段的破坏性接口调整也升级 minor，并说明迁移方法。标签指向通过完整检查的 main 提交，同步示例与生成器的消费版本。正式项目引用发布版本，本地联合开发使用 `replace`。
+
 ## 目录约定
 
 | 目录 | 职责 |
@@ -149,13 +160,13 @@ Bearer 凭据、严格 JSON 绑定、分页解析、HTTP 中间件和 SDK 错误
 
 ## 开发验证
 
-安装 Go、C 编译器、Python 3、make 与 gorgeous 后，统一执行：
+安装 Go、C 编译器、Python 3、make、gorgeous 和 Docker，并启动 Docker daemon 后，每次框架修改都执行：
 
 ```sh
 make check
 ```
 
-gorgeous 的安装路径为 `github.com/fsgo/go_fmt/cmd/gorgeous`。检查覆盖根模块与四个独立示例的格式、测试和 vet，受影响并发路径的竞态检测、生成器回归，以及最小服务、流式服务和生成项目的实际启动、HTTP 请求与 SIGTERM 退出。生成项目在临时目录中检查，通过临时 `replace` 引用当前工作树；检查结束自动清理，不修改现有模块的依赖文件。
+gorgeous 的安装路径为 `github.com/fsgo/go_fmt/cmd/gorgeous`，CI 固定工具版本。检查覆盖根模块与四个独立示例的格式、测试和 vet、并发路径的竞态检测、所有可运行示例及生成项目的实际启动、HTTP/SDK/CLI 请求与 SIGTERM 退出。PostgreSQL 检查创建独立临时容器，验证真实数据库 CRUD、字段类型、默认值和参数错误；缺少 Docker 时检查失败。生成项目通过临时 `replace` 引用当前工作树。检查结束清理进程、容器和临时文件，不修改现有模块的依赖文件。GitHub Actions 在 push 和 PR 时执行同一条 `make check`。
 
 单独检查当前模块时仍可使用：
 

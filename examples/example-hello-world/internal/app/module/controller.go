@@ -7,6 +7,7 @@ import (
 	"github.com/FlyTOmeLight/server-go/middleware"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/pkg/binder"
+	"github.com/creasty/defaults"
 
 	sdk "github.com/FlyTOmeLight/server-go/examples/example-hello-world/sdk/go/helloworldv1"
 )
@@ -70,6 +71,10 @@ func (c *Controller) createModule(ctx *core.Context) {
 // @Router /v1/ListModule [post]
 func (c *Controller) listModule(ctx *core.Context) {
 	var req sdk.ListModuleRequest
+	if err := defaults.Set(&req); err != nil {
+		_ = ctx.Error(err)
+		return
+	}
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
 		_ = ctx.Error(err)
 		return

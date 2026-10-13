@@ -6,6 +6,7 @@ import (
 	"github.com/FlyTOmeLight/server-go/middleware"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/pkg/binder"
+	"github.com/creasty/defaults"
 
 	_ "github.com/FlyTOmeLight/server-go/examples/example-service1/doc/openapi"
 	sdk "github.com/FlyTOmeLight/server-go/examples/example-service1/sdk/go/trainv1"
@@ -42,6 +43,10 @@ func (c *Controller) RegisterRoute(engine *core.RouterGroup, control *idempotenc
 // @Router /v1/projects/{projectName}/datasets [post]
 func (c *Controller) createDataset(ctx *core.Context) {
 	var req sdk.CreateDatasetRequest
+	if err := defaults.Set(&req); err != nil {
+		_ = ctx.Error(err)
+		return
+	}
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
 		_ = ctx.Error(err)
 		return
@@ -70,6 +75,10 @@ func (c *Controller) createDataset(ctx *core.Context) {
 // @Router /v1/projects/{projectName}/datasets [get]
 func (c *Controller) listDataset(ctx *core.Context) {
 	var req sdk.ListDatasetRequest
+	if err := defaults.Set(&req); err != nil {
+		_ = ctx.Error(err)
+		return
+	}
 	if err := binder.Bind(ctx, &req).All().Error(); err != nil {
 		_ = ctx.Error(err)
 		return

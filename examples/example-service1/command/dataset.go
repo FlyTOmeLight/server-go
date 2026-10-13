@@ -198,10 +198,19 @@ func deleteDataset(ctx context.Context, req *trainv1.DeleteDatasetRequest) error
 	return nil
 }
 
+// Dataset metadata includes the project path separately from the HTTP body.
+type datasetMetadata struct {
+	trainv1.CreateDatasetRequest
+	ProjectName string `json:"projectName"`
+}
+
 func applyDataset() {
-	var req trainv1.CreateDatasetRequest
-	cli.RegisterApplyHandler("Dataset", &req, func(args any) error {
+	var input datasetMetadata
+	cli.RegisterApplyHandler("Dataset", &input, func(args any) error {
+		metadata := args.(*datasetMetadata)
+		req := metadata.CreateDatasetRequest
+		req.ProjectName = metadata.ProjectName
 		initClient()
-		return createDataset(context.Background(), args.(*trainv1.CreateDatasetRequest))
+		return createDataset(context.Background(), &req)
 	})
 }

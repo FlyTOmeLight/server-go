@@ -3,7 +3,9 @@ module github.com/FlyTOmeLight/server-go/examples/example-service1
 go 1.27.0
 
 require (
-	github.com/FlyTOmeLight/server-go v0.5.0
+	github.com/FlyTOmeLight/server-go v0.6.0
+	github.com/creasty/defaults v1.11.0
+	github.com/gin-gonic/gin v1.12.0
 	github.com/jinzhu/copier v0.3.5
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
@@ -31,7 +33,6 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
 	github.com/gin-contrib/pprof v1.5.6 // indirect
 	github.com/gin-contrib/sse v1.1.2 // indirect
-	github.com/gin-gonic/gin v1.12.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.8.0 // indirect
 	github.com/go-openapi/jsonpointer v1.0.2 // indirect

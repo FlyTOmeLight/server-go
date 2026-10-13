@@ -28,16 +28,41 @@ func (b *HTTPBinder) Error() error {
 }
 
 func (b *HTTPBinder) All() *HTTPBinder {
+	// Each source maps into the same request before validating the complete object.
+	// URI values take precedence over query values, which take precedence over the body.
 	if b.context.Request.ContentLength != 0 {
+		var err error
 		switch b.context.ContentType() {
 		case binding.MIMEMultipartPOSTForm:
-			b.MultiForm()
+			err = bindMultipart(b.context.Request, b.req)
+		case binding.MIMEPOSTForm:
+			err = b.context.Request.ParseForm()
+			if err == nil {
+				err = binding.MapFormWithTag(b.req, b.context.Request.PostForm, "form")
+			}
 		default:
-			b.JSON()
+			err = b.decodeJSON()
+		}
+		if err != nil {
+			b.errs = append(b.errs, err)
 		}
 	}
-
-	return b.Query().Uri()
+	if err := binding.MapFormWithTag(b.req, b.context.Request.URL.Query(), "form"); err != nil {
+		b.errs = append(b.errs, err)
+	}
+	params := make(map[string][]string, len(b.context.Params))
+	for _, param := range b.context.Params {
+		params[param.Key] = []string{param.Value}
+	}
+	if err := binding.MapFormWithTag(b.req, params, "uri"); err != nil {
+		b.errs = append(b.errs, err)
+	}
+	if len(b.errs) == 0 {
+		if err := binding.Validator.ValidateStruct(b.req); err != nil {
+			b.errs = append(b.errs, err)
+		}
+	}
+	return b
 }
 
 func (b *HTTPBinder) Header() *HTTPBinder {
@@ -82,8 +107,19 @@ func (b *HTTPBinder) Query() *HTTPBinder {
 }
 
 func (b *HTTPBinder) JSON() *HTTPBinder {
+	err := b.decodeJSON()
+	if err == nil {
+		err = binding.Validator.ValidateStruct(b.req)
+	}
+	if err != nil {
+		b.errs = append(b.errs, err)
+	}
+	return b
+}
+
+func (b *HTTPBinder) decodeJSON() error {
 	b.context.Request.Body = http.MaxBytesReader(b.context.Writer, b.context.Request.Body, MaxJSONBytes)
-	err := b.context.ShouldBindWith(b.req, strictJSONBinding{})
+	err := decodeJSON(b.context.Request, b.req)
 	var oversized *http.MaxBytesError
 	if stderrors.As(err, &oversized) {
 		err = errors.NewError(
@@ -92,10 +128,7 @@ func (b *HTTPBinder) JSON() *HTTPBinder {
 			"JSON body exceeds size limit",
 		)
 	}
-	if err != nil {
-		b.errs = append(b.errs, err)
-	}
-	return b
+	return err
 }
 
 func Bind(c *core.Context, req any) *HTTPBinder {
@@ -161,11 +194,7 @@ func translate(tag string) string {
 // MaxJSONBytes bounds JSON input consistently across HTTP services.
 const MaxJSONBytes = 1 << 20
 
-type strictJSONBinding struct{}
-
-func (strictJSONBinding) Name() string { return "json" }
-
-func (strictJSONBinding) Bind(r *http.Request, dst any) error {
+func decodeJSON(r *http.Request, dst any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
@@ -177,7 +206,7 @@ func (strictJSONBinding) Bind(r *http.Request, dst any) error {
 		}
 		return stderrors.New("expected one JSON document")
 	}
-	return binding.Validator.ValidateStruct(dst)
+	return nil
 }
 
 // BindJSON binds one bounded JSON object and writes a framework error on failure.

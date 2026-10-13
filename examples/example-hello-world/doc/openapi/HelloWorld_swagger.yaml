@@ -104,6 +104,7 @@ definitions:
         maxLength: 100
         type: string
       order:
+        default: desc
         description: |-
           排序规则: asc: 升序, desc: 倒序, 默认倒序
 
@@ -130,17 +131,21 @@ definitions:
           type: string
         type: array
       pageNo:
+        default: 1
         description: |-
           页码
 
           Example: 1
+        minimum: 0
         type: integer
       pageSize:
+        default: 20
         description: |-
           每页的大小
 
           Example: 10
         maximum: 200
+        minimum: 0
         type: integer
       projectID:
         description: 项目ID

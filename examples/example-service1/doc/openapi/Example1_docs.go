@@ -28,6 +28,7 @@ const docTemplateExample1 = `{
                 "summary": "List datasets",
                 "parameters": [
                     {
+                        "maxLength": 100,
                         "type": "string",
                         "name": "filter",
                         "in": "query"
@@ -38,6 +39,7 @@ const docTemplateExample1 = `{
                             "desc"
                         ],
                         "type": "string",
+                        "default": "desc",
                         "description": "排序规则: asc: 升序, desc: 倒序, 默认倒序\n\nExample: desc",
                         "name": "order",
                         "in": "query"
@@ -62,21 +64,20 @@ const docTemplateExample1 = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
                         "type": "integer",
+                        "default": 1,
                         "description": "页码\n\nExample: 1",
                         "name": "pageNo",
                         "in": "query"
                     },
                     {
                         "maximum": 200,
+                        "minimum": 0,
                         "type": "integer",
+                        "default": 20,
                         "description": "每页的大小\n\nExample: 10",
                         "name": "pageSize",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "projectName",
                         "in": "query"
                     },
                     {
@@ -171,16 +172,6 @@ const docTemplateExample1 = `{
                 ],
                 "summary": "Get a dataset with latest artifact",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "name": "localName",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "projectName",
-                        "in": "query"
-                    },
                     {
                         "type": "string",
                         "description": "Project Local Name",
@@ -281,16 +272,6 @@ const docTemplateExample1 = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "name": "localName",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "projectName",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
                         "description": "Project Local Name",
                         "name": "projectName",
                         "in": "path",
@@ -328,6 +309,7 @@ const docTemplateExample1 = `{
         "trainv1.CreateDatasetRequest": {
             "type": "object",
             "required": [
+                "fileFormat",
                 "localName"
             ],
             "properties": {
@@ -337,6 +319,7 @@ const docTemplateExample1 = `{
                 },
                 "fileFormat": {
                     "type": "string",
+                    "default": "File",
                     "maxLength": 64,
                     "enum": [
                         "Parquet",
@@ -350,9 +333,6 @@ const docTemplateExample1 = `{
                     ]
                 },
                 "localName": {
-                    "type": "string"
-                },
-                "projectName": {
                     "type": "string"
                 }
             }
@@ -439,13 +419,8 @@ const docTemplateExample1 = `{
             "type": "object",
             "properties": {
                 "description": {
-                    "type": "string"
-                },
-                "localName": {
-                    "type": "string"
-                },
-                "projectName": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                 }
             }
         }
