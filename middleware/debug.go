@@ -95,6 +95,7 @@ func Debug(prefixFilters []string, suffixFilters []string) gin.HandlerFunc {
 			bufferedWriter := core.BufferedWriter{
 				Buf:            bytes.NewBufferString(""),
 				ResponseWriter: c.Writer,
+				Limit:          maxLength,
 			}
 			c.Writer = bufferedWriter
 			writer = bufferedWriter

@@ -1,7 +1,6 @@
 package errors
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -286,7 +285,6 @@ func ErrorHandler(config *conf.Config) gin.HandlerFunc {
 				ResponseWriter: c.Writer,
 				statusCode:     http.StatusOK,
 				written:        false,
-				body:           &bytes.Buffer{},
 			}
 			c.Writer = writer
 		}
@@ -328,7 +326,6 @@ type statusCodeWriter struct {
 	gin.ResponseWriter
 	statusCode int
 	written    bool
-	body       *bytes.Buffer
 }
 
 func (w *statusCodeWriter) WriteHeader(code int) {
@@ -341,8 +338,6 @@ func (w *statusCodeWriter) WriteHeader(code int) {
 }
 
 func (w *statusCodeWriter) Write(data []byte) (int, error) {
-	// 缓存响应体
-	w.body.Write(data)
 	// 如果状态码还没有写入，先写入200
 	if !w.written {
 		if w.statusCode != http.StatusOK {
@@ -370,6 +365,8 @@ func (w *statusCodeWriter) Status() int {
 	// 返回200，因为我们要将所有状态码都改为200
 	return http.StatusOK
 }
+
+func (w *statusCodeWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func AbortWithError(c *gin.Context, err error) {
 	logger.Errorf(c, "API Error: %+v", err)

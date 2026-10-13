@@ -1,8 +1,12 @@
 package helloworldv1
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"strings"
 
+	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
@@ -23,8 +27,22 @@ func NewClient(ak, sk, endpoint string) (*Client, error) {
 	}
 	return NewClientWithConfig(&sdk.Config{
 		Credentials: credentials,
-		Endpoint:    endpoint + "/helloworld/openapi",
+		Endpoint:    strings.TrimRight(endpoint, "/") + "/helloworld/internal",
+		Timeout:     30,
 	})
+}
+
+// responseError preserves HTTP failure even when the upstream returns HTML or invalid JSON.
+func responseError(status int, body []byte) error {
+	if status < http.StatusBadRequest {
+		return nil
+	}
+	var detail serrors.Error
+	if err := json.Unmarshal(body, &detail); err != nil || detail.Code == "" {
+		return serrors.NewError(status, "UnexpectedResponse", http.StatusText(status))
+	}
+	detail.Status = status
+	return &detail
 }
 
 func NewClientWithConfig(config *sdk.Config) (*Client, error) {

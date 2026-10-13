@@ -1,69 +1,58 @@
 package helloworldv1
 
-import "github.com/FlyTOmeLight/server-go/errors"
+import "context"
 
-func (c *Client) CreateModule(req *CreateModuleRequest) (*CreateModuleResponse, error) {
+func (c *Client) CreateModule(ctx context.Context, req *CreateModuleRequest) (*CreateModuleResponse, error) {
 	var resp CreateModuleResponse
-	var sErr errors.Error
 
-	result, err := c.R().SetBody(req).SetResult(&resp).SetError(&sErr).Post("/v1/CreateModule")
+	result, err := c.R().SetContext(ctx).SetBody(req).SetResult(&resp).Post("/v1/CreateModule")
 	if err != nil {
 		return nil, err
 	}
-	if result.IsError() {
-		return nil, &sErr
+	if err := responseError(result.StatusCode(), result.Bytes()); err != nil {
+		return nil, err
 	}
 	return &resp, nil
 }
 
-func (c *Client) ListModule(req *ListModuleRequest) (*ListModuleResponse, error) {
+func (c *Client) ListModule(ctx context.Context, req *ListModuleRequest) (*ListModuleResponse, error) {
 	var resp ListModuleResponse
-	var sErr errors.Error
 
-	result, err := c.R().SetBody(req).SetResult(&resp).SetError(&sErr).Post("/v1/ListModule")
+	result, err := c.R().SetContext(ctx).SetBody(req).SetResult(&resp).Post("/v1/ListModule")
 	if err != nil {
 		return nil, err
 	}
-	if result.IsError() {
-		return nil, &sErr
+	if err := responseError(result.StatusCode(), result.Bytes()); err != nil {
+		return nil, err
 	}
 	return &resp, nil
 }
 
-func (c *Client) GetModule(req *GetModuleRequest) (*GetModuleResponse, error) {
+func (c *Client) GetModule(ctx context.Context, req *GetModuleRequest) (*GetModuleResponse, error) {
 	var resp GetModuleResponse
-	var sErr errors.Error
 
-	result, err := c.R().SetBody(req).SetResult(&resp).SetError(&sErr).Post("/v1/GetModule")
+	result, err := c.R().SetContext(ctx).SetBody(req).SetResult(&resp).Post("/v1/GetModule")
 	if err != nil {
 		return nil, err
 	}
-	if result.IsError() {
-		return nil, &sErr
+	if err := responseError(result.StatusCode(), result.Bytes()); err != nil {
+		return nil, err
 	}
 	return &resp, nil
 }
 
-func (c *Client) UpdateModule(req *UpdateModuleRequest) error {
-	var sErr errors.Error
-	result, err := c.R().SetBody(req).SetError(&sErr).Post("/v1/UpdateModule")
+func (c *Client) UpdateModule(ctx context.Context, req *UpdateModuleRequest) error {
+	result, err := c.R().SetContext(ctx).SetBody(req).Post("/v1/UpdateModule")
 	if err != nil {
 		return err
 	}
-	if result.IsError() {
-		return &sErr
-	}
-	return nil
+	return responseError(result.StatusCode(), result.Bytes())
 }
 
-func (c *Client) DeleteModule(req *DeleteModuleRequest) error {
-	var sErr errors.Error
-	result, err := c.R().SetBody(req).Post("/v1/DeleteModule")
+func (c *Client) DeleteModule(ctx context.Context, req *DeleteModuleRequest) error {
+	result, err := c.R().SetContext(ctx).SetBody(req).Post("/v1/DeleteModule")
 	if err != nil {
 		return err
 	}
-	if result.IsError() {
-		return &sErr
-	}
-	return nil
+	return responseError(result.StatusCode(), result.Bytes())
 }

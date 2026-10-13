@@ -16,8 +16,11 @@ import (
 // @BasePath /helloworld/internal
 type ModuleController struct{ service *ModuleService }
 
-func RegisterRoute(engine *core.RouterGroup, database *db.DB, cache *idempotence.Controller) {
-	controller := &ModuleController{service: NewModuleService(database)}
+func NewModuleController(database *db.DB) *ModuleController {
+	return &ModuleController{service: NewModuleService(database)}
+}
+
+func (controller *ModuleController) RegisterRoutes(engine *core.RouterGroup, cache *idempotence.Controller) {
 	g := engine.Group("/v1")
 	g.POST("/CreateModule", middleware.Idempotent(cache, controller.createModule))
 	g.POST("/ListModule", middleware.Idempotent(cache, controller.listModule))

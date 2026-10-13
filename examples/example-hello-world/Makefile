@@ -28,8 +28,8 @@ COVHTML := $(HOMEDIR)/covhtml.html # HTML representation of coverage profile
 
 # flags to inject into binaries
 APP_VERSION := 1.0.0
-GIT_BRANCH  := $(shell git rev-parse --abbrev-ref HEAD)
-GIT_COMMIT  := $(shell git rev-parse HEAD)
+GIT_BRANCH  = $(shell git rev-parse --abbrev-ref HEAD)
+GIT_COMMIT  = $(shell git rev-parse HEAD)
 BUILD_DATE  := $(shell date "+%Y-%m-%d %H:%M:%S")
 VERSION_VAR := github.com/FlyTOmeLight/server-go/version
 GOMODULE    := $(shell $(GO) list -m)
@@ -38,7 +38,7 @@ GOMODULE    := $(shell $(GO) list -m)
 SWAG_SCAN_DIRS := $(shell ls -d $(HOMEDIR)/internal/app/* | tr '\n' ',' | sed 's/,$$//')
 SWAGGER_VAR    := github.com/FlyTOmeLight/server-go/swagger
 
-LD_FLAGS := " \
+LD_FLAGS = " \
     -X main.CliName=${CLINAME} \
 	-X '$(VERSION_VAR).AppVersion=${APP_VERSION}' \
     -X '$(VERSION_VAR).GitBranch=${GIT_BRANCH}' \
@@ -82,6 +82,12 @@ upgrade:
 test:
 	CGO_ENABLED=1 $(GOTEST) -cover $(GOPKGS) -coverpkg $(GOMODULE)/...
 
+check:
+	@diff=$$(gorgeous -d ./...) || exit $$?; if [ -n "$$diff" ]; then printf '%s\n' "$$diff"; exit 1; fi
+	CGO_ENABLED=1 $(GO) test ./...
+	$(GO) vet ./...
+	CGO_ENABLED=1 $(GO) test -race ./internal/service ./sdk/go/...
+
 # package layout like
 # 	bin/				  for binary executables
 #		helloworld		  cli program name
@@ -119,4 +125,4 @@ clean:
 	rm -rf $(OUTDIR)
 
 # avoid filename conflict and speed up build
-.PHONY: all prepare check-var git set-env compile build doc upgrade test package clean
+.PHONY: all prepare check-var git set-env compile build doc upgrade test check package clean

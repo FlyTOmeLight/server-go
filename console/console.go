@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -126,7 +127,8 @@ func modifyResponse(resp *http.Response, appCode int) error {
 		"application/octet-stream",
 		"text/event-stream",
 	}
-	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	contentType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	contentType = strings.ToLower(contentType)
 	if arrutil.Contains(ignoredContentType, contentType) {
 		logger.FromContext(resp.Request.Context()).
 			Debugf(resp.Request.Context(), "ProxyModifiedResponse ignored content type %s", contentType)

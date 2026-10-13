@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/FlyTOmeLight/server-go/cli"
@@ -42,7 +43,7 @@ func createModuleCommand() *cobra.Command {
 		Use:   "create",
 		Short: "create module",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return createModule(&req)
+			return createModule(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " module create --local-name=xx",
 	}
@@ -61,7 +62,7 @@ func listModuleCommand() *cobra.Command {
 		Use:   "list",
 		Short: "list module",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return listModule(&req)
+			return listModule(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " module list",
 	}
@@ -82,7 +83,7 @@ func getModuleCommand() *cobra.Command {
 		Use:   "get",
 		Short: "get module",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return getModule(&req)
+			return getModule(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " module get --id=xx",
 	}
@@ -103,7 +104,7 @@ func updateModuleCommand() *cobra.Command {
 			if cmd.Flags().Lookup("description").Changed {
 				req.Description = &description
 			}
-			return updateModule(&req)
+			return updateModule(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " module update --id=xx --description=update",
 	}
@@ -123,7 +124,7 @@ func deleteModuleCommand() *cobra.Command {
 		Use:   "delete",
 		Short: "delete module",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return deleteModule(&req)
+			return deleteModule(cmd.Context(), &req)
 		},
 		Example: cli.DefaultName() + " module get --id=xx",
 	}
@@ -134,8 +135,8 @@ func deleteModuleCommand() *cobra.Command {
 	return cmd
 }
 
-func createModule(req *sdk.CreateModuleRequest) error {
-	resp, err := client.CreateModule(req)
+func createModule(ctx context.Context, req *sdk.CreateModuleRequest) error {
+	resp, err := client.CreateModule(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -144,8 +145,8 @@ func createModule(req *sdk.CreateModuleRequest) error {
 	return nil
 }
 
-func listModule(req *sdk.ListModuleRequest) error {
-	resp, err := client.ListModule(req)
+func listModule(ctx context.Context, req *sdk.ListModuleRequest) error {
+	resp, err := client.ListModule(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -154,8 +155,8 @@ func listModule(req *sdk.ListModuleRequest) error {
 	return nil
 }
 
-func getModule(req *sdk.GetModuleRequest) error {
-	resp, err := client.GetModule(req)
+func getModule(ctx context.Context, req *sdk.GetModuleRequest) error {
+	resp, err := client.GetModule(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -164,8 +165,8 @@ func getModule(req *sdk.GetModuleRequest) error {
 	return nil
 }
 
-func updateModule(req *sdk.UpdateModuleRequest) error {
-	err := client.UpdateModule(req)
+func updateModule(ctx context.Context, req *sdk.UpdateModuleRequest) error {
+	err := client.UpdateModule(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -174,8 +175,8 @@ func updateModule(req *sdk.UpdateModuleRequest) error {
 	return nil
 }
 
-func deleteModule(req *sdk.DeleteModuleRequest) error {
-	err := client.DeleteModule(req)
+func deleteModule(ctx context.Context, req *sdk.DeleteModuleRequest) error {
+	err := client.DeleteModule(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -188,6 +189,6 @@ func applyModule() {
 	var req sdk.CreateModuleRequest
 	cli.RegisterApplyHandler("Example", &req, func(args any) error {
 		initClient()
-		return createModule(&req)
+		return createModule(context.Background(), args.(*sdk.CreateModuleRequest))
 	})
 }

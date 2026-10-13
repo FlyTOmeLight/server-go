@@ -22,6 +22,10 @@ COVHTML := $(HOMEDIR)/covhtml.html # HTML representation of coverage profile
 
 all: clean prepare compile package
 
+# Framework, independent examples, race tests and generated-project HTTP smoke checks.
+check:
+	python3 -B scripts/check.py
+
 prepare: check-var
 
 check-var:
@@ -52,5 +56,5 @@ clean:
 	rm -rf $(OUTDIR)
 
 # avoid filename conflict and speed up build
-.PHONY: all compile build test package clean
+.PHONY: all compile build test check package clean
 

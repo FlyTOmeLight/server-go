@@ -29,14 +29,22 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.2.0
+go get github.com/FlyTOmeLight/server-go@v0.3.0
 go mod tidy
 go run .
 ```
 
 修改配置中的 `AppName`、`AppCode` 和监听地址。业务入口与依赖装配放在 `cmd/<程序名>/`，业务逻辑放在 `internal/`。框架默认从工作目录读取 `conf/server/config.toml`，也可设置 `SERVER_CONFIG_PATH`。
 
-需要数据库、SDK 或 CLI 的项目参考 `examples/example-hello-world`。也可从仓库根目录使用现有生成器：
+按需要选择可运行示例：
+
+| 示例 | 适用场景 |
+| --- | --- |
+| `examples/minimal-service` | 只需要 HTTP 和配置 |
+| [example-hello-world](examples/example-hello-world/README.md) | SQLite CRUD、Go SDK 与 CLI；生成器使用此模板 |
+| [streaming-service](examples/streaming-service/README.md) | SSE、取消传播、流式 SDK 和分段写入期限 |
+
+也可从仓库根目录使用现有生成器：
 
 ```sh
 python3 scripts/gen_code.py \
@@ -68,12 +76,28 @@ go build ./cmd/server ./cmd/cli
 
 ## 开发验证
 
+安装 Go、C 编译器、Python 3、make 与 gorgeous 后，统一执行：
+
+```sh
+make check
+```
+
+gorgeous 的安装路径为 `github.com/fsgo/go_fmt/cmd/gorgeous`。检查覆盖根模块与四个独立示例的格式、测试和 vet，受影响并发路径的竞态检测、生成器回归，以及最小服务、流式服务和生成项目的实际启动、HTTP 请求与 SIGTERM 退出。生成项目在临时目录中检查，通过临时 `replace` 引用当前工作树；检查结束自动清理，不修改现有模块的依赖文件。
+
+单独检查当前模块时仍可使用：
+
 ```sh
 CGO_ENABLED=1 go test ./...
 go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.3.0
+
+新增 `stream.NewSSE(writer, writeTimeout)` 与 `Send(event, data)`：逐事件编码和刷新，单次写入有期限，事件间等待不消耗写入时限。调用方负责操作 context、业务取消与错误事件。Console 代理支持带 charset 的 SSE，调试日志限制响应采集大小。完整用法见 [流式服务示例](examples/streaming-service/README.md)。
+
+HelloWorld 模板的 SDK 方法新增 `context.Context` 参数，CLI 同步传递 context；HTTP 失败保留状态与服务错误，控制器在服务构造时创建并在路由重建时复用。升级已有模板 SDK 调用时补上传入的 context。新增 `make check` 统一执行框架、独立示例和生成项目验证。
 
 ## v0.2.0 接口变化
 

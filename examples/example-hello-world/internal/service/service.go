@@ -15,8 +15,8 @@ import (
 )
 
 type HelloWorldService struct {
-	database *db.DB
-	cache    *idempotence.Controller
+	cache            *idempotence.Controller
+	moduleController *module.ModuleController
 }
 
 var _ host.Service = (*HelloWorldService)(nil)
@@ -30,13 +30,16 @@ func NewHelloWorldService(ctx context.Context, database *db.DB, autoMigrate bool
 			return nil, err
 		}
 	}
-	return &HelloWorldService{database: database, cache: idempotence.New(time.Hour)}, nil
+	return &HelloWorldService{
+		cache:            idempotence.New(time.Hour),
+		moduleController: module.NewModuleController(database),
+	}, nil
 }
 
 // RegisterRoutes can rebuild HTTP handlers without creating resources.
 func (s *HelloWorldService) RegisterRoutes(root *gin.RouterGroup) error {
 	group := root.Group("/helloworld/internal")
-	module.RegisterRoute(group, s.database, s.cache)
+	s.moduleController.RegisterRoutes(group, s.cache)
 	return nil
 }
 
