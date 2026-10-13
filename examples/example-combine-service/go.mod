@@ -3,7 +3,7 @@ module github.com/FlyTOmeLight/server-go/examples/example-combine-service
 go 1.27.0
 
 require (
-	github.com/FlyTOmeLight/server-go v0.5.0
+	github.com/FlyTOmeLight/server-go v0.6.0
 	github.com/FlyTOmeLight/server-go/examples/example-hello-world v0.0.0
 	github.com/FlyTOmeLight/server-go/examples/example-service1 v0.0.0
 	github.com/FlyTOmeLight/server-go/examples/example-service2 v0.0.0
@@ -25,6 +25,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
+	github.com/creasty/defaults v1.11.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
 	github.com/gin-contrib/pprof v1.5.6 // indirect
@@ -133,7 +134,7 @@ require (
 	resty.dev/v3 v3.0.0-rc.4 // indirect
 )
 
-replace github.com/FlyTOmeLight/server-go v0.5.0 => ../..
+replace github.com/FlyTOmeLight/server-go v0.6.0 => ../..
 
 replace github.com/FlyTOmeLight/server-go/examples/example-service1 v0.0.0 => ../example-service1
 

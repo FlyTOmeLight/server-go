@@ -370,6 +370,7 @@ const docTemplateHelloWorld = `{
                 "order": {
                     "description": "排序规则: asc: 升序, desc: 倒序, 默认倒序\n\nExample: desc",
                     "type": "string",
+                    "default": "desc",
                     "enum": [
                         "asc",
                         "desc"
@@ -392,12 +393,16 @@ const docTemplateHelloWorld = `{
                 },
                 "pageNo": {
                     "description": "页码\n\nExample: 1",
-                    "type": "integer"
+                    "type": "integer",
+                    "default": 1,
+                    "minimum": 0
                 },
                 "pageSize": {
                     "description": "每页的大小\n\nExample: 10",
                     "type": "integer",
-                    "maximum": 200
+                    "default": 20,
+                    "maximum": 200,
+                    "minimum": 0
                 },
                 "projectID": {
                     "description": "项目ID",

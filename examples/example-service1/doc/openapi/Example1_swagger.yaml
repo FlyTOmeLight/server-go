@@ -6,6 +6,7 @@ definitions:
         maxLength: 255
         type: string
       fileFormat:
+        default: File
         enum:
         - Parquet
         - Zip
@@ -19,9 +20,8 @@ definitions:
         type: string
       localName:
         type: string
-      projectName:
-        type: string
     required:
+    - fileFormat
     - localName
     type: object
   trainv1.Dataset:
@@ -78,10 +78,7 @@ definitions:
   trainv1.UpdateDatasetRequest:
     properties:
       description:
-        type: string
-      localName:
-        type: string
-      projectName:
+        maxLength: 255
         type: string
     type: object
 info:
@@ -93,9 +90,11 @@ paths:
       description: List datasets
       parameters:
       - in: query
+        maxLength: 100
         name: filter
         type: string
-      - description: |-
+      - default: desc
+        description: |-
           排序规则: asc: 升序, desc: 倒序, 默认倒序
 
           Example: desc
@@ -124,24 +123,25 @@ paths:
           type: string
         name: orders
         type: array
-      - description: |-
+      - default: 1
+        description: |-
           页码
 
           Example: 1
         in: query
+        minimum: 0
         name: pageNo
         type: integer
-      - description: |-
+      - default: 20
+        description: |-
           每页的大小
 
           Example: 10
         in: query
         maximum: 200
+        minimum: 0
         name: pageSize
         type: integer
-      - in: query
-        name: projectName
-        type: string
       - description: Project Local Name
         in: path
         name: projectName
@@ -205,12 +205,6 @@ paths:
       - application/json
       description: Delete a dataset
       parameters:
-      - in: query
-        name: localName
-        type: string
-      - in: query
-        name: projectName
-        type: string
       - description: Project Local Name
         in: path
         name: projectName
@@ -238,12 +232,6 @@ paths:
     get:
       description: Get a dataset
       parameters:
-      - in: query
-        name: localName
-        type: string
-      - in: query
-        name: projectName
-        type: string
       - description: Project Local Name
         in: path
         name: projectName

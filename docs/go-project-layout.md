@@ -77,6 +77,24 @@ sdk/go/orderv1/
 
 新 JSON 字段默认用小驼峰，Go 字段保留规范的缩写，如 `ProjectID` 对应 `projectID`。请求包含明确类型、`json` 标签和必要的 `binding`、`example`；响应不加请求校验标签。枚举使用字符串类型及具名常量，值按项目协议确定。更新字段用指针或明确的更新类型区分未传入与清空；嵌套字段的省略、`null`、空对象以及列表的空数组均按实际契约确定，不能统一加 `omitempty`。
 
+请求的必填、长度、数值范围、枚举和格式约束放在 SDK 请求类型的 `binding` tag 中，优先采用 validator 内置的 `required`、`max`、`min`、`oneof`、`uuid` 等规则。Query 参数声明 `form` tag，路径参数声明 `uri` tag；不属于请求体的字段使用 `json:"-"`。Controller 通过 `binder.Bind(ctx, &req).All().Error()` 统一处理绑定与校验错误，完整合并请求来源后再校验。跨项目通用规则复用 `pkg/binder`；只有真实用例不能用现有规则表达时再添加。资源是否存在、调用方权限和业务状态仍在 Service 判断。
+
+静态请求默认值可使用 `default` tag。Controller 在绑定前调用 `github.com/creasty/defaults.Set`，再由用户输入覆盖默认值并通过 binder 校验：
+
+```go
+var req sdk.ListOrderRequest
+if err := defaults.Set(&req); err != nil {
+    _ = ctx.Error(err)
+    return
+}
+if err := binder.Bind(ctx, &req).All().Error(); err != nil {
+    _ = ctx.Error(err)
+    return
+}
+```
+
+这样用户明确传入的 `0`、`false` 或 `null` 不会在绑定后被再次补值。需要区分未传入和空值时仍使用指针或明确的更新类型；局部更新不声明会改变未传入字段的默认值。完整替换接口可按已声明的契约使用默认值，例如 PostgreSQL 示例的 PUT。涉及用户、资源状态或业务规则的默认值由 Service 决定。库行为见 [defaults 文档](https://pkg.go.dev/github.com/creasty/defaults@v1.11.0)。
+
 SDK 方法的路径、HTTP 方法、请求编码、响应结构与 Controller、Swagger 一致。路由风格遵循项目协议。分页沿用接口的页码/页大小或游标方式；有总数契约时返回总数与当前页结果，不把分页查询隐式变成全量拉取。
 
 ### 客户端与请求

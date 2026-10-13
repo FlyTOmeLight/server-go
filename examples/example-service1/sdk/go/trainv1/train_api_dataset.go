@@ -31,8 +31,8 @@ type Dataset struct {
 }
 
 type DatasetName struct {
-	ProjectName string `uri:"projectName"`
-	LocalName   string `uri:"localName"`
+	ProjectName string `json:"-" uri:"projectName" binding:"required,max=64"`
+	LocalName   string `json:"-" uri:"localName" binding:"required,localname"`
 }
 
 func GetDatasetName(workspaceID, projectName, localName string) string {
@@ -58,10 +58,10 @@ func NewDatasetName(name string) *DatasetName {
 }
 
 type CreateDatasetRequest struct {
-	LocalName   string `json:"localName" binding:"localname,required"`
+	LocalName   string `json:"localName" binding:"required,localname"`
 	Description string `json:"description" binding:"max=255"`
-	FileFormat  string `json:"fileFormat" binding:"omitempty,max=64,oneof=Parquet Zip Tar HDF5 Petastorm TFRecord File Folder"`
-	ProjectName string `uri:"projectName"`
+	FileFormat  string `json:"fileFormat,omitempty" binding:"required,max=64,oneof=Parquet Zip Tar HDF5 Petastorm TFRecord File Folder" default:"File"`
+	ProjectName string `json:"-" uri:"projectName" binding:"required,max=64"`
 }
 
 func (d *CreateDatasetRequest) GetName() string {
@@ -73,8 +73,8 @@ type CreateDatasetResponse = Dataset
 type ListDatasetRequest struct {
 	sdk.PagingRequest
 
-	ProjectName string `uri:"projectName"`
-	Filter      string `form:"filter"`
+	ProjectName string `json:"-" uri:"projectName" binding:"required,max=64"`
+	Filter      string `form:"filter" binding:"max=100"`
 }
 
 type ListDatasetResponse struct {
@@ -88,7 +88,7 @@ type GetDatasetResponse = Dataset
 
 type UpdateDatasetRequest struct {
 	DatasetName
-	Description *string `json:"description"`
+	Description *string `json:"description" binding:"omitempty,max=255"`
 }
 
 func NewUpdateDatasetRequest(name string) *UpdateDatasetRequest {

@@ -3,7 +3,8 @@ module github.com/FlyTOmeLight/server-go/examples/example-hello-world
 go 1.27.0
 
 require (
-	github.com/FlyTOmeLight/server-go v0.5.0
+	github.com/FlyTOmeLight/server-go v0.6.0
+	github.com/creasty/defaults v1.11.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/spf13/cobra v1.10.2
 	github.com/swaggo/swag v1.16.6

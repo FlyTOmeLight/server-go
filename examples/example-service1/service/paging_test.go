@@ -1,9 +1,11 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/FlyTOmeLight/server-go/auth"
@@ -50,11 +52,15 @@ func TestDatasetSDKPagination(t *testing.T) {
 	}
 	defer client.Close()
 	for i := range 25 {
-		if _, err := client.CreateDataset(
+		created, err := client.CreateDataset(
 			ctx,
 			&api.CreateDatasetRequest{ProjectName: "paging", LocalName: fmt.Sprintf("item%02d", i)},
-		); err != nil {
+		)
+		if err != nil {
 			t.Fatal(err)
+		}
+		if created.FileFormat != api.FileFormatFile {
+			t.Fatalf("SDK omission lost the Controller default: %#v", created)
 		}
 	}
 	for _, test := range []struct {
@@ -101,4 +107,57 @@ func TestDatasetSDKPagination(t *testing.T) {
 			t.Fatalf("negative pagination %s = %d", query, response.StatusCode)
 		}
 	}
+	t.Run("controller defaults and tags", func(t *testing.T) {
+		response, err := http.Get(server.URL + "/v1/projects/paging/datasets?orderBy=localName&order=asc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var page api.ListDatasetResponse
+		err = json.NewDecoder(response.Body).Decode(&page)
+		response.Body.Close()
+		if err != nil || response.StatusCode != 200 || page.TotalCount != 25 || len(page.Results) != 20 {
+			t.Fatalf("default page: %#v, %v", page, err)
+		}
+		response, err = http.Post(
+			server.URL+"/v1/projects/paging/datasets",
+			"application/json",
+			strings.NewReader(`{"localName":"default-file","description":"keep"}`),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var created api.Dataset
+		err = json.NewDecoder(response.Body).Decode(&created)
+		response.Body.Close()
+		if err != nil || response.StatusCode != 200 || created.FileFormat != api.FileFormatFile {
+			t.Fatalf("create default: %#v, %v", created, err)
+		}
+		if err := client.UpdateDataset(ctx, api.NewUpdateDatasetRequest(created.Name)); err != nil {
+			t.Fatal(err)
+		}
+		got, err := client.GetDataset(ctx, api.NewDatasetName(created.Name))
+		if err != nil || got.Description != "keep" {
+			t.Fatalf("omitted update changed description: %#v, %v", got, err)
+		}
+		for _, test := range []struct{ path, body string }{
+			{path: "/v1/projects/paging/datasets", body: `{}`},
+			{path: "/v1/projects/paging/datasets", body: `{"localName":"bad name"}`},
+			{path: "/v1/projects/paging/datasets", body: `{"localName":"new","fileFormat":"unsupported"}`},
+			{path: "/v1/projects/paging/datasets", body: `{"localName":"new","fileFormat":""}`},
+			{path: "/v1/projects/" + strings.Repeat("p", 65) + "/datasets", body: `{"localName":"new"}`},
+		} {
+			response, err := http.Post(
+				server.URL+test.path,
+				"application/json",
+				strings.NewReader(test.body),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != 400 {
+				t.Fatalf("invalid request %s %s = %d", test.path, test.body, response.StatusCode)
+			}
+		}
+	})
 }

@@ -12,12 +12,61 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES = [ROOT / 'examples' / name for name in (
     'example-hello-world', 'example-service1', 'example-service2', 'example-combine-service',
 )]
 ENV = dict(os.environ, CGO_ENABLED='1', GOWORK='off')
+
+
+def docker(*args, check=True, timeout=30):
+    result = subprocess.run(['docker', *args], env=ENV, text=True,
+                            capture_output=True, timeout=timeout)
+    if check and result.returncode:
+        raise RuntimeError(f'Docker {args[0]} failed: {result.stderr.strip() or result.stdout.strip()}')
+    return result
+
+
+@contextlib.contextmanager
+def postgres_database():
+    """Own one temporary PostgreSQL container for the full verification run."""
+    if shutil.which('docker') is None:
+        raise RuntimeError('Docker is required for PostgreSQL checks; install Docker and start its daemon')
+    docker('info')
+    with tempfile.TemporaryDirectory(prefix='server-go-postgres-') as temporary:
+        cidfile = Path(temporary) / 'container.id'
+        name = 'server-go-check-' + uuid.uuid4().hex
+        password = uuid.uuid4().hex
+        try:
+            docker('create', '--cidfile', str(cidfile), '--name', name, '--rm',
+                   '--tmpfs', '/var/lib/postgresql/data', '--publish', '127.0.0.1::5432',
+                   '--env', 'POSTGRES_USER=servergo', '--env', f'POSTGRES_PASSWORD={password}',
+                   '--env', 'POSTGRES_DB=servergo', 'postgres:17-alpine', timeout=180)
+            container = cidfile.read_text().strip()
+            docker('start', container)
+            deadline = time.monotonic() + 30
+            while True:
+                ready = docker('exec', container, 'pg_isready', '-h', '127.0.0.1',
+                               '-U', 'servergo', '-d', 'servergo', '-t', '1', check=False, timeout=5)
+                if ready.returncode == 0:
+                    break
+                if time.monotonic() >= deadline:
+                    logs = docker('logs', container, check=False).stdout
+                    raise RuntimeError(f'PostgreSQL did not become ready within 30 seconds:\n{logs}')
+                time.sleep(0.1)
+            address = docker('port', container, '5432/tcp').stdout.strip()
+            host, port = address.rsplit(':', 1)
+            if host != '127.0.0.1' or not port.isdecimal():
+                raise RuntimeError(f'Unexpected PostgreSQL port mapping: {address}')
+            yield f'postgres://servergo:{password}@127.0.0.1:{port}/servergo?sslmode=disable'
+        finally:
+            if cidfile.exists():
+                container = cidfile.read_text().strip()
+                removed = docker('rm', '--force', '--volumes', container, check=False)
+                if removed.returncode and not ('No such container' in removed.stderr):
+                    raise RuntimeError(f'Failed to clean up PostgreSQL container {container}: {removed.stderr.strip()}')
 
 
 def run(*args, cwd=ROOT, capture=False):
@@ -31,12 +80,12 @@ def check_module(directory):
     diff = run('gorgeous', '-d', './...', cwd=directory, capture=True)
     if diff.strip():
         raise RuntimeError(f'Formatting differs in {directory}:\n{diff}')
-    run('go', 'test', './...', cwd=directory)
+    run('go', 'test', '-count=1', './...', cwd=directory)
     run('go', 'vet', './...', cwd=directory)
 
 
 @contextlib.contextmanager
-def running_server(binary, directory, app_name, database=False):
+def running_server(binary, directory, app_name, database=False, postgres=False):
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
@@ -45,6 +94,8 @@ def running_server(binary, directory, app_name, database=False):
                f'[HTTPServer]\nListen = "127.0.0.1:{port}"\nAuthType = "Fake"\n')
     if database:
         content += f'[DB]\nDriver = "SQLite"\nDB = "{directory / "smoke.db"}"\nAutoMigrate = true\n'
+    if postgres:
+        content += '[DB]\nDriver = "PostgreSQL"\nDSN = "${env:DATABASE_URL}"\nAutoMigrate = true\n'
     config.write_text(content)
     with tempfile.TemporaryFile(mode='w+t') as log:
         process = subprocess.Popen([str(binary)], cwd=directory,
@@ -81,12 +132,20 @@ def running_server(binary, directory, app_name, database=False):
                 raise RuntimeError(f'Server exited with {process.returncode}:\n{log.read()}')
 
 
-def request_json(endpoint, path, body=None):
+def request_json(endpoint, path, body=None, method=None, status=200):
     data = json.dumps(body).encode() if body is not None else None
-    request = urllib.request.Request(endpoint + path, data=data,
+    request = urllib.request.Request(endpoint + path, data=data, method=method,
                                      headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(request, timeout=3) as response:
-        return json.load(response)
+    try:
+        response = urllib.request.urlopen(request, timeout=3)
+    except urllib.error.HTTPError as error:
+        if error.code != status:
+            raise
+        response = error
+    with response:
+        if response.status != status:
+            raise RuntimeError(f'{request.get_method()} {path}: status={response.status}, expected={status}')
+        return json.load(response) if status != 204 else None
 
 
 def check_examples(directory):
@@ -156,6 +215,50 @@ def check_examples(directory):
     result = run(worker, '--local', '--id=local', '--time=1200ms', cwd=directory, capture=True)
     if 'task is cancelled' not in result:
         raise RuntimeError('Leader worker did not join its canceled task')
+    check_postgresql(directory)
+
+
+def check_postgresql(directory):
+    package = directory / 'postgresql'
+    run('make', 'package', f'OUTDIR={package}', cwd=ROOT / 'examples/postgresql-service')
+    if not (package / 'conf/server/config.toml').is_file():
+        raise RuntimeError('Packaged PostgreSQL configuration missing')
+    with running_server(package / 'bin/postgresql-server', package, 'postgresql-service', postgres=True) as endpoint:
+        default = request_json(endpoint, '/v1/notes', {'name': 'defaults'}, status=201)
+        if default.get('priority') != 2 or default.get('enabled') is not True or default.get('reviewed') is not None:
+            raise RuntimeError(f'PostgreSQL defaults were lost: {default}')
+        body = {'name': 'editable', 'description': 'created', 'priority': 0, 'enabled': False, 'reviewed': False}
+        created = request_json(endpoint, '/v1/notes', body, status=201)
+        if any(created.get(key) != value for key, value in body.items()) or not created.get('id'):
+            raise RuntimeError(f'PostgreSQL create lost explicit values: {created}')
+        fetched = request_json(endpoint, '/v1/notes/' + created['id'])
+        if fetched != created:
+            raise RuntimeError('PostgreSQL read changed the created note')
+        listed = request_json(endpoint, '/v1/notes?pageNo=2&pageSize=1')
+        if listed.get('totalCount') != 2 or listed.get('pageNo') != 2 or listed.get('pageSize') != 1 or len(listed.get('results', [])) != 1:
+            raise RuntimeError(f'PostgreSQL pagination contract failed: {listed}')
+        default_page = request_json(endpoint, '/v1/notes')
+        if default_page.get('pageNo') != 1 or default_page.get('pageSize') != 20 or default_page.get('totalCount') != 2:
+            raise RuntimeError(f'PostgreSQL pagination defaults failed: {default_page}')
+        body.update(description='updated', priority=4, enabled=True, reviewed=True)
+        updated = request_json(endpoint, '/v1/notes/' + created['id'], body, method='PUT')
+        if any(updated.get(key) != value for key, value in body.items()):
+            raise RuntimeError(f'PostgreSQL update failed: {updated}')
+        if request_json(endpoint, '/v1/notes/' + created['id']) != updated:
+            raise RuntimeError('PostgreSQL update was not persisted')
+        for path, invalid, method in (
+            ('/v1/notes', {'name': ''}, 'POST'),
+            ('/v1/notes', {'name': 'invalid', 'priority': 11}, 'POST'),
+            ('/v1/notes?pageNo=0', None, 'GET'),
+            ('/v1/notes?pageSize=101', None, 'GET'),
+            ('/v1/notes/not-a-uuid', None, 'GET'),
+        ):
+            request_json(endpoint, path, invalid, method=method, status=400)
+        for note in (default, created):
+            request_json(endpoint, '/v1/notes/' + note['id'], method='DELETE', status=204)
+            request_json(endpoint, '/v1/notes/' + note['id'], status=404)
+        if request_json(endpoint, '/v1/notes').get('totalCount') != 0:
+            raise RuntimeError('PostgreSQL delete did not remove both notes')
 
 
 def check_generated(directory, name, modules):
@@ -186,23 +289,27 @@ def main():
     for command in ('go', 'gorgeous', 'make'):
         if shutil.which(command) is None:
             raise RuntimeError(f'Missing required command: {command}')
-    for module in [ROOT, *EXAMPLES]:
-        check_module(module)
-    run('go', 'test', '-race', './app', '.', './host', './middleware', './console', './errors', './pkg', './stream',
-        './examples/streaming-service/...')
-    run('go', 'test', '-race', './service', './sdk/go/...', cwd=EXAMPLES[0])
-    run(sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts', '-p', 'test_*.py')
-    with tempfile.TemporaryDirectory(prefix='server-go-check-') as temporary:
-        directory = Path(temporary)
-        check_examples(directory)
-        check_generated(directory, 'Generated', ['Module'])
-        check_generated(directory, 'Multi', ['Catalog', 'Order'])
+    # Turn termination into an exception so the contexts still remove owned resources.
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
+    with postgres_database() as dsn:
+        ENV.update(SERVER_GO_TEST_POSTGRES_DSN=dsn, DATABASE_URL=dsn)
+        for module in [ROOT, *EXAMPLES]:
+            check_module(module)
+        run('go', 'test', '-count=1', '-race', './app', '.', './host', './middleware', './console', './errors', './pkg',
+            './stream', './cron', './pkg/binder', './pkg/election', './examples/streaming-service/...', './examples/postgresql-service/...')
+        run('go', 'test', '-count=1', '-race', './service', './sdk/go/...', cwd=EXAMPLES[0])
+        run(sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts', '-p', 'test_*.py')
+        with tempfile.TemporaryDirectory(prefix='server-go-check-') as temporary:
+            directory = Path(temporary)
+            check_examples(directory)
+            check_generated(directory, 'Generated', ['Module'])
+            check_generated(directory, 'Multi', ['Catalog', 'Order'])
     print('All checks passed.', flush=True)
 
 
 if __name__ == '__main__':
     try:
         main()
-    except (subprocess.CalledProcessError, RuntimeError) as error:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError) as error:
         print(f'Check failed: {error}', file=sys.stderr)
         sys.exit(1)

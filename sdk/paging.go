@@ -39,17 +39,17 @@ type PagingRequest struct {
 	// 页码
 	//
 	// Example: 1
-	PageNo int `json:"pageNo" form:"pageNo" binding:"min=0"`
+	PageNo int `json:"pageNo" form:"pageNo" binding:"min=0" default:"1"`
 
 	// 每页的大小
 	//
 	// Example: 10
-	PageSize int `json:"pageSize" form:"pageSize" binding:"min=0,max=200"`
+	PageSize int `json:"pageSize" form:"pageSize" binding:"min=0,max=200" default:"20"`
 
 	// 排序规则: asc: 升序, desc: 倒序, 默认倒序
 	//
 	// Example: desc
-	Order string `json:"order" form:"order" binding:"omitempty,oneof=asc desc"`
+	Order string `json:"order" form:"order" binding:"omitempty,oneof=asc desc" default:"desc"`
 
 	// 排序依据
 	//
