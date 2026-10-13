@@ -1,11 +1,9 @@
 module github.com/FlyTOmeLight/server-go/examples/example-hello-world
 
-go 1.24.0
-
-toolchain go1.24.5
+go 1.25.0
 
 require (
-	github.com/FlyTOmeLight/server-go v0.3.1
+	github.com/FlyTOmeLight/server-go v0.4.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/spf13/cobra v1.10.2
 	github.com/swaggo/swag v1.8.1
@@ -48,14 +46,9 @@ require (
 	github.com/gookit/goutil v0.6.12 // indirect
 	github.com/hashicorp/go-version v1.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
-	github.com/jackc/pgconn v1.12.1 // indirect
-	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgproto3/v2 v2.3.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgtype v1.11.0 // indirect
-	github.com/jackc/pgx/v4 v4.16.1 // indirect
+	github.com/jackc/pgx/v5 v5.11.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jedib0t/go-pretty/v6 v6.3.3 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -117,7 +110,7 @@ require (
 	gorm.io/driver/clickhouse v0.3.2 // indirect
 	gorm.io/driver/gaussdb v0.1.0 // indirect
 	gorm.io/driver/mysql v1.6.0 // indirect
-	gorm.io/driver/postgres v1.3.7 // indirect
+	gorm.io/driver/postgres v1.6.0 // indirect
 	gorm.io/driver/sqlite v1.6.0 // indirect
 	gorm.io/gorm v1.31.1 // indirect
 	gorm.io/plugin/soft_delete v1.2.1 // indirect

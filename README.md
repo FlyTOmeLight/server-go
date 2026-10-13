@@ -2,7 +2,7 @@
 
 基于 Gin 的 Go 服务框架，提供 HTTP 服务生命周期、配置加载与热更新、通用中间件、数据库连接、SDK 和 CLI 能力。
 
-模块路径：`github.com/FlyTOmeLight/server-go`。需要 Go 1.24 或更高版本。使用 SQLite 的项目需要启用 CGO，并安装 C 编译器。所有 Go 依赖均来自公开模块。
+模块路径：`github.com/FlyTOmeLight/server-go`。需要 Go 1.25 或更高版本。使用 SQLite 的项目需要启用 CGO，并安装 C 编译器。所有 Go 依赖均来自公开模块。
 
 ## 快速启动
 
@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.3.1
+go get github.com/FlyTOmeLight/server-go@v0.4.0
 go mod tidy
 go run .
 ```
@@ -105,6 +105,10 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.4.0
+
+升级 GORM PostgreSQL 驱动至 v1.6.0，使用 pgx/v5 v5.11.0，移除旧 pgx/v4 驱动依赖；最低 Go 版本升至 1.25。
 
 ## v0.3.2
 
