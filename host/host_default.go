@@ -196,9 +196,20 @@ func NewHTTPServer(config *conf.Config) *http.Server {
 // Run waits for admitted handlers before releasing service resources. A handler
 // that ignores request cancellation delays Run's return until it finishes.
 func (h *HTTPHost) Run(ctx context.Context) (result error) {
+	return h.RunWithStartupTimeout(ctx, 15*time.Second)
+}
+
+// RunWithStartupTimeout limits all service starts to one shared budget. Startup
+// responds to ctx cancellation; once ready, workers remain alive until HTTP drains.
+func (h *HTTPHost) RunWithStartupTimeout(ctx context.Context, startupTimeout time.Duration) (result error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if startupTimeout <= 0 {
+		return errors.New("service startup timeout must be positive")
+	}
+	startupCtx, cancelStartup := context.WithTimeout(ctx, startupTimeout)
+	defer cancelStartup()
 	h.mu.Lock()
 	if h.running || h.closed {
 		h.mu.Unlock()
@@ -221,6 +232,8 @@ func (h *HTTPHost) Run(ctx context.Context) (result error) {
 	h.address = listener.Addr().String()
 	h.mu.Unlock()
 	workerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stopStartupCancellation := context.AfterFunc(startupCtx, cancel)
+	defer stopStartupCancellation()
 	started := make([]Service, 0, len(h.services))
 	defer func() {
 		h.ready.Store(false)
@@ -257,8 +270,18 @@ func (h *HTTPHost) Run(ctx context.Context) (result error) {
 		cancel()
 		for _, s := range slices.Backward(started) {
 			stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			result = errors.Join(result, s.Stop(stopCtx))
+			stopErr := s.Stop(stopCtx)
+			remainingErr := stopErr
+			if errors.Is(stopErr, context.DeadlineExceeded) {
+				// Keep ownership until the service confirms its workers have exited.
+				remainingErr = s.Stop(context.WithoutCancel(ctx))
+				stopErr = errors.Join(stopErr, remainingErr)
+			}
+			result = errors.Join(result, stopErr)
 			stopCancel()
+			if remainingErr != nil {
+				break
+			}
 		}
 		h.mu.Lock()
 		h.closed = true
@@ -266,10 +289,20 @@ func (h *HTTPHost) Run(ctx context.Context) (result error) {
 		h.closeOnce.Do(h.unsubscribe)
 	}()
 	for _, service := range h.services {
-		if err := service.Start(workerCtx); err != nil {
-			return fmt.Errorf("start service %s: %w", reflect.TypeOf(service), err)
+		if err := startupCtx.Err(); err != nil {
+			return err
 		}
 		started = append(started, service)
+		if err := service.Start(workerCtx); err != nil {
+			return errors.Join(
+				fmt.Errorf("start service %s: %w", reflect.TypeOf(service), err),
+				startupCtx.Err(),
+			)
+		}
+	}
+	stopStartupCancellation()
+	if err := startupCtx.Err(); err != nil {
+		return err
 	}
 	h.ready.Store(true)
 	served := make(chan error, 1)

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql/driver"
 	"reflect"
 	"strings"
 
@@ -64,7 +65,11 @@ func (d *AIBaseDialector) RollbackTo(tx *gorm.DB, name string) error {
 // DataTypeOf 是唯一需要实现的方法
 func (d *AIBaseDialector) DataTypeOf(field *schema.Field) string {
 	// 1. 获取 gorm 标签中的 type
-	gormType := getGormTypeFromTag(field)
+	gormType := strings.TrimSpace(getGormTypeFromTag(field))
+	if d.integerBoolean && isBooleanField(field) &&
+		(gormType == "" || strings.EqualFold(gormType, "bool") || strings.EqualFold(gormType, "boolean")) {
+		return "SMALLINT"
+	}
 	if gormType == "" {
 		// 没有指定 type，使用原始 Dialector 的映射
 		return d.Dialector.DataTypeOf(field)
@@ -75,7 +80,7 @@ func (d *AIBaseDialector) DataTypeOf(field *schema.Field) string {
 	case "mysql":
 		return mapToMysql(gormType, field.AutoIncrement)
 	case "postgres", "postgresql", "gaussdb":
-		return mapToPostgres(gormType, field.AutoIncrement)
+		return mapToPostgres(gormType, field, d.integerBoolean)
 	case "dameng", "dm":
 		return mapToDameng(gormType)
 	default:
@@ -88,16 +93,36 @@ func (d *AIBaseDialector) DataTypeOf(field *schema.Field) string {
 func (d *AIBaseDialector) BindVarTo(writer clause.Writer, stmt *gorm.Statement, value any) {
 	if strings.EqualFold(d.dbType, "postgres") || strings.EqualFold(d.dbType, "postgresql") ||
 		strings.EqualFold(d.dbType, "gaussdb") {
-		if boolean, ok := value.(bool); ok &&
-			(d.integerBoolean || indexBooleanField(stmt, len(stmt.Vars)-1) != nil) {
-			if boolean {
+		if d.integerBoolean || indexBooleanField(stmt, len(stmt.Vars)-1) != nil {
+			boolean := reflect.ValueOf(value)
+			for boolean.IsValid() && boolean.Kind() == reflect.Ptr && !boolean.IsNil() {
+				boolean = boolean.Elem()
+			}
+			if valuer, ok := value.(driver.Valuer); ok && boolean.IsValid() &&
+				!(boolean.Kind() == reflect.Ptr && boolean.IsNil()) {
+				stmt.Vars[len(stmt.Vars)-1] = integerBooleanValuer{Valuer: valuer}
+			} else if boolean.IsValid() && boolean.Kind() == reflect.Bool && boolean.Bool() {
 				stmt.Vars[len(stmt.Vars)-1] = 1
-			} else {
+			} else if boolean.IsValid() && boolean.Kind() == reflect.Bool {
 				stmt.Vars[len(stmt.Vars)-1] = 0
 			}
 		}
 	}
 	d.Dialector.BindVarTo(writer, stmt, value)
+}
+
+// integerBooleanValuer preserves the source's NULL and error behavior until driver binding.
+type integerBooleanValuer struct{ driver.Valuer }
+
+func (v integerBooleanValuer) Value() (driver.Value, error) {
+	value, err := v.Valuer.Value()
+	if boolean, ok := value.(bool); ok && err == nil {
+		if boolean {
+			return int64(1), nil
+		}
+		return int64(0), nil
+	}
+	return value, err
 }
 
 func indexBooleanField(stmt *gorm.Statement, variableIndex int) *schema.Field {
@@ -134,11 +159,7 @@ func integerBooleanField(statementSchema *schema.Schema, column string) *schema.
 }
 
 func isBooleanField(field *schema.Field) bool {
-	fieldType := field.FieldType
-	for fieldType.Kind() == reflect.Ptr {
-		fieldType = fieldType.Elem()
-	}
-	return fieldType.Kind() == reflect.Bool
+	return field.GORMDataType == schema.Bool
 }
 
 func insertColumns(sql string) []string {
@@ -284,25 +305,31 @@ func getGormTypeFromTag(field *schema.Field) string {
 
 // ========== 类型映射函数（简化版） ==========
 
-func mapToPostgres(gormType string, autoIncrement bool) string {
+func mapToPostgres(gormType string, field *schema.Field, integerBoolean bool) string {
 	switch strings.ToLower(strings.TrimSpace(gormType)) {
 	case "smallint":
-		if autoIncrement {
+		if field.AutoIncrement {
 			return "smallserial"
 		}
 		return gormType
 	case "int", "integer":
-		if autoIncrement {
+		if field.AutoIncrement {
 			return "serial"
 		}
 		return gormType
 	case "bigint":
-		if autoIncrement {
+		if field.AutoIncrement {
 			return "bigserial"
 		}
 		return gormType
 	case "tinyint", "tinyint unsigned":
-		return "BOOLEAN"
+		if isBooleanField(field) && !integerBoolean {
+			return "BOOLEAN"
+		}
+		if field.AutoIncrement {
+			return "smallserial"
+		}
+		return "SMALLINT"
 	case "datetime":
 		return "TIMESTAMPTZ"
 	case "json":

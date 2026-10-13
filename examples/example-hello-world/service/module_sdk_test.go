@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/FlyTOmeLight/server-go/auth"
@@ -43,6 +45,20 @@ func TestModuleSDKRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	for _, body := range []string{`{"projectID":"project1","pageSize":-1}`, `{"projectID":"project1","pageNo":-1}`} {
+		response, err := http.Post(
+			server.URL+"/helloworld/internal/v1/ListModule",
+			"application/json",
+			strings.NewReader(body),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("negative pagination accepted: %d", response.StatusCode)
+		}
+	}
 	created, err := client.CreateModule(ctx, &api.CreateModuleRequest{ProjectID: "project1", Name: "example"})
 	if err != nil {
 		t.Fatal(err)

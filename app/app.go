@@ -19,7 +19,7 @@ type Options struct {
 	ConfigPath   string
 	LogConfig    *logger.Config
 	Setup        host.Setup
-	InitTimeout  time.Duration // Zero uses 15 seconds.
+	InitTimeout  time.Duration // Assembly and service startup share this budget. Zero uses 15 seconds.
 	CloseTimeout time.Duration // Zero uses 5 seconds per cleanup operation.
 }
 
@@ -29,37 +29,52 @@ type Runtime struct {
 	Config   *conf.Manager
 	Log      *logger.Logger
 	services []host.Service
-	cleanup  []func(context.Context) error
+	cleanup  []cleanupOperation
+}
+
+type cleanupOperation struct {
+	release func(context.Context) error
+	service bool
 }
 
 // Initialize transfers module ownership to Run, including failed rollback cleanup.
 // Modules are initialized in order and closed in reverse order.
 func (r *Runtime) Initialize(ctx context.Context, modules ...server.Module) error {
 	b := server.NewBootstrap(modules...)
-	r.cleanup = append(r.cleanup, b.Close)
+	r.cleanup = append(r.cleanup, cleanupOperation{release: b.Close})
 	return b.Initialize(ctx)
 }
 
-// AddService transfers a constructed service to Run. Its Stop is called once,
-// including when assembly, route registration or host startup fails.
+// AddService transfers a constructed service to Run. Stop is also called when
+// assembly, route registration or startup fails. Failed stops can be retried;
+// dependencies remain open until stopping succeeds.
 func (r *Runtime) AddService(service host.Service) error {
 	if service == nil {
 		return errors.New("service is nil")
 	}
 	owned := &ownedService{Service: service}
 	r.services = append(r.services, owned)
-	r.cleanup = append(r.cleanup, owned.Stop)
+	r.cleanup = append(r.cleanup, cleanupOperation{release: owned.Stop, service: true})
 	return nil
 }
 
 type ownedService struct {
 	host.Service
-	stop sync.Once
+	mu      sync.Mutex
+	stopped bool
 }
 
-func (s *ownedService) Stop(ctx context.Context) (err error) {
-	s.stop.Do(func() { err = s.Service.Stop(ctx) })
-	return err
+func (s *ownedService) Stop(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped {
+		return nil
+	}
+	if err := s.Service.Stop(ctx); err != nil {
+		return err
+	}
+	s.stopped = true
+	return nil
 }
 
 // Run constructs configuration and logging, invokes build under an initialization
@@ -87,27 +102,41 @@ func Run[T any](ctx context.Context, options Options, build func(context.Context
 	if err != nil {
 		return err
 	}
-	defer log.Close()
-	r := &Runtime{Log: log}
+	r := &Runtime{Log: log, cleanup: []cleanupOperation{{release: func(context.Context) error {
+		log.Close()
+		return nil
+	}}}}
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer func() {
 		cancelRun()
 		for _, v := range slices.Backward(r.cleanup) {
 			closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), options.CloseTimeout)
-			result = errors.Join(result, v(closeCtx))
+			releaseErr := v.release(closeCtx)
+			err := releaseErr
+			if v.service && errors.Is(releaseErr, context.DeadlineExceeded) {
+				// A deadline limits the first wait, not ownership of active workers.
+				releaseErr = v.release(context.WithoutCancel(ctx))
+				err = errors.Join(err, releaseErr)
+			}
+			result = errors.Join(result, err)
 			cancel()
+			if v.service && releaseErr != nil {
+				// A failed stop cannot prove workers have released their dependencies.
+				return
+			}
 		}
 	}()
 	r.Config, err = conf.NewManager(options.ConfigPath)
 	if err != nil {
 		return err
 	}
-	r.cleanup = append(r.cleanup, r.Config.Close)
+	r.cleanup = append(r.cleanup, cleanupOperation{release: r.Config.Close})
 	var config T
 	if err := r.Config.Snapshot().Unmarshal(&config); err != nil {
 		return fmt.Errorf("decode application config: %w", err)
 	}
 	initCtx, cancelInit := context.WithTimeout(runCtx, options.InitTimeout)
+	startupDeadline, _ := initCtx.Deadline()
 	err = build(logger.WithContext(initCtx, log), r, &config)
 	if err == nil {
 		err = initCtx.Err()
@@ -123,12 +152,16 @@ func Run[T any](ctx context.Context, options Options, build func(context.Context
 	if err != nil {
 		return err
 	}
-	r.cleanup = append(r.cleanup, func(context.Context) error { return h.Close() })
+	r.cleanup = append(r.cleanup, cleanupOperation{release: func(context.Context) error { return h.Close() }})
 	if err := r.Config.Watch(
 		runCtx,
 		func(err error) { log.Errorf(runCtx, "reload configuration: %v", err) },
 	); err != nil {
 		return err
 	}
-	return h.Run(runCtx)
+	startupTimeout := time.Until(startupDeadline)
+	if startupTimeout <= 0 {
+		return context.DeadlineExceeded
+	}
+	return h.RunWithStartupTimeout(runCtx, startupTimeout)
 }

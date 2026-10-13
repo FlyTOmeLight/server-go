@@ -52,6 +52,7 @@ func TestPagingRequest_GetPageNo(t *testing.T) {
 			desc: "min",
 			want: 1,
 		},
+		{desc: "negative", paging: PagingRequest{PageNo: -1}, want: 1},
 	}
 
 	for _, tc := range testcases {
@@ -80,6 +81,7 @@ func TestPagingRequest_GetPageSize(t *testing.T) {
 			desc: "min",
 			want: 20,
 		},
+		{desc: "negative", paging: PagingRequest{PageSize: -1}, want: 20},
 		{
 			desc: "max",
 			paging: PagingRequest{

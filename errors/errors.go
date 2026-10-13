@@ -1,6 +1,7 @@
 package errors
 
 import (
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -108,12 +109,17 @@ type Error struct {
 
 	// Status HTTP状态码，JSON中忽略
 	Status int `json:"-"`
+
+	cause error
 }
 
 func (e *Error) Error() string {
 	// 只返回错误信息，不返回错误码和请求ID
 	return e.Message
 }
+
+// Unwrap preserves the original error when adding framework error context.
+func (e *Error) Unwrap() error { return e.cause }
 
 func (e *Error) SetStatusCode(appCode int) {
 	if e.StatusCode != 0 {
@@ -160,8 +166,8 @@ func normalize(err error, debug bool) *Error {
 		return nil
 	}
 
-	switch e := err.(type) {
-	case *Error:
+	var e *Error
+	if stderrors.As(err, &e) && e != nil {
 		message := e.Message
 		if e.Status == http.StatusInternalServerError {
 			message = ErrorInternalError.Error()
@@ -175,48 +181,41 @@ func normalize(err error, debug bool) *Error {
 			Message:    message,
 			RequestID:  e.RequestID,
 			StatusCode: e.StatusCode,
+			cause:      err,
 		}
-	default:
-		message := ErrorInternalError.Error()
-		if debug {
-			message = err.Error()
-		}
-		newErr := Error{
-			Status:  http.StatusInternalServerError,
-			Code:    "InternalError",
-			Message: message,
-		}
-		return &newErr
 	}
+	message := ErrorInternalError.Error()
+	if debug {
+		message = err.Error()
+	}
+	return &Error{Status: http.StatusInternalServerError, Code: "InternalError", Message: message, cause: err}
 }
 
 // IsStatusCode check error's http status code equal to targetCode
 func IsStatusCode(err error, targetCode int) bool {
-	switch e := err.(type) {
-	case *Error:
-		return e.Status == targetCode
-	}
-	return false
+	var e *Error
+	return stderrors.As(err, &e) && e != nil && e.Status == targetCode
 }
 
 func IsCode(err error, code string) bool {
-	switch e := err.(type) {
-	case *Error:
-		return e.Code == code
-	}
-	return false
+	var e *Error
+	return stderrors.As(err, &e) && e != nil && e.Code == code
 }
 
 // Wrap returns a new error with wrap message
 func Wrap(err error, message string) error {
-	switch e := err.(type) {
-	case *Error:
+	if err == nil {
+		return nil
+	}
+	var e *Error
+	if stderrors.As(err, &e) && e != nil {
 		newError := &Error{
 			Code:       e.Code,
-			Message:    message + " " + e.Message,
+			Message:    message + " " + err.Error(),
 			RequestID:  e.RequestID,
 			StatusCode: e.StatusCode,
 			Status:     e.Status,
+			cause:      err,
 		}
 		return newError
 	}
@@ -225,14 +224,18 @@ func Wrap(err error, message string) error {
 
 // WithMessage returns a new error with new message
 func WithMessage(err error, message string) error {
-	switch e := err.(type) {
-	case *Error:
+	if err == nil {
+		return nil
+	}
+	var e *Error
+	if stderrors.As(err, &e) && e != nil {
 		newError := &Error{
 			Code:       e.Code,
 			Message:    message,
 			RequestID:  e.RequestID,
 			StatusCode: e.StatusCode,
 			Status:     e.Status,
+			cause:      err,
 		}
 		return newError
 	}

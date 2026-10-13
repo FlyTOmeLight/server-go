@@ -75,9 +75,9 @@ Kubernetes 组件使用 v0.37.1；`kube-openapi` 固定为它们声明的 `v0.0.
 
 `app.Run(ctx, options, build)` 统一创建配置与日志、限制初始化时间、监听配置变化、运行 HTTPHost，并在退出或启动失败时清理资源。进程入口仍负责退出信号与退出码。
 
-业务先声明配置结构体，字段名对应 TOML 节，名称不同时通过 `mapstructure` tag 指定 key；`app.Run` 从同一份配置快照一次解析全部字段，统一返回解析错误。装配函数接收初始化 context、`*app.Runtime` 和类型化配置指针，通过 `runtime.Initialize(ctx, modules...)` 初始化需要的资源，再通过 `runtime.AddService(svc)` 交付构造好的服务。资源按交付顺序逆序关闭；服务即使尚未启动，也会调用一次 `Stop`。构造失败前尚未交付的部分资源仍由业务构造函数清理。
+业务先声明配置结构体，字段名对应 TOML 节，名称不同时通过 `mapstructure` tag 指定 key；`app.Run` 从同一份配置快照一次解析全部字段，统一返回解析错误。装配函数接收初始化 context、`*app.Runtime` 和类型化配置指针，通过 `runtime.Initialize(ctx, modules...)` 初始化需要的资源，再通过 `runtime.AddService(svc)` 交付构造好的服务。资源按交付顺序逆序关闭；服务即使尚未启动，也会调用 `Stop`，成功后不重复调用，失败时允许重试。构造失败前尚未交付的部分资源仍由业务构造函数清理。
 
-`app.Options` 可指定配置路径、日志配置、HTTP setup 和初始化/清理期限，默认初始化 15 秒、每次应用清理操作 5 秒。HTTP 请求排空和运行中服务停止的期限仍由 HTTPHost 管理。初始化 context 不用于启动长期任务；任务通过 `host.Service.Start(ctx)` 获取运行 context。
+`app.Options` 可指定配置路径、日志配置、HTTP setup 和初始化/清理期限，装配与服务启动共享默认 15 秒预算，每次应用清理操作默认先等待 5 秒。HTTP 请求排空和运行中服务停止的首次等待预算仍由 HTTPHost 管理。停止超时后继续等待 worker 退出，再关闭依赖；其他停止错误未恢复时保留依赖并返回错误。初始化 context 不用于启动长期任务；任务通过 `host.Service.Start(ctx)` 获取运行 context，启动期间响应进程取消，启动完成后保留到 HTTP 排空结束。
 
 例如 HelloWorld 声明以下配置，装配函数直接使用 `cfg.DB`。业务配置是启动时的独立值，配置热更新不会原地修改它。
 
@@ -106,6 +106,18 @@ HTTP Controller 和对应业务 Service 使用 `*core.Context`；数据库和 SD
 可组合的服务放在与 `cmd` 同级的公开 `service/` 包，私有业务与 Table 保留在 `internal/`。HelloWorld 的独立入口使用 `service.Build`；组合示例通过 `service.NewHelloWorldService` 注入共享数据库，与其他服务挂载到同一个 Host。
 
 `app.Run` 从 v0.5.0 开始提供；正式消费使用发布版本，本地联合开发可使用 `replace`。
+
+## 当前工作树的接口调整
+
+本次设计修复记录在 [issues #1–#9](https://github.com/FlyTOmeLight/server-go/issues)。消费已有发布版本时，仍按对应版本的接口调用；以下调整尚未发布：
+
+- `HTTPHost.Run(ctx)` 默认限制服务启动为 15 秒；`RunWithStartupTimeout(ctx, timeout)` 可指定启动预算。`Start` 必须响应取消；`Stop` 返回 nil 才表示全部任务已退出，失败后允许再次等待或清理。
+- `NewLeaderElection`、`NewK8sLeaderElection` 返回实例和错误；`Run(ctx)` 返回错误，`RunAsync(ctx)` 返回完成结果 channel。Kubernetes 配置错误直接失败，本地单节点运行显式使用 `NewDummyAppElection` 或示例的 `--local`。
+- 删除 `AuthWithAuthCenter`。可信网关身份使用 `auth.TrustedIdentityHeaders(verify)`，验证网关凭据、来源和身份 Header 的控制权后才采纳身份；通过 setup 闭包调用 `httpintegration.InstallWithAuth(engine, cfg, authenticate)`。仅配置 `AuthCenter` 而未提供验证 handler 会启动失败。`auth.Use` 现在返回错误。
+- `auth.Impersonate(authorize)` 返回 handler 和错误，必须在身份认证后安装；授权函数检查调用方是服务账号并允许代理指定组织与用户。代理 Header 不再由默认集成隐式处理。
+- 原生 SQL 使用目标数据库语法；删除连接池自动改写与 `ConvertSQLIdentifiers`。整数 `tinyint` 映射 `SMALLINT`，布尔字段按实际方言模式映射和绑定。
+- 配置加载时一次解析全部占位符，快照固定有效值。外部来源变化后执行 `Reload`；文件监听仍只监听主配置文件。程序化占位符输入使用 `conf.FromSettings`，`NewManagerFromConfig` 接收已解析值。
+- 分页 query 参数与 JSON 字段一致，负页码和页大小返回 400，零值使用默认分页。框架错误支持标准 `%w` 包装；cron 多个同步来源合并后统一更新任务。
 
 ## 通用 HTTP 行为（v0.3.1）
 

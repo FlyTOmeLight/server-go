@@ -39,42 +39,42 @@ type PagingRequest struct {
 	// 页码
 	//
 	// Example: 1
-	PageNo int `json:"pageNo"`
+	PageNo int `json:"pageNo" form:"pageNo" binding:"min=0"`
 
 	// 每页的大小
 	//
 	// Example: 10
-	PageSize int `json:"pageSize" binding:"max=200"`
+	PageSize int `json:"pageSize" form:"pageSize" binding:"min=0,max=200"`
 
 	// 排序规则: asc: 升序, desc: 倒序, 默认倒序
 	//
 	// Example: desc
-	Order string `json:"order" binding:"omitempty,oneof=asc desc"`
+	Order string `json:"order" form:"order" binding:"omitempty,oneof=asc desc"`
 
 	// 排序依据
 	//
 	// Example: name
-	OrderBy string `json:"orderBy" binding:"orderby"`
+	OrderBy string `json:"orderBy" form:"orderBy" binding:"orderby"`
 
 	// mongo 排序规则
 	//
 	// Example: []string{ "{order: desc}", "{id:asc}" }
-	Orders []string `json:"orders" example:"[{create_ad:desc},{id:asc}]"`
+	Orders []string `json:"orders" form:"orders" example:"[{create_ad:desc},{id:asc}]"`
 }
 
 func (r PagingRequest) IsPage() bool {
-	return r.PageNo != 0 && r.PageSize != 0
+	return r.PageNo > 0 && r.PageSize > 0
 }
 
 func (r PagingRequest) GetPageNo() int {
-	if r.PageNo == 0 {
+	if r.PageNo < minPageNo {
 		return minPageNo
 	}
 	return r.PageNo
 }
 
 func (r PagingRequest) GetPageSize() int {
-	if r.PageSize == 0 {
+	if r.PageSize < 1 {
 		return defaultPageSize
 	}
 	if r.PageSize > maxPageSize {

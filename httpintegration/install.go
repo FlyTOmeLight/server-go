@@ -20,6 +20,13 @@ import (
 // The host must install its error handling and recovery before calling Install.
 // Dapr subscriptions and route-level idempotence are assembled separately.
 func Install(engine *core.Engine, config *conf.Config) error {
+	return InstallWithAuth(engine, config, nil)
+}
+
+// InstallWithAuth installs an explicit authentication handler before protected
+// assets and business routes. AuthCenter requires a handler such as
+// auth.TrustedIdentityHeaders with a gateway verifier; no headers are trusted by default.
+func InstallWithAuth(engine *core.Engine, config *conf.Config, authenticate core.HandlerFunc) error {
 	if engine == nil || config == nil {
 		return errors.New("HTTP integrations require an engine and config")
 	}
@@ -27,6 +34,9 @@ func Install(engine *core.Engine, config *conf.Config) error {
 	case "", conf.AuthTypeFake, conf.AuthTypeAuthCenter:
 	default:
 		return fmt.Errorf("unsupported HTTP authentication mode: %q", config.HTTPServer.AuthType)
+	}
+	if config.HTTPServer.AuthType == conf.AuthTypeAuthCenter && authenticate == nil {
+		return errors.New("AuthCenter requires an explicit verified authentication handler")
 	}
 
 	switch config.RunMode {
@@ -49,7 +59,11 @@ func Install(engine *core.Engine, config *conf.Config) error {
 	if config.HTTPServer.ConsoleEnable {
 		console.RegisterConsoleAPI(engine, config)
 	}
-	auth.Use(engine, config)
+	if authenticate != nil {
+		engine.Use(authenticate)
+	} else if err := auth.Use(engine, config); err != nil {
+		return err
+	}
 	middleware.Asset(config.HTTPServer.Assets, true, engine)
 	return nil
 }

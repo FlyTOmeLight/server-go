@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/FlyTOmeLight/server-go/logger"
 )
@@ -86,5 +87,5 @@ func GetCurrentNamespace() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(namespaceBytes), nil
+	return strings.TrimSpace(string(namespaceBytes)), nil
 }

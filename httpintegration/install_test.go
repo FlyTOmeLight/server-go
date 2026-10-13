@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/FlyTOmeLight/server-go/auth"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
 	core "github.com/FlyTOmeLight/server-go/pkg"
@@ -93,9 +94,45 @@ func TestInstallRejectsInvalidInputs(t *testing.T) {
 		{config: &conf.Config{}},
 		{engine: gin.New()},
 		{engine: gin.New(), config: &conf.Config{HTTPServer: conf.HTTPServerConfig{AuthType: "unsupported"}}},
+		{engine: gin.New(), config: &conf.Config{HTTPServer: conf.HTTPServerConfig{AuthType: conf.AuthTypeAuthCenter}}},
 	} {
 		if err := Install(test.engine, test.config); err == nil {
 			t.Fatal("expected invalid integration configuration error")
+		}
+	}
+}
+
+func TestInstallWithVerifiedAuthentication(t *testing.T) {
+	config := &conf.Config{HTTPServer: conf.HTTPServerConfig{AuthType: conf.AuthTypeAuthCenter}}
+	engine := gin.New()
+	if err := Install(engine, config); err == nil || len(engine.Routes()) != 0 {
+		t.Fatal("unverified AuthCenter must fail before registering routes")
+	}
+	handler, err := auth.TrustedIdentityHeaders(func(r *http.Request) error {
+		if r.Header.Get("Authorization") == "Bearer gateway-secret" {
+			return nil
+		}
+		return os.ErrPermission
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallWithAuth(engine, config, handler); err != nil {
+		t.Fatal(err)
+	}
+	engine.GET("/business", func(c *core.Context) { c.String(http.StatusOK, auth.UserID(c)) })
+	for _, token := range []string{"", "gateway-secret"} {
+		request := httptest.NewRequest(http.MethodGet, "/business", nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set(constants.HeaderOrgID, "org")
+		request.Header.Set(constants.HeaderUserID, "user")
+		writer := httptest.NewRecorder()
+		engine.ServeHTTP(writer, request)
+		if token == "" && writer.Code != http.StatusUnauthorized {
+			t.Fatal("untrusted identity accepted")
+		}
+		if token != "" && (writer.Code != http.StatusOK || writer.Body.String() != "user") {
+			t.Fatal("trusted identity not installed on business routes")
 		}
 	}
 }

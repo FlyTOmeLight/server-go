@@ -1,4 +1,4 @@
-// 用来处理微服务多副本的leader选举，并提供非k8s环境下的兼容接口
+// 用来处理微服务多副本的leader选举；本地单节点运行需显式选择 DummyAppElection。
 package election
 
 import "context"
@@ -28,8 +28,8 @@ type LeaderElection interface {
 	RunOnLeader(func(context.Context))
 
 	// 开始选举，同步运行，会阻塞程序，在失去leader的时候会继续尝试竞选成为leader
-	Run(ctx context.Context)
+	Run(ctx context.Context) error
 
-	// 开始选举，异步运行，不会阻塞程序，在失去leader的时候会继续尝试竞选成为leader
-	RunAsync(ctx context.Context)
+	// 开始异步选举。调用方通过返回的 channel 等待结束并接收初始化错误。
+	RunAsync(ctx context.Context) <-chan error
 }

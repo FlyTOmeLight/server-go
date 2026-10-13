@@ -35,7 +35,7 @@ func Load(path string) (*Config, error) {
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read configuration: %w", err)
 	}
-	return decodeConfig(v)
+	return resolveConfig(v)
 }
 
 // FromSettings creates a validated configuration from caller-owned settings.
@@ -44,12 +44,25 @@ func FromSettings(settings map[string]any) (*Config, error) {
 	if err := v.MergeConfigMap(cloneMap(settings)); err != nil {
 		return nil, err
 	}
-	return decodeConfig(v)
+	return resolveConfig(v)
+}
+
+// resolveConfig freezes placeholder values before a configuration is decoded or published.
+func resolveConfig(v *viper.Viper) (*Config, error) {
+	settings, err := resolveSettings(v.AllSettings())
+	if err != nil {
+		return nil, fmt.Errorf("resolve configuration: %w", err)
+	}
+	resolved := viper.New()
+	if err := resolved.MergeConfigMap(settings); err != nil {
+		return nil, err
+	}
+	return decodeConfig(resolved)
 }
 
 func decodeConfig(v *viper.Viper) (*Config, error) {
 	var config Config
-	if err := v.Unmarshal(&config, DecodeHook()); err != nil {
+	if err := v.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("decode configuration: %w", err)
 	}
 	if err := config.check(); err != nil {
@@ -75,7 +88,7 @@ func decodeConfig(v *viper.Viper) (*Config, error) {
 	return &config, nil
 }
 
-// UnmarshalKey decodes a section in this snapshot, resolving value placeholders.
+// UnmarshalKey decodes the effective values of a section in this snapshot.
 func (c *Config) UnmarshalKey(key string, target any) error {
 	if c == nil {
 		return errors.New("configuration is nil")
@@ -87,7 +100,7 @@ func (c *Config) UnmarshalKey(key string, target any) error {
 	if !v.IsSet(key) {
 		return fmt.Errorf("configuration section %s is missing", key)
 	}
-	return v.UnmarshalKey(key, target, DecodeHook())
+	return v.UnmarshalKey(key, target)
 }
 
 // Unmarshal decodes all snapshot settings without changing another configuration.
@@ -99,7 +112,7 @@ func (c *Config) Unmarshal(target any) error {
 	if err := v.MergeConfigMap(cloneMap(c.settings)); err != nil {
 		return err
 	}
-	return v.Unmarshal(target, DecodeHook())
+	return v.Unmarshal(target)
 }
 
 // Clone transfers an independent snapshot to the caller.
@@ -180,7 +193,7 @@ func NewManager(path string) (*Manager, error) {
 	return &Manager{path: absolute, current: config, handlers: make(map[uint64]Prepare)}, nil
 }
 
-// NewManagerFromConfig constructs an instance for explicit, programmatic settings.
+// NewManagerFromConfig constructs an instance from explicit, already effective values.
 func NewManagerFromConfig(config *Config) (*Manager, error) {
 	if config == nil {
 		return nil, errors.New("configuration is nil")

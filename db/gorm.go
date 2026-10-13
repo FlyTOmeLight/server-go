@@ -95,9 +95,6 @@ func NewDB(ctx context.Context, config *Config) (*DB, error) {
 		return nil, err
 	}
 
-	// 包装 ConnPool：将 MySQL 风格的反引号标识符自动转换为目标数据库的引用符号
-	setupIdentifierConverter(db)
-
 	connection, err := db.DB()
 	if err != nil {
 		return nil, err

@@ -9,7 +9,7 @@ import (
 )
 
 func TestK8sLeaderCallbacksCancelAndJoinTasks(t *testing.T) {
-	election := NewK8sLeaderElection("application")
+	election := newTestK8sLeaderElection(t)
 	started, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
 	election.RunOnLeader(func(ctx context.Context) {
@@ -58,7 +58,7 @@ func TestK8sLeaderCallbacksCancelAndJoinTasks(t *testing.T) {
 }
 
 func TestK8sLeaderTaskInheritsParentCancellationAndCannotStartLate(t *testing.T) {
-	election := NewK8sLeaderElection("application")
+	election := newTestK8sLeaderElection(t)
 	var executions atomic.Int32
 	started := make(chan struct{})
 	election.RunOnLeader(func(ctx context.Context) {

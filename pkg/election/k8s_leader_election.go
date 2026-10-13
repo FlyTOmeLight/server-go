@@ -3,6 +3,8 @@ package election
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -34,7 +37,7 @@ type K8sLeaderElection struct {
 	// kubeconfig的文件路径, 默认使用inClusterConfig
 	kubeConfigFilePath string
 
-	// leader超时时间, 默认30s， renewDeadline被设置成了与leaseDuration相同
+	// leader超时时间，最小值和默认值均为3s
 	leaseDuration time.Duration
 
 	/************************************/
@@ -51,6 +54,7 @@ type K8sLeaderElection struct {
 
 	/******************/
 
+	mu            sync.RWMutex
 	leaderElector *leaderelection.LeaderElector
 	client        *clientset.Clientset
 
@@ -63,7 +67,8 @@ type K8sLeaderElection struct {
 
 type K8sElectionOption func(e *K8sLeaderElection)
 
-func NewK8sLeaderElection(appName string, options ...K8sElectionOption) *K8sLeaderElection {
+// NewK8sLeaderElection validates Kubernetes configuration without starting an election.
+func NewK8sLeaderElection(appName string, options ...K8sElectionOption) (*K8sLeaderElection, error) {
 	e := &K8sLeaderElection{
 		namespace:     "",
 		id:            "",
@@ -73,13 +78,9 @@ func NewK8sLeaderElection(appName string, options ...K8sElectionOption) *K8sLead
 	for _, option := range options {
 		option(e)
 	}
-	return e
-}
-
-func NewLeaderElection(appName string, options ...K8sElectionOption) LeaderElection {
-	ctx := context.Background()
-	// 优先使用k8s的election
-	e := NewK8sLeaderElection(appName, options...)
+	if e.appName == "" || len(validation.IsDNS1123Subdomain("app-election-"+e.appName)) > 0 {
+		return nil, errors.New("app name must form a valid Kubernetes lease name")
+	}
 	if e.id == "" {
 		// 未传入id时尝试自动获取ip地址作为自己的id
 		// 若ip地址获取失败，则使用随机字符串作为id
@@ -89,46 +90,69 @@ func NewLeaderElection(appName string, options ...K8sElectionOption) LeaderElect
 		} else {
 			e.id = strings.ReplaceAll(ip, ".", "-")
 		}
-		logger.Infof(ctx, "AppElection id is not set, use %s as id", e.id)
 	}
-
-	var err error
-	// 检查namespace是否存在，如果不存在降级为DummyAppElection
-	if e.namespace == "" {
-		e.namespace, err = GetCurrentNamespace()
-		// 获取失败，表示当前不在k8s中，改为使用DummyAppElection
-		if err != nil {
-			logger.Warnf(ctx, "not in k8s, use DummyAppElection instead")
-			return NewDummyAppElection(e.id)
-		}
+	if e.leaseDuration < 3*time.Second {
+		e.leaseDuration = 3 * time.Second
 	}
-	return e
+	if err := e.createClient(); err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
-func (e *K8sLeaderElection) createClient() {
+// NewLeaderElection always selects Kubernetes. Use NewDummyAppElection explicitly for local work.
+func NewLeaderElection(appName string, options ...K8sElectionOption) (LeaderElection, error) {
+	e, err := NewK8sLeaderElection(appName, options...)
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+func (e *K8sLeaderElection) createClient() error {
 	// 使用inClusterConfig
 	var cfg *rest.Config
 	var err error
 	if e.kubeConfigFilePath == "" {
 		cfg, err = rest.InClusterConfig()
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("load in-cluster Kubernetes configuration: %w", err)
+		}
+		if e.namespace == "" {
+			e.namespace, err = GetCurrentNamespace()
+			if err != nil {
+				return fmt.Errorf("load Kubernetes namespace: %w", err)
+			}
 		}
 	} else {
-		cfg, err = clientcmd.BuildConfigFromFlags("", e.kubeConfigFilePath)
+		configuration := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			&clientcmd.ClientConfigLoadingRules{
+				ExplicitPath: e.kubeConfigFilePath,
+			},
+			&clientcmd.ConfigOverrides{},
+		)
+		cfg, err = configuration.ClientConfig()
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("load kubeconfig: %w", err)
 		}
+		if e.namespace == "" {
+			e.namespace, _, err = configuration.Namespace()
+			if err != nil {
+				return fmt.Errorf("load kubeconfig namespace: %w", err)
+			}
+		}
+	}
+	if len(validation.IsDNS1123Label(e.namespace)) > 0 {
+		return fmt.Errorf("invalid Kubernetes namespace %q", e.namespace)
 	}
 	e.client, err = clientset.NewForConfig(cfg)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("create Kubernetes client: %w", err)
 	}
+	return nil
 }
 
-func (e *K8sLeaderElection) startElection(ctx context.Context) {
-	// 创建k8s的client
-	e.createClient()
+func (e *K8sLeaderElection) startElection(ctx context.Context) error {
 	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{
 			Name:      "app-election-" + e.appName,
@@ -139,15 +163,10 @@ func (e *K8sLeaderElection) startElection(ctx context.Context) {
 			Identity: e.id,
 		},
 	}
-	var err error
-	// leader过期时间最小值设置3s，防止频繁的leader切换
-	if e.leaseDuration < 3*time.Second {
-		e.leaseDuration = 3 * time.Second
-	}
 	// 到达renewDeadline之后，leader放弃继续renew
 	renewDeadline := e.leaseDuration - 1*time.Second
 
-	e.leaderElector, err = leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
+	elector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
 		Lock:            lock,
 		LeaseDuration:   e.leaseDuration,
 		RenewDeadline:   renewDeadline,
@@ -156,10 +175,14 @@ func (e *K8sLeaderElection) startElection(ctx context.Context) {
 		Callbacks:       e.leaderCallbacks(ctx),
 	})
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("initialize Kubernetes leader election: %w", err)
 	}
+	e.mu.Lock()
+	e.leaderElector = elector
+	e.mu.Unlock()
 	// 开始选举，Run会一直执行到ctx被取消
-	e.leaderElector.Run(ctx)
+	elector.Run(ctx)
+	return nil
 }
 
 // leaderCallbacks joins every owned leader task before a term finishes. The
@@ -223,26 +246,32 @@ func (e *K8sLeaderElection) leaderCallbacks(runCtx context.Context) leaderelecti
 }
 
 // 启动选举，只能执行一次，多次执行后续执行无效
-func (e *K8sLeaderElection) RunAsync(ctx context.Context) {
-	go e.Run(ctx)
+func (e *K8sLeaderElection) RunAsync(ctx context.Context) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		done <- e.Run(ctx)
+		close(done)
+	}()
+	return done
 }
 
-func (e *K8sLeaderElection) Run(ctx context.Context) {
+func (e *K8sLeaderElection) Run(ctx context.Context) error {
 	if ctx.Err() != nil {
-		return
+		return ctx.Err()
 	}
 	if !e.started.CompareAndSwap(false, true) {
-		logger.Warnf(ctx, "app election already started")
-		return
+		return errors.New("app election already started")
 	}
 
 	for {
-		e.startElection(ctx)
+		if err := e.startElection(ctx); err != nil {
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			// 取消选举，退出
 			logger.Warnf(ctx, "app election canceled")
-			return
+			return nil
 		default:
 			// 没有被取消，继续尝试竞选
 			logger.Warnf(ctx, "app election failed, retrying...")
@@ -316,6 +345,8 @@ func (e *K8sLeaderElection) WithNewLeaderCallback(cb func(string)) LeaderElectio
 
 // 获取当前Leader
 func (e *K8sLeaderElection) GetLeader() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	if e.leaderElector != nil {
 		return e.leaderElector.GetLeader()
 	}
@@ -324,6 +355,8 @@ func (e *K8sLeaderElection) GetLeader() string {
 
 // 判断自己是否是leader
 func (e *K8sLeaderElection) IsLeader() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	if e.leaderElector == nil {
 		return false
 	}
