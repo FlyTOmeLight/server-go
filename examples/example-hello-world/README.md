@@ -44,7 +44,7 @@ gorgeous ./...
 make check
 ```
 
-`make check` 检查格式、运行测试和 vet，并对服务与 SDK 执行竞态检测。Go、C 编译器、make 与 gorgeous 需要预先安装；gorgeous 使用 `github.com/fsgo/go_fmt/cmd/gorgeous`。收到 SIGTERM 或 Ctrl+C 后，服务排空 HTTP 并关闭资源。
+`make check` 检查格式、运行测试和 vet，并对服务与 SDK 执行竞态检测。Go、C 编译器、make 与 gorgeous 需要预先安装；gorgeous 从 [FlyTOmeLight/go_fmt](https://github.com/FlyTOmeLight/go_fmt) v0.9.0 的仓库源码安装，步骤见[框架开发验证](https://github.com/FlyTOmeLight/server-go#开发验证)。收到 SIGTERM 或 Ctrl+C 后，服务排空 HTTP 并关闭资源。
 
 ## 构建与 CLI
 
