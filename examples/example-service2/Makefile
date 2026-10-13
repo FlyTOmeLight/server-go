@@ -23,3 +23,11 @@ package: build
 	cp conf/server/config.toml $(OUTDIR)/conf/server/
 clean:
 	rm -rf $(OUTDIR)
+
+SWAG := $(shell $(GO) env GOPATH)/bin/swag
+
+.PHONY: doc install-doc
+install-doc:
+	$(GO) install github.com/swaggo/swag/cmd/swag@v1.8.4
+doc:
+	$(SWAG) init -d internal/app/hello -g controller.go --instanceName=Example2 --parseInternal --outputTypes json,yaml -o doc/openapi

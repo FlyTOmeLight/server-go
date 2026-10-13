@@ -1,8 +1,6 @@
 package trainv1
 
 import (
-	"errors"
-
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
@@ -12,19 +10,10 @@ type Client struct {
 
 var _ TrainingAPI = (*Client)(nil)
 
-func NewClient(ak, sk, endpoint string) (*Client, error) {
-	if endpoint == "" {
-		return nil, errors.New("endpoint should not be empty")
-	}
-
-	var credentials *sdk.Credentials
-	if ak != "" || sk != "" {
-		credentials = &sdk.Credentials{AuthType: sdk.AuthTypeAKSK, AccessKeyId: ak, SecretAccessKey: sk}
-	}
-	return NewClientWithConfig(&sdk.Config{
-		Credentials: credentials,
-		Endpoint:    endpoint,
-	})
+// NewClient creates an unauthenticated client with the default request timeout.
+// Use NewClientWithConfig to configure API key authentication or transport options.
+func NewClient(endpoint string) (*Client, error) {
+	return NewClientWithConfig(&sdk.Config{Endpoint: endpoint, Timeout: 30})
 }
 
 func NewClientWithConfig(config *sdk.Config) (*Client, error) {

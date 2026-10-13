@@ -91,3 +91,37 @@ func TestModuleSDKCancellation(t *testing.T) {
 		t.Fatal("server context did not cancel")
 	}
 }
+
+func TestModuleClientConstructor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/proxy/helloworld/internal/v1/GetModule" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"received"}`))
+	}))
+	defer server.Close()
+	for _, suffix := range []string{"/proxy", "/proxy/"} {
+		client, err := NewClient(server.URL + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := client.GetModule(t.Context(), &GetModuleRequest{})
+		closeError := client.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if closeError != nil {
+			t.Fatal(closeError)
+		}
+		if response.ID != "received" {
+			t.Fatalf("response = %+v", response)
+		}
+	}
+	for _, endpoint := range []string{"", "relative", "ftp://localhost"} {
+		if client, err := NewClient(endpoint); err == nil {
+			_ = client.Close()
+			t.Fatalf("invalid endpoint accepted: %q", endpoint)
+		}
+	}
+}

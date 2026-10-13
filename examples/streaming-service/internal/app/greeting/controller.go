@@ -15,6 +15,11 @@ import (
 	"github.com/FlyTOmeLight/server-go/stream"
 )
 
+// Controller exposes streamed greetings.
+// @title Streaming Greeting OpenAPI
+// @version 1.0
+// @description Greetings delivered as server-sent events.
+// @BasePath /
 type Controller struct{ service *Service }
 
 func NewController(service *Service) *Controller { return &Controller{service: service} }
@@ -27,12 +32,22 @@ func (s *Controller) RegisterRoutes(router *core.RouterGroup) error {
 	return nil
 }
 
+// greet streams a greeting as SSE events.
+// @Summary Stream a greeting
+// @Description Success uses text/event-stream: message events contain JSON {"text":"fragment"}; done contains {}. Generator failures use an error event carrying the framework error object after streaming begins; disconnects end the stream. Before streaming begins, invalid query parameters or stream initialization failures return JSON errors with HTTP 400 or 500.
+// @Tags Greetings
+// @Produce text/event-stream,json
+// @Param name query string false "Greeting recipient; an omitted or empty value uses world" default(world) maxLength(64)
+// @Success 200 {string} string "SSE stream with message, done or error events"
+// @Failure 400 {object} serrors.Error "Invalid name before streaming begins"
+// @Failure 500 {object} serrors.Error "Stream initialization failed before streaming begins"
+// @Router /stream [get]
 func (s *Controller) greet(c *core.Context) {
 	var req struct {
 		Name string `form:"name" binding:"max=64"`
 	}
 	if err := binder.Bind(c, &req).Query().Error(); err != nil {
-		_ = c.Error(err)
+		serrors.AbortWithError(c, err)
 		return
 	}
 	if req.Name == "" {
@@ -42,7 +57,7 @@ func (s *Controller) greet(c *core.Context) {
 	defer cancel()
 	events, err := stream.NewSSE(c.Writer, 5*time.Second)
 	if err != nil {
-		_ = c.Error(err)
+		serrors.AbortWithError(c, err)
 		return
 	}
 	sendFailed := false

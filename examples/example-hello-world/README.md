@@ -25,9 +25,9 @@ curl -H 'Content-Type: application/json' \
 
 1. 在 `sdk/go/helloworldv1/helloworld_api_module.go` 定义请求与响应。明确 JSON 字段、校验和更新字段的省略语义。
 2. 在 `internal/table/module.go` 增加查询；接收 `context.Context` 和数据库句柄。业务权限、事务与默认值放在 `internal/app/module/service.go`。
-3. 在 `controller.go` 绑定参数、调用业务 Service 并返回响应。Controller 与业务 Service 传递 `*core.Context`，数据库与 SDK 调用使用 `ctx.Request.Context()`；同步注册路由与 Swagger 注释。控制器在服务构造时创建，路由重建复用同一实例。
-4. 在 SDK 的 API 接口与客户端方法中新增调用；方法接收 `context.Context`，每次请求调用 `SetContext(ctx)`。失败必须保留 HTTP 状态与服务错误，非 JSON 错误也返回可检查的错误。
-5. 如有 CLI，使用 `cmd.Context()` 调用 SDK。根据操作契约选择是否启用幂等，先完成鉴权和本次授权。
+3. 在 `controller.go` 绑定参数、调用业务 Service 并返回响应。失败时调用 `serrors.AbortWithError(ctx, err)` 并返回；业务 Service 只返回错误，不重复记录日志。Controller 与业务 Service 传递 `*core.Context`，数据库与 SDK 调用使用 `ctx.Request.Context()`；同步注册路由与 Swagger 注释。控制器在服务构造时创建，路由重建复用同一实例。
+4. 在 SDK 的 API 接口与客户端方法中新增调用；方法接收 `context.Context`，每次请求调用 `SetContext(ctx)`。通过 `sdk.Complete(result, err)` 统一完成请求，保留传输、取消和 HTTP 失败；非 JSON 错误也返回可检查的错误。
+5. 如有 CLI，使用 `cli.Client(cmd.Context())` 获取执行客户端，并传递 `cmd.Context()` 调用 SDK；通过 `cli.RegisterCommandApplyHandler` 注册领域 Apply。根据操作契约选择是否启用幂等，先完成鉴权和本次授权。
 6. 在 `service/module_sdk_test.go` 增加实际 HTTP 用例，验证业务结果；在 SDK 测试中覆盖该操作新增的重要失败路径。
 
 重新生成接口文档：
@@ -54,5 +54,7 @@ make build
 ./output/bin/helloworld module create --name=example --project-id=project1
 ./output/bin/helloworld module list
 ```
+
+`helloworldv1.NewClient(endpoint)` 使用无鉴权配置和默认超时，内部 SDK 也采用 `NewClient(endpoint)`。需要 API Key、代理或内部身份传播时，使用各自的 `NewClientWithConfig`；客户端所有者在调用结束后执行 `Close()`。CLI 的 `Execute()` 负责信号、退出码和资源清理；嵌入式调用或测试使用 `ExecuteContext(ctx)`。
 
 `make package` 将二进制放在 `output/bin`，配置放在 `output/conf/server`。从 `output` 目录运行 `./bin/helloworld-server`。配置只声明实际初始化的数据库；共通规则与全部示例见 [示例索引](../README.md)。

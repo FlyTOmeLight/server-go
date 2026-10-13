@@ -8,7 +8,7 @@ type Note struct {
 	Description string    `json:"description"`
 	Priority    int8      `json:"priority"`
 	Enabled     bool      `json:"enabled"`
-	Reviewed    *bool     `json:"reviewed"`
+	Reviewed    *bool     `json:"reviewed" extensions:"x-nullable"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
@@ -19,7 +19,7 @@ type NoteInput struct {
 	Description string `json:"description" form:"description" binding:"max=1024"`
 	Priority    *int8  `json:"priority,omitempty" form:"priority" binding:"required,gte=0,lte=10" default:"2"`
 	Enabled     *bool  `json:"enabled,omitempty" form:"enabled" binding:"required" default:"true"`
-	Reviewed    *bool  `json:"reviewed" form:"reviewed"`
+	Reviewed    *bool  `json:"reviewed" form:"reviewed" extensions:"x-nullable"`
 }
 
 type CreateNoteRequest struct{ NoteInput }

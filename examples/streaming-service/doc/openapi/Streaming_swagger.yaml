@@ -1,0 +1,57 @@
+basePath: /
+definitions:
+  errors.Error:
+    properties:
+      code:
+        description: Code 错误码
+        type: string
+      message:
+        description: Message 详细错误信息
+        type: string
+      requestId:
+        description: RequestID 请求id，接收到请求的时候由中间件自动注入
+        type: string
+      statusCode:
+        description: StatusCode 状态码，推荐6位数字
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: Greetings delivered as server-sent events.
+  title: Streaming Greeting OpenAPI
+  version: "1.0"
+paths:
+  /stream:
+    get:
+      description: 'Success uses text/event-stream: message events contain JSON {"text":"fragment"};
+        done contains {}. Generator failures use an error event carrying the framework
+        error object after streaming begins; disconnects end the stream. Before streaming
+        begins, invalid query parameters or stream initialization failures return
+        JSON errors with HTTP 400 or 500.'
+      parameters:
+      - default: world
+        description: Greeting recipient; an omitted or empty value uses world
+        in: query
+        maxLength: 64
+        name: name
+        type: string
+      produces:
+      - text/event-stream
+      - application/json
+      responses:
+        "200":
+          description: SSE stream with message, done or error events
+          schema:
+            type: string
+        "400":
+          description: Invalid name before streaming begins
+          schema:
+            $ref: '#/definitions/errors.Error'
+        "500":
+          description: Stream initialization failed before streaming begins
+          schema:
+            $ref: '#/definitions/errors.Error'
+      summary: Stream a greeting
+      tags:
+      - Greetings
+swagger: "2.0"

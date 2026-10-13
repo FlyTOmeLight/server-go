@@ -39,4 +39,4 @@ clean:
 install-doc:
 	$(GO) install github.com/swaggo/swag/cmd/swag@v1.8.4
 doc:
-	$(SWAG) init -d $(SWAG_SCAN_DIRS),$(SWAG_SDK_DIRS),$(FRAMEWORK_DIR)/sdk -g controller.go --instanceName=$(SWAG_DOC_PREFIX) --parseInternal -o doc/openapi
+	$(SWAG) init -d $(SWAG_SCAN_DIRS),$(SWAG_SDK_DIRS),$(FRAMEWORK_DIR)/sdk,$(FRAMEWORK_DIR)/errors -g controller.go --instanceName=$(SWAG_DOC_PREFIX) --parseInternal -o doc/openapi

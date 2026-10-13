@@ -1,0 +1,78 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Greetings delivered as server-sent events.",
+        "title": "Streaming Greeting OpenAPI",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/stream": {
+            "get": {
+                "description": "Success uses text/event-stream: message events contain JSON {\"text\":\"fragment\"}; done contains {}. Generator failures use an error event carrying the framework error object after streaming begins; disconnects end the stream. Before streaming begins, invalid query parameters or stream initialization failures return JSON errors with HTTP 400 or 500.",
+                "produces": [
+                    "text/event-stream",
+                    "application/json"
+                ],
+                "tags": [
+                    "Greetings"
+                ],
+                "summary": "Stream a greeting",
+                "parameters": [
+                    {
+                        "maxLength": 64,
+                        "type": "string",
+                        "default": "world",
+                        "description": "Greeting recipient; an omitted or empty value uses world",
+                        "name": "name",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream with message, done or error events",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid name before streaming begins",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Stream initialization failed before streaming begins",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "errors.Error": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Code 错误码",
+                    "type": "string"
+                },
+                "message": {
+                    "description": "Message 详细错误信息",
+                    "type": "string"
+                },
+                "requestId": {
+                    "description": "RequestID 请求id，接收到请求的时候由中间件自动注入",
+                    "type": "string"
+                },
+                "statusCode": {
+                    "description": "StatusCode 状态码，推荐6位数字",
+                    "type": "integer"
+                }
+            }
+        }
+    }
+}

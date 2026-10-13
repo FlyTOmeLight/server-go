@@ -58,9 +58,11 @@ func NewDatasetName(name string) *DatasetName {
 }
 
 type CreateDatasetRequest struct {
-	LocalName   string `json:"localName" binding:"required,localname"`
+	// LocalName contains 1..36 ASCII letters, digits, underscores or hyphens, starting and ending with a letter or digit.
+	LocalName string `json:"localName" binding:"required,localname" minLength:"1" maxLength:"36"`
+
 	Description string `json:"description" binding:"max=255"`
-	FileFormat  string `json:"fileFormat,omitempty" binding:"required,max=64,oneof=Parquet Zip Tar HDF5 Petastorm TFRecord File Folder" default:"File"`
+	FileFormat  string `json:"fileFormat,omitempty" binding:"max=64,oneof=Parquet Zip Tar HDF5 Petastorm TFRecord File Folder" default:"File"`
 	ProjectName string `json:"-" uri:"projectName" binding:"required,max=64"`
 }
 
@@ -88,7 +90,7 @@ type GetDatasetResponse = Dataset
 
 type UpdateDatasetRequest struct {
 	DatasetName
-	Description *string `json:"description" binding:"omitempty,max=255"`
+	Description *string `json:"description" binding:"omitempty,max=255" extensions:"x-nullable"`
 }
 
 func NewUpdateDatasetRequest(name string) *UpdateDatasetRequest {

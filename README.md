@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.8.0
+go get github.com/FlyTOmeLight/server-go@v0.9.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.8.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.9.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -186,6 +186,16 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.9.0
+
+所有示例按当前推荐统一 Controller 错误处理、SDK 构造和资源交付。18 个业务 HTTP 接口维护完整 Swagger 注释；每个 HTTP 示例提供 `make doc`，生成文档与参数来源、默认值、可空字段、状态码和 SSE 事件一致。生成器沿用更新后的 HelloWorld 模板。
+
+### 示例 SDK 迁移
+
+HelloWorld、Dataset 和 HelloWorld 内部 SDK 的便捷构造从 `NewClient(ak, sk, endpoint)` 改为 `NewClient(endpoint)`。API Key、代理和内部身份传播使用各自的 `NewClientWithConfig`，客户端由调用方关闭。框架根 SDK 的公开构造接口保持原契约。SSE 的非 JSON HTTP 失败统一返回 `HTTPError`，并保留实际 HTTP 状态。
+
+普通 Controller 调用 `serrors.AbortWithError(ctx, err)` 完成错误响应后返回，业务 Service 只返回错误。新业务 API 默认采用资源路由；已有 HelloWorld 的全 POST 接口保持原路径和方法。详细约定见 [Go 项目组织约定](docs/go-project-layout.md)。
 
 ## v0.8.0
 

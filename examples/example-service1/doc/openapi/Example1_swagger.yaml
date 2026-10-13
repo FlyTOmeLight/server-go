@@ -1,5 +1,20 @@
 basePath: /
 definitions:
+  errors.Error:
+    properties:
+      code:
+        description: Code 错误码
+        type: string
+      message:
+        description: Message 详细错误信息
+        type: string
+      requestId:
+        description: RequestID 请求id，接收到请求的时候由中间件自动注入
+        type: string
+      statusCode:
+        description: StatusCode 状态码，推荐6位数字
+        type: integer
+    type: object
   trainv1.CreateDatasetRequest:
     properties:
       description:
@@ -19,10 +34,34 @@ definitions:
         maxLength: 64
         type: string
       localName:
+        description: LocalName contains 1..36 ASCII letters, digits, underscores or
+          hyphens, starting and ending with a letter or digit.
+        maxLength: 36
+        minLength: 1
         type: string
     required:
-    - fileFormat
     - localName
+    type: object
+  trainv1.CreateDatasetResponse:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      fileFormat:
+        type: string
+      localName:
+        type: string
+      name:
+        type: string
+      projectName:
+        type: string
+      tags:
+        additionalProperties:
+          type: string
+        type: object
+      updatedAt:
+        type: string
     type: object
   trainv1.Dataset:
     properties:
@@ -80,6 +119,7 @@ definitions:
       description:
         maxLength: 255
         type: string
+        x-nullable: true
     type: object
 info:
   contact: {}
@@ -87,158 +127,131 @@ info:
 paths:
   /v1/projects/{projectName}/datasets:
     get:
-      description: List datasets
+      description: 按项目分页查询；filter 对数据集本地名称和描述进行包含匹配。0 值页码按 1 处理，0 值页大小按 20 处理。
       parameters:
-      - in: query
-        maxLength: 100
-        name: filter
+      - description: 项目名称
+        in: path
+        maxLength: 64
+        name: projectName
+        required: true
         type: string
+      - default: 1
+        description: 页码
+        in: query
+        minimum: 0
+        name: pageNo
+        type: integer
+      - default: 20
+        description: 每页条数
+        in: query
+        maximum: 200
+        minimum: 0
+        name: pageSize
+        type: integer
       - default: desc
-        description: |-
-          排序规则: asc: 升序, desc: 倒序, 默认倒序
-
-          Example: desc
+        description: 排序方向
         enum:
         - asc
         - desc
         in: query
         name: order
         type: string
-      - description: |-
-          排序依据
-
-          Example: name
+      - description: 排序字段；省略时使用 created_at，字段名不能包含空格
         in: query
         name: orderBy
         type: string
-      - description: |-
-          mongo 排序规则
-
-          Example: []string{ "{order: desc}", "{id:asc}" }
-        example:
-        - '[{create_ad:desc}'
-        - '{id:asc}]'
+      - description: 本地名称或描述的包含匹配
         in: query
-        items:
-          type: string
-        name: orders
-        type: array
-      - default: 1
-        description: |-
-          页码
-
-          Example: 1
-        in: query
-        minimum: 0
-        name: pageNo
-        type: integer
-      - default: 20
-        description: |-
-          每页的大小
-
-          Example: 10
-        in: query
-        maximum: 200
-        minimum: 0
-        name: pageSize
-        type: integer
-      - description: Project Local Name
-        in: path
-        name: projectName
-        required: true
+        maxLength: 100
+        name: filter
         type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 总数和当前页结果
           schema:
             $ref: '#/definitions/trainv1.ListDatasetResponse'
         "400":
-          description: Invalid Params
+          description: 参数无效
           schema:
-            type: string
+            $ref: '#/definitions/errors.Error'
         "500":
-          description: Internal Error
+          description: 内部错误
           schema:
-            type: string
-      summary: List datasets
+            $ref: '#/definitions/errors.Error'
+      summary: 查询数据集列表
       tags:
       - dataset
     post:
       consumes:
       - application/json
-      description: Create a dataset
+      description: 在指定项目下创建数据集。省略 fileFormat 时使用 File；成功返回数据集对象。clientToken 仅在已有鉴权身份时启用进程内幂等。
       parameters:
-      - description: Request
+      - description: 项目名称
+        in: path
+        maxLength: 64
+        name: projectName
+        required: true
+        type: string
+      - description: 可选幂等令牌，同一身份和操作下重复提交须保持请求一致
+        in: query
+        name: clientToken
+        type: string
+      - description: 创建参数，projectName 来自路径
         in: body
         name: request
         required: true
         schema:
           $ref: '#/definitions/trainv1.CreateDatasetRequest'
-      - description: Project Local Name
-        in: path
-        name: projectName
-        required: true
-        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 数据集
           schema:
-            $ref: '#/definitions/trainv1.Dataset'
+            $ref: '#/definitions/trainv1.CreateDatasetResponse'
         "400":
-          description: Invalid Params
+          description: 参数无效或请求体读取失败
           schema:
-            type: string
+            $ref: '#/definitions/errors.Error'
+        "408":
+          description: 等待幂等请求时取消或超时
+          schema:
+            $ref: '#/definitions/errors.Error'
+        "409":
+          description: 数据库唯一约束冲突或幂等令牌对应的请求不同
+          schema:
+            $ref: '#/definitions/errors.Error'
+        "413":
+          description: JSON 正文超过 1 MiB
+          schema:
+            $ref: '#/definitions/errors.Error'
         "500":
-          description: Internal Error
+          description: 内部错误
           schema:
-            type: string
-      summary: Create a dataset
+            $ref: '#/definitions/errors.Error'
+        "503":
+          description: 幂等处理不可用
+          schema:
+            $ref: '#/definitions/errors.Error'
+      summary: 创建数据集
       tags:
       - dataset
   /v1/projects/{projectName}/datasets/{localName}:
     delete:
-      consumes:
-      - application/json
-      description: Delete a dataset
+      description: 按项目和本地名称软删除数据集，成功返回空正文。未匹配到记录时也返回成功。
       parameters:
-      - description: Project Local Name
+      - description: 项目名称
         in: path
+        maxLength: 64
         name: projectName
         required: true
         type: string
-      - description: Dataset Local Name
+      - description: 数据集本地名称：首尾为ASCII字母或数字，中间可含下划线和连字符
         in: path
-        name: localName
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Invalid Params
-          schema:
-            type: string
-        "500":
-          description: Internal Error
-          schema:
-            type: string
-      summary: Delete a dataset, and it's all artifact
-      tags:
-      - dataset
-    get:
-      description: Get a dataset
-      parameters:
-      - description: Project Local Name
-        in: path
-        name: projectName
-        required: true
-        type: string
-      - description: Dataset Local Name
-        in: path
+        maxLength: 36
+        minLength: 1
         name: localName
         required: true
         type: string
@@ -246,53 +259,97 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 成功，空正文
+        "400":
+          description: 参数无效
+          schema:
+            $ref: '#/definitions/errors.Error'
+        "500":
+          description: 内部错误
+          schema:
+            $ref: '#/definitions/errors.Error'
+      summary: 删除数据集
+      tags:
+      - dataset
+    get:
+      description: 按项目名称和数据集本地名称查询数据集。
+      parameters:
+      - description: 项目名称
+        in: path
+        maxLength: 64
+        name: projectName
+        required: true
+        type: string
+      - description: 数据集本地名称：首尾为ASCII字母或数字，中间可含下划线和连字符
+        in: path
+        maxLength: 36
+        minLength: 1
+        name: localName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据集
           schema:
             $ref: '#/definitions/trainv1.GetDatasetResponse'
         "400":
-          description: Invalid Params
+          description: 参数无效
           schema:
-            type: string
+            $ref: '#/definitions/errors.Error'
+        "404":
+          description: 数据集不存在
+          schema:
+            $ref: '#/definitions/errors.Error'
         "500":
-          description: Internal Error
+          description: 内部错误
           schema:
-            type: string
-      summary: Get a dataset with latest artifact
+            $ref: '#/definitions/errors.Error'
+      summary: 查询数据集
       tags:
       - dataset
     put:
       consumes:
       - application/json
-      description: Update a dataset
+      description: 仅修改 description。省略该字段或传入 null 时保留原描述；成功返回空正文。未匹配到记录时也返回成功。
       parameters:
-      - description: Request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/trainv1.UpdateDatasetRequest'
-      - description: Project Local Name
+      - description: 项目名称
         in: path
+        maxLength: 64
         name: projectName
         required: true
         type: string
-      - description: Dataset Local Name
+      - description: 数据集本地名称：首尾为ASCII字母或数字，中间可含下划线和连字符
         in: path
+        maxLength: 36
+        minLength: 1
         name: localName
         required: true
         type: string
+      - description: 更新参数，项目和本地名称来自路径；无正文时保留原描述
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/trainv1.UpdateDatasetRequest'
+      produces:
+      - application/json
       responses:
         "200":
-          description: OK
+          description: 成功，空正文
         "400":
-          description: Invalid Params
+          description: 参数无效或请求体读取失败
           schema:
-            type: string
+            $ref: '#/definitions/errors.Error'
+        "413":
+          description: JSON 正文超过 1 MiB
+          schema:
+            $ref: '#/definitions/errors.Error'
         "500":
-          description: Internal Error
+          description: 内部错误
           schema:
-            type: string
-      summary: Update a dataset
+            $ref: '#/definitions/errors.Error'
+      summary: 修改数据集描述
       tags:
       - dataset
 swagger: "2.0"

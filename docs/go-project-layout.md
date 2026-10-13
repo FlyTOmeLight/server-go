@@ -57,6 +57,14 @@ SDK 中的请求和响应是接口契约，可以在 Controller 与业务 Servic
 
 事务由业务 Service 定义范围，Table 使用传入的事务句柄。业务默认值由业务 Service 填充。列表筛选、分页、排序尽量在数据库完成；排序需稳定。更新需要区分“未传入”和“清空”时，使用指针或明确的更新类型。时间默认按 UTC 存储和返回。
 
+## HTTP 协议与 Swagger
+
+新业务 API 默认采用面向资源的 HTTP 路由：查询用 `GET`，创建用 `POST`，完整替换用 `PUT`，局部更新用 `PATCH`，删除用 `DELETE`。发布、审批、执行等业务动作可以使用 `POST /v1/orders/{id}/approve` 这样的动作路由。方法、状态码和幂等语义按实际操作定义，不能仅凭方法名决定自动重试。已有全 POST 的 RPC 接口按其公开契约维护，变更路由时同步 SDK、CLI 和调用方。
+
+每个业务 HTTP handler 都必须有 Swagger 注释，包含摘要、分组、实际方法和路径、请求参数来源、成功响应及重要错误响应。参数的必填、范围、枚举和默认值须与请求类型和 binder 一致；路径参数写作 `{id}`。框架错误使用 `errors.Error` 的对象 schema，空响应体不写成对象。SSE 标明 `text/event-stream`、事件格式及开始输出前的 HTTP 错误，开始输出后的流错误按事件协议描述。
+
+Controller 注释与 SDK 类型是文档生成来源，不直接修改生成文件。HTTP 示例通过 `make doc` 更新 `doc/openapi`；工具缺失时用 `make install-doc` 安装仓库固定版本。组合示例使用各子服务的文档和 BasePath，worker 没有 HTTP 接口时无需 Swagger。修改接口后重新生成，核对文档中的方法、路径、参数、状态码与实际路由和响应。
+
 ## Go 服务端 SDK 约定
 
 新建、修改或审查服务端项目的 Go SDK 时采用本节。按领域拆分接口，复用契约类型并验证实际请求行为；已有协议按项目契约维护，客户端构造与请求生命周期使用当前 server-go 接口。
@@ -84,14 +92,16 @@ sdk/go/orderv1/
 ```go
 var req sdk.ListOrderRequest
 if err := defaults.Set(&req); err != nil {
-    _ = ctx.Error(err)
+    serrors.AbortWithError(ctx, err)
     return
 }
 if err := binder.Bind(ctx, &req).All().Error(); err != nil {
-    _ = ctx.Error(err)
+    serrors.AbortWithError(ctx, err)
     return
 }
 ```
+
+上例将框架 `github.com/FlyTOmeLight/server-go/errors` 导入为 `serrors`。Controller 用 `serrors.AbortWithError(ctx, err)` 完成错误响应，然后返回；业务 Service 只返回错误，由 Controller 处理，避免重复记录日志。`ctx.Error` 只登记错误并等待外层中间件处理，不作为普通 Controller 的推荐写法。
 
 这样用户明确传入的 `0`、`false` 或 `null` 不会在绑定后被再次补值。需要区分未传入和空值时仍使用指针或明确的更新类型；局部更新不声明会改变未传入字段的默认值。完整替换接口可按已声明的契约使用默认值，例如 PostgreSQL 示例的 PUT。涉及用户、资源状态或业务规则的默认值由 Service 决定。库行为见 [defaults 文档](https://pkg.go.dev/github.com/creasty/defaults@v1.11.0)。
 
@@ -136,7 +146,7 @@ SDK 方法的路径、HTTP 方法、请求编码、响应结构与 Controller、
 
 HTTPHost 负责请求 ID、请求日志、Recovery、404/405 和标准错误响应。业务 Controller 复用 `pkg/binder` 的严格 JSON 绑定和分页参数解析，通过 `errors.AbortWithError` 返回框架错误；业务只保留领域错误与 HTTP 状态的映射。静态服务凭据复用 `auth.ParseBearerTokens`、`auth.BearerTokens` 和 `auth.UserID`，项目权限与资源归属校验留在业务层。无需在每个服务复制 HTTP 工具包或相同中间件。
 
-SDK 使用 `sdk.DecodeError` 解析框架错误，向调用方保留 `errors.Error`；`Status` 表示 HTTP 状态，`StatusCode` 表示框架错误编号，不能混用。新增能力的发布边界见 README。
+普通 JSON SDK 使用 `sdk.Complete` 完成请求判定，流式 SDK 按协议读取响应并用 `sdk.DecodeError` 解析 HTTP 失败，向调用方保留 `errors.Error`；`Status` 表示 HTTP 状态，`StatusCode` 表示框架错误编号，不能混用。新增能力的发布边界见 README。
 
 ## 项目契约与公共边界
 

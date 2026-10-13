@@ -18,7 +18,7 @@ const docTemplateHelloWorld = `{
     "paths": {
         "/v1/CreateModule": {
             "post": {
-                "description": "Create Module",
+                "description": "创建模块并返回新建记录。JSON 请求体最大为 1 MiB。",
                 "consumes": [
                     "application/json"
                 ],
@@ -29,34 +29,65 @@ const docTemplateHelloWorld = `{
                     "Module"
                 ],
                 "summary": "创建示例模块",
+                "operationId": "CreateModule",
                 "parameters": [
                     {
-                        "description": "Request",
+                        "description": "JSON 请求",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/helloworldv1.CreateModuleRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "可选幂等标识；有已验证身份时，同一路由及相同参数重放已成功响应",
+                        "name": "clientToken",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "创建成功的模块",
                         "schema": {
                             "$ref": "#/definitions/helloworldv1.CreateModuleResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "JSON 或请求参数不符合契约",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "408": {
+                        "description": "等待幂等请求时取消或超时",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "同一幂等标识的请求参数不同",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "413": {
+                        "description": "JSON 请求体超过 1 MiB",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "幂等执行暂不可用",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
@@ -64,36 +95,79 @@ const docTemplateHelloWorld = `{
         },
         "/v1/DeleteModule": {
             "post": {
-                "description": "Delete Module",
+                "description": "按 ID 删除模块；不存在时返回 404。成功返回 200，响应体为空。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "Module"
                 ],
                 "summary": "删除示例模块",
+                "operationId": "DeleteModule",
                 "parameters": [
                     {
-                        "description": "Request",
+                        "description": "JSON 请求",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/helloworldv1.DeleteModuleRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "可选幂等标识；有已验证身份时，同一路由及相同参数重放已成功响应",
+                        "name": "clientToken",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "操作完成，响应体为空"
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "JSON 或请求参数不符合契约",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "模块不存在",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "408": {
+                        "description": "等待幂等请求时取消或超时",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "同一幂等标识的请求参数不同",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "413": {
+                        "description": "JSON 请求体超过 1 MiB",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "幂等执行暂不可用",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
@@ -101,7 +175,10 @@ const docTemplateHelloWorld = `{
         },
         "/v1/GetModule": {
             "post": {
-                "description": "Get Module",
+                "description": "按 ID 获取模块；不存在时返回 404。",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -109,34 +186,71 @@ const docTemplateHelloWorld = `{
                     "Module"
                 ],
                 "summary": "获取示例模块详细信息",
+                "operationId": "GetModule",
                 "parameters": [
                     {
-                        "description": "Request",
+                        "description": "JSON 请求",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/helloworldv1.GetModuleRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "可选幂等标识；有已验证身份时，同一路由及相同参数重放已成功响应",
+                        "name": "clientToken",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "模块详情",
                         "schema": {
                             "$ref": "#/definitions/helloworldv1.GetModuleResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "JSON 或请求参数不符合契约",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "模块不存在",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "408": {
+                        "description": "等待幂等请求时取消或超时",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "同一幂等标识的请求参数不同",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "413": {
+                        "description": "JSON 请求体超过 1 MiB",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "幂等执行暂不可用",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
@@ -144,7 +258,10 @@ const docTemplateHelloWorld = `{
         },
         "/v1/ListModule": {
             "post": {
-                "description": "List Modules",
+                "description": "按项目和关键词筛选模块并返回总数与当前页。默认 pageNo=1、pageSize=20，pageSize 最大为 200；query 分页参数覆盖请求体中的同名字段。",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -152,34 +269,98 @@ const docTemplateHelloWorld = `{
                     "Module"
                 ],
                 "summary": "获取示例模块列表",
+                "operationId": "ListModule",
                 "parameters": [
                     {
-                        "description": "Request",
+                        "description": "JSON 请求",
                         "name": "request",
                         "in": "body",
-                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/helloworldv1.ListModuleRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "可选幂等标识；有已验证身份时，同一路由及相同参数重放已成功响应",
+                        "name": "clientToken",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码；0 使用默认页码",
+                        "name": "pageNo",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 200,
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数；0 使用默认大小",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "desc",
+                        "description": "排序方向",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序字段",
+                        "name": "orderBy",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "模块列表与总数",
                         "schema": {
                             "$ref": "#/definitions/helloworldv1.ListModuleResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "JSON 或请求参数不符合契约",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "408": {
+                        "description": "等待幂等请求时取消或超时",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "同一幂等标识的请求参数不同",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "413": {
+                        "description": "JSON 请求体超过 1 MiB",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "幂等执行暂不可用",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
@@ -187,42 +368,79 @@ const docTemplateHelloWorld = `{
         },
         "/v1/UpdateModule": {
             "post": {
-                "description": "Update Module",
+                "description": "按 ID 更新模块描述。description 未传入或为 null 时保留原值，显式空字符串清空描述。成功返回 200，响应体为空。",
                 "consumes": [
+                    "application/json"
+                ],
+                "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Module"
                 ],
                 "summary": "更新示例模块",
+                "operationId": "UpdateModule",
                 "parameters": [
                     {
-                        "description": "Request",
+                        "description": "JSON 请求",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/helloworldv1.UpdateModuleRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "可选幂等标识；有已验证身份时，同一路由及相同参数重放已成功响应",
+                        "name": "clientToken",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
+                        "description": "操作完成，响应体为空"
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "JSON 或请求参数不符合契约",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "模块不存在",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "408": {
+                        "description": "等待幂等请求时取消或超时",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "同一幂等标识的请求参数不同",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "413": {
+                        "description": "JSON 请求体超过 1 MiB",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "幂等执行暂不可用",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
@@ -230,6 +448,27 @@ const docTemplateHelloWorld = `{
         }
     },
     "definitions": {
+        "errors.Error": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Code 错误码",
+                    "type": "string"
+                },
+                "message": {
+                    "description": "Message 详细错误信息",
+                    "type": "string"
+                },
+                "requestId": {
+                    "description": "RequestID 请求id，接收到请求的时候由中间件自动注入",
+                    "type": "string"
+                },
+                "statusCode": {
+                    "description": "StatusCode 状态码，推荐6位数字",
+                    "type": "integer"
+                }
+            }
+        },
         "helloworldv1.CreateModuleRequest": {
             "type": "object",
             "required": [
@@ -477,6 +716,7 @@ const docTemplateHelloWorld = `{
                     "description": "描述",
                     "type": "string",
                     "maxLength": 200,
+                    "x-nullable": true,
                     "example": "this is a description"
                 },
                 "id": {
@@ -495,7 +735,7 @@ var SwaggerInfoHelloWorld = &swag.Spec{
 	Host:             "",
 	BasePath:         "/helloworld/internal",
 	Schemes:          []string{},
-	Title:            "HelloWorldService Module OpenAPI",
+	Title:            "HelloWorldService OpenAPI",
 	Description:      "",
 	InfoInstanceName: "HelloWorld",
 	SwaggerTemplate:  docTemplateHelloWorld,

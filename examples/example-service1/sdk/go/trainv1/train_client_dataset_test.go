@@ -36,3 +36,32 @@ func TestDatasetClientCancellationAndHTTPFailure(t *testing.T) {
 		t.Fatalf("cancellation: %v", err)
 	}
 }
+
+func TestDatasetClientConstructor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/projects/project/datasets/data" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"localName":"received"}`))
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	response, err := client.GetDataset(t.Context(), &GetDatasetRequest{ProjectName: "project", LocalName: "data"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.LocalName != "received" {
+		t.Fatalf("response = %+v", response)
+	}
+	for _, endpoint := range []string{"", "relative", "ftp://localhost"} {
+		if client, err := NewClient(endpoint); err == nil {
+			_ = client.Close()
+			t.Fatalf("invalid endpoint accepted: %q", endpoint)
+		}
+	}
+}
