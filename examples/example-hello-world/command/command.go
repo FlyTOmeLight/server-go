@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"strings"
 
 	"github.com/FlyTOmeLight/server-go/cli"
@@ -8,10 +9,12 @@ import (
 	sdk "github.com/FlyTOmeLight/server-go/examples/example-hello-world/sdk/go/helloworldv1"
 )
 
-var client *sdk.Client
-
-func initClient() {
-	base := cli.Config.Client.Clone()
+func initClient(ctx context.Context) (*sdk.Client, error) {
+	base, err := cli.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	base = base.Clone()
 	base.SetBaseURL(strings.TrimRight(base.Config.Endpoint, "/") + "/helloworld/internal")
-	client = &sdk.Client{Client: base}
+	return &sdk.Client{Client: base}, nil
 }

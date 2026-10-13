@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -57,7 +58,7 @@ class GeneratorTest(unittest.TestCase):
             self.assertEqual(list(Path(output).iterdir()), [target])
 
     def test_default_and_custom_modules(self):
-        for modules in [['Module'], ['Catalog'], ['Catalog', 'Order']]:
+        for modules in [['Module'], ['Catalog'], ['Catalog', 'Order'], ['CatalogItem', 'OrderLine']]:
             with self.subTest(modules=modules), tempfile.TemporaryDirectory() as output:
                 generator = gen_code.MultiModuleGenerator(str(TEMPLATE))
                 with contextlib.redirect_stdout(io.StringIO()):
@@ -80,6 +81,81 @@ class GeneratorTest(unittest.TestCase):
                     self.assertIn('testprojectv1.' + module, spec['definitions'])
                 if 'Module' not in modules:
                     self.assertNotIn('/v1/CreateModule', spec['paths'])
+                build = (target / 'service' / 'build.go').read_text()
+                self.assertEqual(build.count('&db.Module{'), 1)
+                self.assertNotIn('CatalogController', build)
+                for module in modules:
+                    filename = gen_code._camel_to_snake(module)
+                    for relative in [
+                        f'internal/table/{filename}.go', f'command/{filename}.go',
+                        f'service/{filename}_lifecycle_test.go', f'service/{filename}_sdk_test.go',
+                        f'sdk/go/testprojectv1/testproject_api_{filename}.go',
+                        f'sdk/go/testprojectv1/testproject_client_{filename}.go',
+                        f'sdk/go/testprojectv1/testproject_client_{filename}_test.go',
+                    ]:
+                        self.assertTrue((target / relative).is_file(), relative)
+                    lifecycle = (target / f'service/{filename}_lifecycle_test.go').read_text()
+                    self.assertIn('&db.Module{', lifecycle)
+                    if module != 'Module':
+                        self.assertNotIn('&db.' + module + '{', lifecycle)
+                    self.assertIn(f'{module.lower()}.New{module}Controller', (target / 'service/service.go').read_text())
+                    self.assertIn(f'Create{module}(ctx', (target / 'sdk/go/testprojectv1/testproject_api.go').read_text())
+                    self.assertIn(f'command.{module}CommandBuilder', (target / 'cmd/cli/cli.go').read_text())
+                    for operation in ['Create', 'List', 'Get', 'Update', 'Delete']:
+                        self.assertIn('/v1/' + operation + module, spec['paths'])
+                yaml = spec_file.with_suffix('.yaml')
+                if modules != ['Module']:
+                    self.assertEqual(json.loads(yaml.read_text()), spec)
+                    docs = spec_file.with_name(spec_file.name.replace('_swagger.json', '_docs.go')).read_text()
+                    start = docs.index('"paths":')
+                    end = docs.index('}`', start)
+                    embedded = json.loads('{' + docs[start:end + 1])
+                    self.assertEqual(embedded['paths'], spec['paths'])
+                    self.assertEqual(embedded['definitions'], spec['definitions'])
+
+    def test_project_and_domain_names_do_not_replace_each_other(self):
+        for name, modules in [('ModuleApp', ['Catalog', 'Order']),
+                              ('TestModule', ['HelloWorld', 'ModuleItem']),
+                              ('Module', ['module', 'ModuleA'])]:
+            with self.subTest(name=name, modules=modules), tempfile.TemporaryDirectory() as output:
+                generator = gen_code.MultiModuleGenerator(str(TEMPLATE))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    target = Path(generator.generate(name, output, modules, 'example.com/' + name.lower()))
+                project = name.lower()
+                self.assertIn(f'New{name}Service', (target / 'service/service.go').read_text())
+                for module in modules:
+                    filename = gen_code._camel_to_snake(module)
+                    self.assertTrue((target / f'sdk/go/{project}v1/{project}_client_{filename}.go').is_file())
+                    controller = (target / f'internal/app/{module.lower()}/controller.go').read_text()
+                    self.assertIn(f'/v1/Create{module}', controller)
+                    self.assertIn(f'"example.com/{project}/internal/table"', (target / f'internal/app/{module.lower()}/service.go').read_text())
+                    self.assertIn(f'/{project}/internal/v1/Create{module}', (target / 'deploy/scripts/curl.sh').read_text())
+                    self.assertIn(f'sdk/go/{project}v1/{project}_api_{filename}.go', (target / 'README.md').read_text())
+                self.assertFalse(list(target.rglob('*.template')))
+                self.assertNotIn('ServerGoProjectToken', '\n'.join(path.read_text() for path in target.rglob('*.go')))
+
+    def test_unlisted_files_receive_project_renaming_only(self):
+        with tempfile.TemporaryDirectory() as output, tempfile.TemporaryDirectory() as source:
+            template = Path(source) / 'template'
+            shutil.copytree(TEMPLATE, template)
+            shared = template / 'service' / 'shared.go'
+            shared.write_text('package service\n// HelloWorld keeps Module and module unchanged.\n')
+            generator = gen_code.MultiModuleGenerator(str(template))
+            with contextlib.redirect_stdout(io.StringIO()):
+                target = Path(generator.generate('TestProject', output, ['Catalog', 'Order'], 'example.com/test-project'))
+            self.assertEqual((target / 'service/shared.go').read_text(),
+                             'package service\n// TestProject keeps Module and module unchanged.\n')
+
+    def test_changed_aggregate_template_fails_without_publishing(self):
+        with tempfile.TemporaryDirectory() as output, tempfile.TemporaryDirectory() as source:
+            template = Path(source) / 'template'
+            shutil.copytree(TEMPLATE, template)
+            service = template / 'service/service.go'
+            service.write_text(service.read_text().replace('moduleController *module.Controller', 'controller *module.Controller'))
+            generator = gen_code.MultiModuleGenerator(str(template))
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, '模板片段'):
+                generator.generate('TestProject', output, ['Catalog'], 'example.com/test-project')
+            self.assertEqual(list(Path(output).iterdir()), [])
 
 
 

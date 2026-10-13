@@ -1,13 +1,15 @@
 package command
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/FlyTOmeLight/server-go/cli"
-	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
 func TestDatasetApplyMetadataPreservesProjectPath(t *testing.T) {
@@ -31,22 +33,29 @@ func TestDatasetApplyMetadataPreservesProjectPath(t *testing.T) {
 		_, _ = w.Write([]byte(`{"name":"projects/project1/datasets/dataset1","fileFormat":"File"}`))
 	}))
 	defer server.Close()
-	frameworkClient, err := sdk.NewClientWithConfig(&sdk.Config{Endpoint: server.URL, Timeout: 2})
-	if err != nil {
+	line := cli.NewCommandLineWithName("test")
+	config := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(
+		config,
+		[]byte("core:\n  endpoint: "+server.URL+"\nlog:\n  handler: NONE\n"),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
-	defer frameworkClient.Close()
-	previousConfig, previousClient := cli.Config, client
-	t.Cleanup(func() { cli.Config, client = previousConfig, previousClient })
-	cli.Config.Client = frameworkClient
-	applyDataset()
-	handler, err := cli.GetApplyHandler("Dataset")
-	if err != nil {
+	line.SetConfigFile(config)
+	line.Append(&DatasetCommandBuilder{})
+	filename := filepath.Join(t.TempDir(), "apply.yaml")
+	if err := os.WriteFile(
+		filename,
+		[]byte(
+			"kind: Dataset\nmetadata:\n  projectName: project1\n  localName: dataset1\n  description: applied\n",
+		),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := handler.Handle("Dataset", map[string]any{
-		"projectName": "project1", "localName": "dataset1", "description": "applied",
-	}); err != nil {
+	line.Root.SetArgs([]string{"apply", "-f", filename})
+	if err := line.ExecuteContext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }

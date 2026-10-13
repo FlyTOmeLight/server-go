@@ -101,13 +101,25 @@ SDK 方法的路径、HTTP 方法、请求编码、响应结构与 Controller、
 
 - 显式构造 Client 并返回 `(*Client, error)`，校验 endpoint 与支持的鉴权配置，复用框架 `sdk.Client` 的连接、超时与传输能力。所有者在调用结束后关闭客户端；业务 SDK 不新增包级默认实例。消费方需要替换实现时，在消费方定义实际使用的小接口，不因接口数量增加而生成一个必须实现全部方法的大接口。
 - 新方法使用 `CreateOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error)` 这样的签名。每次创建新的 HTTP 请求，并用 `SetContext(ctx)` 传递取消和截止时间。入站身份、幂等 token、请求 ID 等只写入本次请求；共享 Client 不保存入站 context，不在每次调用时修改默认 Header 或 Transport，也不通过 Clone 传播身份。内部 SDK 适配在 HTTP 边界提取身份和请求 context，公共 SDK 保持与 Gin 无关。
-- 普通 JSON 调用保留网络错误及 context 取消的错误身份；HTTP 失败解析为可检查的服务错误，并保留实际状态码和服务错误码。错误响应不是预期 JSON 时，仍返回带状态码的错误，不能把空错误结构或默认响应当成功。成功只返回本次解析出的业务数据，不向调用方暴露 Resty Response；SDK 不对每次失败再打印日志或自行退出进程。
+- v0.8.0 起，普通 JSON 方法在 Resty 完成请求与结果解码后调用 `sdk.Complete(result, err)`，集中处理传输错误和 HTTP 失败；SSE 保持独立的流读取与关闭流程。正式消费需使用 v0.8.0 或更高版本。普通 JSON 调用保留网络错误及 context 取消的错误身份；HTTP 失败解析为可检查的服务错误，并保留实际状态码和服务错误码。错误响应不是预期 JSON 时，仍返回带状态码的错误，不能把空错误结构或默认响应当成功。成功只返回本次解析出的业务数据，不向调用方暴露 Resty Response；SDK 不对每次失败再打印日志或自行退出进程。
 - 普通请求使用明确的超时。只有操作契约允许安全重试时才启用重试；创建、执行等有副作用的操作需要服务端幂等保障，不能仅因为采用 POST 就统一重试。流式调用应单独配置时限，保留调用方取消，不将 `SetTimeout(0)` 作为所有方法的默认值。
 - 流式接口直接返回流或统一的流式响应，例如包含 `io.ReadCloser`、状态码和 Header 的类型，不预先把完整响应读进内存。流式 HTTP 失败按契约转换为错误，或在明确要求透传时返回状态与响应体。返回响应后由调用方关闭流；返回错误前由 SDK 关闭自己持有的响应体。SSE（服务端持续发送事件的协议）的事件格式按接口契约处理。
 
 ### SDK 变更验证
 
 变更同步请求/响应类型、客户端方法、Controller 路由、Swagger 与相关调用方；需要重新生成 OpenAPI 时执行项目已有文档命令并检查产物。用 `httptest.Server` 或已有 Transport 测试真实请求路径、HTTP 方法、JSON 编码和响应解析。按变更涉及的风险覆盖服务错误、非 JSON 错误、取消/超时，以及流的读取和关闭；修改共享请求状态时运行竞态检测。服务端已有实现应通过 SDK 完成相关端到端调用，不仅检查接口方法能否编译。
+
+## CLI 执行与迁移（v0.8.0）
+
+`CommandLine` 实例拥有自己的配置、Apply 注册、SDK 客户端和日志。`SetConfigFile(path)` 只选择该实例的配置文件；默认文件路径、环境前缀和 `ConfigFilePath` 构建链接变量沿用原约定。构造命令不会读取或创建配置文件，也不会启动配置监听；`config set/get/unset` 执行时读取文件，缺少文件时创建，业务命令执行时检查配置。
+
+命令通过 `cli.Client(cmd.Context())` 获取当前执行的 SDK 客户端，并把 `cmd.Context()` 传给 SDK。领域 Apply 在 `NewCommand()` 中调用 `cli.RegisterCommandApplyHandler(cmd, kind, input, func(ctx context.Context, args any) error)`，注册随 `Append` 归属当前实例，回调传递收到的 context。示例保持 `CommandBuilder.NewCommand()` 和 `Append` 的既有调用形状。
+
+嵌入式调用和测试使用 `commandline.ExecuteContext(ctx)`，它返回错误并在成功、失败或取消后关闭客户端和日志；再次执行使用新的执行 context。进程入口使用 `commandline.Execute()`，它处理中断信号、SIGTERM 和退出码。不要直接调用 `commandline.Root.Execute()` 绕过执行资源清理。
+
+从旧 CLI 迁移时，将 `cli.Config.Client` 替换为 `cli.Client(cmd.Context())`，去掉领域包级客户端，将 `RegisterApplyHandler` 的回调改为 `RegisterCommandApplyHandler` 的 context 回调。`CommandLine` 不再更新全局 Viper 或包级 `Config`。旧 `SetConfig`、`Config`、`GetApplyHandler` 和 `RegisterApplyHandler` 保留给明确管理全局状态的手动调用；手动创建的客户端由调用方关闭。旧 Apply 注册在命令行构造或旧 builder 注册时复制为实例快照，后续全局注册不会改变已装配实例。
+
+本节约定从 v0.8.0 提供。升级旧项目时，按上述步骤迁移命令的客户端获取和 Apply 注册；v0.7.0 及更早版本仍遵循其既有 CLI 契约。
 
 ## 与当前 server-go 接口结合
 

@@ -16,11 +16,7 @@ var _ cli.CommandBuilder = &DatasetCommandBuilder{}
 
 func (b *DatasetCommandBuilder) NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "dataset",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			initClient()
-			return nil
-		},
+		Use:     "dataset",
 		Run:     func(cmd *cobra.Command, args []string) {},
 		Example: cli.DefaultName() + " dataset create --project-name yy --local-name xx",
 	}
@@ -31,7 +27,7 @@ func (b *DatasetCommandBuilder) NewCommand() *cobra.Command {
 	cmd.AddCommand(updateDatasetCommand())
 	cmd.AddCommand(deleteDatasetCommand())
 
-	applyDataset()
+	applyDataset(cmd)
 
 	return cmd
 }
@@ -149,6 +145,10 @@ func deleteDatasetCommand() *cobra.Command {
 }
 
 func createDataset(ctx context.Context, req *trainv1.CreateDatasetRequest) error {
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
 	resp, err := client.CreateDataset(ctx, req)
 	if err != nil {
 		return err
@@ -159,6 +159,10 @@ func createDataset(ctx context.Context, req *trainv1.CreateDatasetRequest) error
 }
 
 func listDataset(ctx context.Context, req *trainv1.ListDatasetRequest) error {
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
 	resp, err := client.ListDataset(ctx, req)
 	if err != nil {
 		return err
@@ -169,6 +173,10 @@ func listDataset(ctx context.Context, req *trainv1.ListDatasetRequest) error {
 }
 
 func getDataset(ctx context.Context, req *trainv1.GetDatasetRequest) error {
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
 	resp, err := client.GetDataset(ctx, req)
 	if err != nil {
 		return err
@@ -179,7 +187,11 @@ func getDataset(ctx context.Context, req *trainv1.GetDatasetRequest) error {
 }
 
 func updateDataset(ctx context.Context, req *trainv1.UpdateDatasetRequest) error {
-	err := client.UpdateDataset(ctx, req)
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
+	err = client.UpdateDataset(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -189,7 +201,11 @@ func updateDataset(ctx context.Context, req *trainv1.UpdateDatasetRequest) error
 }
 
 func deleteDataset(ctx context.Context, req *trainv1.DeleteDatasetRequest) error {
-	err := client.DeleteDataset(ctx, req)
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
+	err = client.DeleteDataset(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -204,13 +220,12 @@ type datasetMetadata struct {
 	ProjectName string `json:"projectName"`
 }
 
-func applyDataset() {
+func applyDataset(cmd *cobra.Command) {
 	var input datasetMetadata
-	cli.RegisterApplyHandler("Dataset", &input, func(args any) error {
+	cli.RegisterCommandApplyHandler(cmd, "Dataset", &input, func(ctx context.Context, args any) error {
 		metadata := args.(*datasetMetadata)
 		req := metadata.CreateDatasetRequest
 		req.ProjectName = metadata.ProjectName
-		initClient()
-		return createDataset(context.Background(), &req)
+		return createDataset(ctx, &req)
 	})
 }

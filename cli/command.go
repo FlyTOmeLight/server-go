@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/logger"
+	"github.com/FlyTOmeLight/server-go/sdk"
 	"github.com/FlyTOmeLight/server-go/version"
 )
 
@@ -24,6 +26,23 @@ const parameterSplitSet = "."
 func NewConfigCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "config",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			config := commandConfig(cmd)
+			if err := config.ReadInConfig(); err != nil {
+				path := config.ConfigFileUsed()
+				if !errors.Is(err, fs.ErrNotExist) {
+					return err
+				}
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					return err
+				}
+				if err := os.WriteFile(path, nil, 0o600); err != nil {
+					return err
+				}
+				return config.ReadInConfig()
+			}
+			return nil
+		},
 		Run: func(cmd *cobra.Command, args []string) {},
 	}
 
@@ -39,7 +58,7 @@ func getCommand() *cobra.Command {
 		Short: "Get all config.",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			get(args)
+			get(commandConfig(cmd), args)
 		},
 		Example: DefaultName() + " config get",
 	}
@@ -53,7 +72,7 @@ func setCommand() *cobra.Command {
 		Short: "Set config",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return set(args[0])
+			return set(commandConfig(cmd), args[0])
 		},
 		Example: DefaultName() + " config set core.endpoint=http://localhost:8080\n" +
 			DefaultName() + " config set core.access_key=test-ak\n" +
@@ -69,7 +88,7 @@ func unsetCommand() *cobra.Command {
 		Short: "Unset config",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return unset(args[0])
+			return unset(commandConfig(cmd), args[0])
 		},
 		Example: DefaultName() + " config unset core.endpoint",
 	}
@@ -77,10 +96,10 @@ func unsetCommand() *cobra.Command {
 	return cmd
 }
 
-func get(args []string) {
+func get(config *viper.Viper, args []string) {
 	if len(args) == 0 {
 		// get all
-		PrintJSON(viper.AllSettings())
+		PrintJSON(config.AllSettings())
 		return
 	}
 
@@ -88,16 +107,16 @@ func get(args []string) {
 	groupFlag, paramFlag := parseConfigParameter(arg)
 
 	if paramFlag == "" {
-		group := viper.Get(groupFlag)
+		group := config.Get(groupFlag)
 		PrintJSON(&group)
 		return
 	}
 
-	param := viper.Get(arg)
+	param := config.Get(arg)
 	PrintJSON(&param)
 }
 
-func set(arg string) error {
+func set(config *viper.Viper, arg string) error {
 	pair := strings.Split(arg, "=")
 	if len(pair) != 2 {
 		return fmt.Errorf("%s is not valid, please set parameter like core.endpoint=http://localhost:80", arg)
@@ -112,24 +131,24 @@ func set(arg string) error {
 	}
 
 	if paramFlag == "" {
-		viper.Set(groupFlag, value)
-		return viper.WriteConfig()
+		config.Set(groupFlag, value)
+		return config.WriteConfig()
 	}
 
-	viper.Set(key, value)
-	return viper.WriteConfig()
+	config.Set(key, value)
+	return config.WriteConfig()
 }
 
-func unset(arg string) error {
+func unset(config *viper.Viper, arg string) error {
 	groupFlag, paramFlag := parseConfigParameter(arg)
 
 	if paramFlag == "" {
-		viper.Set(groupFlag, "")
-		return viper.WriteConfig()
+		config.Set(groupFlag, "")
+		return config.WriteConfig()
 	}
 
-	viper.Set(arg, "")
-	return viper.WriteConfig()
+	config.Set(arg, "")
+	return config.WriteConfig()
 }
 
 func parseConfigParameter(arg string) (string, string) {
@@ -146,7 +165,7 @@ func NewApplyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "apply",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			err := SetConfig()
+			err := setCommandConfig(cmd)
 			return err
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -156,13 +175,13 @@ func NewApplyCommand() *cobra.Command {
 			}
 
 			for _, f := range filenames {
-				err = apply(f)
+				err = apply(cmd.Context(), f)
 				if err != nil {
 					return err
 				}
 			}
 
-			err = walkDir(directory)
+			err = walkDir(cmd.Context(), directory)
 			if err != nil {
 				return err
 			}
@@ -176,7 +195,7 @@ func NewApplyCommand() *cobra.Command {
 	return cmd
 }
 
-func apply(filename string) error {
+func apply(ctx context.Context, filename string) error {
 	f, fileErr := os.Open(filename)
 	if fileErr != nil {
 		return fileErr
@@ -190,13 +209,16 @@ func apply(filename string) error {
 	d := yaml.NewDecoder(f)
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		var spec *CommandSpec
 		err := d.Decode(&spec)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			logger.Errorf(context.TODO(), "decode yaml error: %v \n", err)
+			logger.Errorf(ctx, "decode yaml error: %v \n", err)
 			errs = append(
 				errs,
 				serrors.NewError(
@@ -212,15 +234,21 @@ func apply(filename string) error {
 			continue
 		}
 
-		applyHandler, err := GetApplyHandler(spec.Kind)
+		var registered map[string]*ApplyHandler
+		if line := commandLine(ctx); line != nil {
+			registered = line.handlers
+		} else {
+			registered = handlers
+		}
+		applyHandler, err := getApplyHandler(registered, spec.Kind)
 		if err != nil {
 			failedMap[spec.Kind]++
-			logger.Errorf(context.TODO(), "kind: %s is invalid \n", spec.Kind)
+			logger.Errorf(ctx, "kind: %s is invalid \n", spec.Kind)
 			errs = append(errs, err)
 			continue
 		}
 
-		err = applyHandler.Handle(spec.Kind, spec.Metadata)
+		err = applyHandler.HandleContext(ctx, spec.Kind, spec.Metadata)
 		if err == nil {
 			succeededMap[spec.Kind]++
 			continue
@@ -232,7 +260,7 @@ func apply(filename string) error {
 			continue
 		}
 		failedMap[spec.Kind]++
-		logger.Errorf(context.TODO(), "apply error: %v", err)
+		logger.Errorf(ctx, "apply error: %v", err)
 		errs = append(errs, e)
 	}
 
@@ -264,7 +292,7 @@ func apply(filename string) error {
 	return nil
 }
 
-func walkDir(directory string) error {
+func walkDir(ctx context.Context, directory string) error {
 	if directory == "" {
 		return nil
 	}
@@ -274,7 +302,7 @@ func walkDir(directory string) error {
 		}
 		if !info.IsDir() &&
 			(strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml")) {
-			err = apply(path)
+			err = apply(ctx, path)
 			if err != nil {
 				return err
 			}
@@ -289,7 +317,7 @@ func NewVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print the client and server version information",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			err := SetConfig()
+			err := setCommandConfig(cmd)
 			return err
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -297,9 +325,9 @@ func NewVersionCommand() *cobra.Command {
 				return fmt.Errorf("--output=%q must be 'yaml' or 'json' ", output)
 			}
 
-			err := getVersion(output)
+			err := getVersion(cmd, output)
 			if err != nil {
-				return fmt.Errorf("get ServerVersion error: %v", err)
+				return fmt.Errorf("get ServerVersion error: %w", err)
 			}
 			return nil
 		},
@@ -309,17 +337,22 @@ func NewVersionCommand() *cobra.Command {
 	return cmd
 }
 
-func getVersion(outputFormat string) error {
-	// 获得client version
-	versionInfo.ClientVersion = version.GetVersion()
-
-	// 获得server version
-	var err error
-	versionInfo.ServerVersion, err = version.GetVersionByURL(viper.GetString("core.endpoint"))
-	if err != nil {
+func getVersion(cmd *cobra.Command, outputFormat string) error {
+	var client *sdk.Client
+	if commandLine(cmd.Context()) != nil {
+		var err error
+		client, err = Client(cmd.Context())
+		if err != nil {
+			return err
+		}
+	} else {
+		client = Config.Client
+	}
+	info := Version{ClientVersion: version.GetVersion(), ServerVersion: &version.VersionInfo{}}
+	result, err := client.R().SetContext(cmd.Context()).SetResult(info.ServerVersion).Get("/version")
+	if err := sdk.Complete(result, err); err != nil {
 		return err
 	}
-
-	FormattedPrint(versionInfo, outputFormat)
+	FormattedPrint(info, outputFormat)
 	return nil
 }

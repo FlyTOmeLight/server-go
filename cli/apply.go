@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"github.com/FlyTOmeLight/server-go/errors"
 )
@@ -20,11 +23,34 @@ type CommandSpec struct {
 type HandlerFunc func(args any) error
 
 type ApplyHandler struct {
-	input   any
-	handler HandlerFunc
+	input          any
+	handler        HandlerFunc
+	contextHandler func(context.Context, any) error
+}
+
+type applyRegistrationKey struct{}
+
+// RegisterCommandApplyHandler attaches a domain's apply handler to its command.
+// Append transfers registrations to the owning CommandLine before execution.
+func RegisterCommandApplyHandler(cmd *cobra.Command, kind string, input any, handler func(context.Context, any) error) {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	registrations, _ := ctx.Value(applyRegistrationKey{}).(map[string]*ApplyHandler)
+	if registrations == nil {
+		registrations = make(map[string]*ApplyHandler)
+	}
+	registrations[strings.ToLower(kind)] = &ApplyHandler{input: input, contextHandler: handler}
+	cmd.SetContext(context.WithValue(ctx, applyRegistrationKey{}, registrations))
 }
 
 func (h *ApplyHandler) Handle(kind string, meta any) error {
+	return h.HandleContext(context.Background(), kind, meta)
+}
+
+// HandleContext preserves cancellation while converting metadata for the handler.
+func (h *ApplyHandler) HandleContext(ctx context.Context, kind string, meta any) error {
 	// 反射实现深拷贝
 	inputType := reflect.TypeOf(h.input).Elem()
 	inputContent := reflect.New(inputType).Interface()
@@ -46,12 +72,19 @@ func (h *ApplyHandler) Handle(kind string, meta any) error {
 		)
 	}
 
+	if h.contextHandler != nil {
+		return h.contextHandler(ctx, inputContent)
+	}
 	return h.handler(inputContent)
 }
 
 func GetApplyHandler(kind string) (*ApplyHandler, error) {
+	return getApplyHandler(handlers, kind)
+}
+
+func getApplyHandler(registered map[string]*ApplyHandler, kind string) (*ApplyHandler, error) {
 	k := strings.ToLower(kind)
-	applyHandler, ok := handlers[k]
+	applyHandler, ok := registered[k]
 	if !ok {
 		return nil, errors.NewError(
 			http.StatusInternalServerError,
