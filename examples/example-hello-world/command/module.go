@@ -16,11 +16,7 @@ var _ cli.CommandBuilder = &ModuleCommandBuilder{}
 
 func (b *ModuleCommandBuilder) NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "module",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			initClient()
-			return nil
-		},
+		Use:     "module",
 		Run:     func(cmd *cobra.Command, args []string) {},
 		Example: cli.DefaultName() + " module create --name xx",
 	}
@@ -31,7 +27,7 @@ func (b *ModuleCommandBuilder) NewCommand() *cobra.Command {
 	cmd.AddCommand(updateModuleCommand())
 	cmd.AddCommand(deleteModuleCommand())
 
-	applyModule()
+	applyModule(cmd)
 
 	return cmd
 }
@@ -138,6 +134,10 @@ func deleteModuleCommand() *cobra.Command {
 }
 
 func createModule(ctx context.Context, req *sdk.CreateModuleRequest) error {
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
 	resp, err := client.CreateModule(ctx, req)
 	if err != nil {
 		return err
@@ -148,6 +148,10 @@ func createModule(ctx context.Context, req *sdk.CreateModuleRequest) error {
 }
 
 func listModule(ctx context.Context, req *sdk.ListModuleRequest) error {
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
 	resp, err := client.ListModule(ctx, req)
 	if err != nil {
 		return err
@@ -158,6 +162,10 @@ func listModule(ctx context.Context, req *sdk.ListModuleRequest) error {
 }
 
 func getModule(ctx context.Context, req *sdk.GetModuleRequest) error {
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
 	resp, err := client.GetModule(ctx, req)
 	if err != nil {
 		return err
@@ -168,7 +176,11 @@ func getModule(ctx context.Context, req *sdk.GetModuleRequest) error {
 }
 
 func updateModule(ctx context.Context, req *sdk.UpdateModuleRequest) error {
-	err := client.UpdateModule(ctx, req)
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
+	err = client.UpdateModule(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -178,7 +190,11 @@ func updateModule(ctx context.Context, req *sdk.UpdateModuleRequest) error {
 }
 
 func deleteModule(ctx context.Context, req *sdk.DeleteModuleRequest) error {
-	err := client.DeleteModule(ctx, req)
+	client, err := initClient(ctx)
+	if err != nil {
+		return err
+	}
+	err = client.DeleteModule(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -187,10 +203,9 @@ func deleteModule(ctx context.Context, req *sdk.DeleteModuleRequest) error {
 	return nil
 }
 
-func applyModule() {
+func applyModule(cmd *cobra.Command) {
 	var req sdk.CreateModuleRequest
-	cli.RegisterApplyHandler("Module", &req, func(args any) error {
-		initClient()
-		return createModule(context.Background(), args.(*sdk.CreateModuleRequest))
+	cli.RegisterCommandApplyHandler(cmd, "Module", &req, func(ctx context.Context, args any) error {
+		return createModule(ctx, args.(*sdk.CreateModuleRequest))
 	})
 }

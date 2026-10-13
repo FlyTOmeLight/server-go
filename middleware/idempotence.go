@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	stderr "errors"
-	"io"
 	"mime"
 	"net/http"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/idempotence"
+	"github.com/FlyTOmeLight/server-go/internal/httpbody"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
@@ -49,19 +49,11 @@ func idempotenceHandler(controller *idempotence.Controller, next core.HandlerFun
 			)
 			return
 		}
-		body, err := c.GetRawData()
+		body, err := httpbody.Read(c)
 		if err != nil {
-			errors.AbortWithError(
-				c,
-				errors.NewError(
-					http.StatusBadRequest,
-					"InvalidRequestBody",
-					"cannot read request body",
-				),
-			)
+			errors.AbortWithError(c, err)
 			return
 		}
-		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 		// Query parameters (including the token) and content type are part of
 		// the request fingerprint, while the operation key uses the actual path.
 		fingerprint := sha256.Sum256(

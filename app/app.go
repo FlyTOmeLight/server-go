@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sync"
 	"time"
 
 	server "github.com/FlyTOmeLight/server-go"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/host"
+	"github.com/FlyTOmeLight/server-go/internal/lifecycle"
 	"github.com/FlyTOmeLight/server-go/logger"
 )
 
@@ -52,7 +52,7 @@ func (r *Runtime) AddService(service host.Service) error {
 	if service == nil {
 		return errors.New("service is nil")
 	}
-	owned := &ownedService{Service: service}
+	owned := &ownedService{Service: service, stopper: lifecycle.NewStopper(service.Stop)}
 	r.services = append(r.services, owned)
 	r.cleanup = append(r.cleanup, cleanupOperation{release: owned.Stop, service: true})
 	return nil
@@ -60,21 +60,11 @@ func (r *Runtime) AddService(service host.Service) error {
 
 type ownedService struct {
 	host.Service
-	mu      sync.Mutex
-	stopped bool
+	stopper *lifecycle.Stopper
 }
 
 func (s *ownedService) Stop(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.stopped {
-		return nil
-	}
-	if err := s.Service.Stop(ctx); err != nil {
-		return err
-	}
-	s.stopped = true
-	return nil
+	return s.stopper.Stop(ctx)
 }
 
 // Run constructs configuration and logging, invokes build under an initialization
@@ -110,20 +100,17 @@ func Run[T any](ctx context.Context, options Options, build func(context.Context
 	defer func() {
 		cancelRun()
 		for _, v := range slices.Backward(r.cleanup) {
+			if v.service {
+				err, stopped := lifecycle.Stop(ctx, options.CloseTimeout, v.release)
+				result = errors.Join(result, err)
+				if !stopped {
+					return
+				}
+				continue
+			}
 			closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), options.CloseTimeout)
-			releaseErr := v.release(closeCtx)
-			err := releaseErr
-			if v.service && errors.Is(releaseErr, context.DeadlineExceeded) {
-				// A deadline limits the first wait, not ownership of active workers.
-				releaseErr = v.release(context.WithoutCancel(ctx))
-				err = errors.Join(err, releaseErr)
-			}
-			result = errors.Join(result, err)
+			result = errors.Join(result, v.release(closeCtx))
 			cancel()
-			if v.service && releaseErr != nil {
-				// A failed stop cannot prove workers have released their dependencies.
-				return
-			}
 		}
 	}()
 	r.Config, err = conf.NewManager(options.ConfigPath)

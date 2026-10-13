@@ -242,146 +242,67 @@ func WithMessage(err error, message string) error {
 	return errors.WithMessage(err, message)
 }
 
-// ErrorHandler 统一拦截异常，按照规范返回错误
-// 如果启用了 AutoHandleAPIError，会自动处理 /{appName}/api/* 接口的响应状态码
+// ErrorHandler completes queued errors using the same policy as immediate failures.
 func ErrorHandler(config *conf.Config) core.HandlerFunc {
 	return func(c *core.Context) {
-		// 检查是否需要自动处理 API 错误（将非200状态码改为200）
-		shouldAutoHandle := config != nil && config.HTTPServer.AltoHandlerAPIError &&
-			!config.HTTPServer.ConsoleEnable
-
-		// 如果 shouldAutoHandle = false，则不进行自动处理，直接返回错误
-		if !shouldAutoHandle {
-			c.Next()
-
-			lastErr := c.Errors.Last()
-			if lastErr == nil {
-				return
-			}
-
-			AbortWithError(c, lastErr.Err)
-			return
+		if config != nil {
+			c.Set("server.AppCode", config.AppCode)
+			c.Set("server.Debug", config.RunMode == conf.RunModeDebug)
 		}
-		var writer *statusCodeWriter
-		// 检查路径是否为 /{appName}/api/*
-		path := c.Request.URL.Path
-		appName := config.AppName
-		apiPrefix := "/" + appName + "/api"
-		// 检查是否需要自动处理 API 错误（将非200状态码改为200）
-		allowOriginsExist := config != nil && len(config.HTTPServer.AllowAPIPathNoHandlerAPIError) > 0
-		if allowOriginsExist {
-			for _, allowOrigin := range config.HTTPServer.AllowAPIPathNoHandlerAPIError {
-				if strings.HasPrefix(path, allowOrigin) {
-					c.Next()
-					lastErr := c.Errors.Last()
-					if lastErr == nil {
-						return
-					}
-					AbortWithError(c, lastErr.Err)
-					return
-				}
-			}
+		if autoHandleErrorPath(config, c.Request.URL.Path) {
+			c.Writer = &statusCodeWriter{ResponseWriter: c.Writer}
 		}
-		// 匹配 /{appName}/api 或 /{appName}/api/*
-		if path == apiPrefix || strings.HasPrefix(path, apiPrefix+"/") {
-			// 使用自定义的 ResponseWriter 来拦截状态码和响应体
-			writer = &statusCodeWriter{
-				ResponseWriter: c.Writer,
-				statusCode:     http.StatusOK,
-				written:        false,
-			}
-			c.Writer = writer
-		}
-
 		c.Next()
-
-		lastErr := c.Errors.Last()
-		if lastErr == nil {
-			return
+		if lastErr := c.Errors.Last(); lastErr != nil {
+			completeError(c, lastErr.Err)
 		}
-
-		// 如果启用了自动处理且路径匹配，需要特殊处理错误响应
-		if writer != nil {
-			// 规范化错误并设置 RequestID
-			errObj := normalize(lastErr.Err, config.RunMode == conf.RunModeDebug)
-			errObj.RequestID = c.GetHeader(constants.HeaderRequestID)
-			// 确保 StatusCode 已设置（如果为 0，则调用 SetStatusCode 设置）
-			if errObj.StatusCode == 0 {
-				errObj.SetStatusCode(config.AppCode)
-			}
-			// 如果还没有写入响应，直接返回 JSON，状态码为200
-			if !writer.written {
-				logger.Errorf(c, "API Error: %+v", lastErr.Err)
-				c.JSON(http.StatusOK, errObj)
-				return
-			}
-			// 如果已经写入了响应，需要清空并重新写入
-			// 但根据业务逻辑，通常错误处理会在写入响应之前完成
-			// 如果已经写入，说明可能不是错误响应，直接返回
-			return
-		}
-
-		AbortWithError(c, lastErr.Err)
 	}
 }
 
-// statusCodeWriter 自定义 ResponseWriter，用于拦截状态码和响应体
+func autoHandleErrorPath(config *conf.Config, path string) bool {
+	if config == nil || !config.HTTPServer.AltoHandlerAPIError || config.HTTPServer.ConsoleEnable {
+		return false
+	}
+	for _, prefix := range config.HTTPServer.AllowAPIPathNoHandlerAPIError {
+		if strings.HasPrefix(path, prefix) {
+			return false
+		}
+	}
+	prefix := "/" + config.AppName + "/api"
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
+}
+
+// statusCodeWriter changes the wire status while preserving Gin's write state.
 type statusCodeWriter struct {
 	gin.ResponseWriter
-	statusCode int
-	written    bool
 }
 
-func (w *statusCodeWriter) WriteHeader(code int) {
-	w.statusCode = code
-	// 只有当状态码是200时才立即写入，否则先记录状态码，稍后统一改为200
-	if code == http.StatusOK {
-		w.written = true
-		w.ResponseWriter.WriteHeader(code)
-	}
-}
+func (w *statusCodeWriter) WriteHeader(int) { w.ResponseWriter.WriteHeader(http.StatusOK) }
 
-func (w *statusCodeWriter) Write(data []byte) (int, error) {
-	// 如果状态码还没有写入，先写入200
-	if !w.written {
-		if w.statusCode != http.StatusOK {
-			w.statusCode = http.StatusOK
-		}
-		w.written = true
-		w.ResponseWriter.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.Write(data)
-}
-
-func (w *statusCodeWriter) WriteString(s string) (int, error) {
-	// 如果状态码还没有写入，先写入200
-	if !w.written {
-		if w.statusCode != http.StatusOK {
-			w.statusCode = http.StatusOK
-		}
-		w.written = true
-		w.ResponseWriter.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.WriteString(s)
-}
-
-func (w *statusCodeWriter) Status() int {
-	// 返回200，因为我们要将所有状态码都改为200
-	return http.StatusOK
-}
+func (w *statusCodeWriter) Status() int { return http.StatusOK }
 
 func (w *statusCodeWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func AbortWithError(c *core.Context, err error) {
+	if err == nil {
+		return
+	}
+	// Preserve failure identity even when the wire policy maps its status to 200.
+	// Idempotence and the outer renderer must observe the same failure.
+	_ = c.Error(err)
+	completeError(c, err)
+}
+
+func completeError(c *core.Context, err error) {
+	c.Abort()
 	if c.Writer.Written() {
-		c.Abort()
 		return
 	}
 	logger.Errorf(c, "API Error: %+v", err)
 	wrong := normalize(err, c.GetBool("server.Debug"))
 	wrong.RequestID = c.GetHeader(constants.HeaderRequestID)
 	wrong.SetStatusCode(c.GetInt("server.AppCode"))
-	c.AbortWithStatusJSON(wrong.Status, wrong)
+	c.JSON(wrong.Status, wrong)
 }
 
 func NewResourceIsExists(message string) error {

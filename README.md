@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.7.0
+go get github.com/FlyTOmeLight/server-go@v0.8.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.7.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.8.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -186,6 +186,18 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.8.0
+
+JSON 的 1 MiB 读取预算覆盖 Debug、幂等与 binder 的组合，前置中间件不再先读完整个超限正文。缺少 Content-Type 的调试请求使用相同预算；显式文本、表单和 multipart 保留原有规则。多个读取者复用本次请求的正文。
+
+立即错误和延后错误共享完成规则，保留请求 ID、业务错误码和已开始输出后的行为。自动转为 HTTP 200 的错误仍被识别为失败，不进入幂等缓存。应用与 HTTPHost 共享任务停止策略，超时后继续等待并保留错误，停止失败时保留依赖。
+
+普通 JSON SDK 方法用 `sdk.Complete(result, err)` 统一完成请求，保留网络、取消与解码错误身份以及 HTTP 错误元数据。SSE 继续使用独立的流读取和关闭流程。
+
+`CommandLine` 实例拥有配置、Apply 注册、SDK 和日志。业务命令改用 `cli.Client(cmd.Context())` 获取本次执行的客户端，通过 `cli.RegisterCommandApplyHandler` 注册领域 Apply；`ExecuteContext` 返回错误并清理资源，`Execute` 处理进程信号和退出码。`CommandLine` 不再初始化包级 `cli.Config`，旧手动 `SetConfig` 路径仍可使用。迁移示例见 [Go 项目组织约定](docs/go-project-layout.md)。这些变更从 v0.8.0 提供。
+
+生成器按明确的模板文件与完整片段展开业务领域，不再根据每行是否包含 `Module` 猜测复制范围。新增模板领域文件或改变聚合位置时，同步更新 `scripts/gen_code.py` 的规则；规则失配会停止生成，已有目标继续受保护。
 
 ## v0.7.0
 

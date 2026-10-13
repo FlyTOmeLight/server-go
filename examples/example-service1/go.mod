@@ -3,12 +3,11 @@ module github.com/FlyTOmeLight/server-go/examples/example-service1
 go 1.27.0
 
 require (
-	github.com/FlyTOmeLight/server-go v0.7.0
+	github.com/FlyTOmeLight/server-go v0.8.0
 	github.com/creasty/defaults v1.11.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jinzhu/copier v0.3.5
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/swag v1.16.6
 	gorm.io/plugin/soft_delete v1.2.1
@@ -94,6 +93,7 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/swaggo/files v1.0.1 // indirect
 	github.com/swaggo/gin-swagger v1.6.1 // indirect

@@ -16,6 +16,7 @@ import (
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	serrors "github.com/FlyTOmeLight/server-go/errors"
+	"github.com/FlyTOmeLight/server-go/internal/lifecycle"
 	"github.com/FlyTOmeLight/server-go/logger"
 	"github.com/FlyTOmeLight/server-go/middleware"
 	core "github.com/FlyTOmeLight/server-go/pkg"
@@ -269,17 +270,9 @@ func (h *HTTPHost) RunWithStartupTimeout(ctx context.Context, startupTimeout tim
 		cancelRequests()
 		cancel()
 		for _, s := range slices.Backward(started) {
-			stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			stopErr := s.Stop(stopCtx)
-			remainingErr := stopErr
-			if errors.Is(stopErr, context.DeadlineExceeded) {
-				// Keep ownership until the service confirms its workers have exited.
-				remainingErr = s.Stop(context.WithoutCancel(ctx))
-				stopErr = errors.Join(stopErr, remainingErr)
-			}
+			stopErr, stopped := lifecycle.Stop(ctx, 5*time.Second, s.Stop)
 			result = errors.Join(result, stopErr)
-			stopCancel()
-			if remainingErr != nil {
+			if !stopped {
 				break
 			}
 		}

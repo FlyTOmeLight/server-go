@@ -99,9 +99,15 @@ class MultiModuleGenerator:
         with tempfile.TemporaryDirectory(prefix='.server-go-', dir=output_dir) as work_dir:
             temp_dir = os.path.join(work_dir, 'project')
             shutil.copytree(self.template_path, temp_dir)
-            self._process_project(temp_dir, name, go_mod)
+            # Keep project tokens distinct from domain names during expansion.
+            project_token = 'ServerGoProjectToken'
+            while any(project_token.lower() in module.lower() for module in modules):
+                project_token += 'X'
+            module_token = 'example.invalid/' + project_token.lower()
+            self._process_project(temp_dir, project_token, module_token)
             if modules != [self.template_module_name]:
-                self._process_modules(temp_dir, modules)
+                self._process_modules(temp_dir, modules, project_token)
+            self._rename_project(temp_dir, name, go_mod, project_token, module_token)
             # Reserve the destination exclusively. Never remove an existing path.
             os.mkdir(project_dir)
             try:
@@ -117,90 +123,144 @@ class MultiModuleGenerator:
         return project_dir
 
     def _process_project(self, file_path: str, name: str, go_mod: str):
-        print(f"start process project file_path: {file_path}, name: {name}, go_mod: {go_mod}")
         os.remove(f"{file_path}/go.sum")
         # 重写go.mod
         go_mod_content = (f"module {go_mod}\n\ngo 1.27\n\nrequire (\n"
-                          f"   github.com/FlyTOmeLight/server-go v0.7.0\n"
+                          f"   github.com/FlyTOmeLight/server-go v0.8.0\n"
                           f"   github.com/spf13/cobra v1.7.0\n"
                           f"   github.com/swaggo/swag v1.8.1\n)")
         write_to_file(f"{file_path}/go.mod", go_mod_content)
 
+        self._rename_project(file_path, name, go_mod, self.template_name)
+
+    def _rename_project(self, file_path: str, name: str, go_mod: str, source_name: str, source_go_mod: str = None):
         replacer = {
-            self.template_name.lower(): name.lower(),
-            _camel_to_snake(self.template_name): _camel_to_snake(name),
-            _camel_to_snake(self.template_name, "-"): _camel_to_snake(name, "-"),
+            source_name.lower(): name.lower(),
+            _camel_to_snake(source_name): _camel_to_snake(name),
+            _camel_to_snake(source_name, "-"): _camel_to_snake(name, "-"),
         }
         file_paths = _replace_filenames(file_path, replacer, replacer)
 
         for path in file_paths:
             _replace_content(path, {
-                self.template_go_mod: go_mod,
-                self.template_name: name,
-                self.template_name.lower(): name.lower(),
+                source_go_mod or self.template_go_mod: go_mod,
+                source_name: name,
+                source_name.lower(): name.lower(),
             })
-        print(f"end process project")
 
 
-    def _process_modules(self, file_path: str, modules: list[str]):
-        print(f"start process modules file_path: {file_path}, modules: {modules}")
+    # These paths belong to the HelloWorld template's domain. Everything else
+    # receives project renaming only, including resource assembly and go.mod.
+    domain_paths = (
+        'internal/app/module',
+        'internal/table/module.go',
+        'command/module.go',
+        'service/module_lifecycle_test.go',
+        'service/module_sdk_test.go',
+        'sdk/go/{project}v1/{project}_api_module.go',
+        'sdk/go/{project}v1/{project}_client_module.go',
+        'sdk/go/{project}v1/{project}_client_module_test.go',
+    )
 
-        project_path = file_path
-        deleted = []
+    # Expand complete declared fragments, rather than guessing from each line's
+    # contents. Framework resources stay in build.go and are initialized once.
+    aggregate_fragments = {
+        'service/service.go': (
+            '"{go_mod}/internal/app/module"',
+            'moduleController *module.Controller',
+            'moduleController: module.NewModuleController(database),',
+            's.moduleController.RegisterRoutes(group, s.cache)',
+        ),
+        'internal/table/base.go': ('AutoMigrateModule(ctx, database),',),
+        'cmd/cli/cli.go': ('commandline.Append(&command.ModuleCommandBuilder{})',),
+    }
 
-        # internal/app/module -> internal/app/{custom module}
-        for root, dirs, files in os.walk(file_path):
-            for src_dir_name in dirs[:]:  # 使用副本遍历
-                if self.template_module_name.lower() in src_dir_name:
-                    old_path = os.path.join(root, src_dir_name)
-                    if old_path not in deleted:
-                        deleted.append(old_path)
+    def _render_domain(self, content: str, module: str) -> str:
+        # Lifecycle tests own a framework database Module as well as a domain.
+        # Preserve that template symbol explicitly; all other Module text is domain text.
+        replacements = {
+            'db.Module': 'db.Module',
+            'module_sdk_test.go': _camel_to_snake(module) + '_sdk_test.go',
+            'module.go': _camel_to_snake(module) + '.go',
+            'Module': module,
+            'module': module.lower(),
+        }
+        return re.sub(r'db\.Module|module_sdk_test\.go|module\.go|Module|module',
+                      lambda match: replacements[match.group()], content)
 
-                    for module_name in modules:
-                        new_path = os.path.join(root, src_dir_name.replace(self.template_module_name.lower(),
-                                                                           module_name.lower()))
-                        shutil.copytree(old_path, new_path)
+    def _expand_fragment(self, content: str, fragment: str, modules: list[str]) -> str:
+        if content.count(fragment) != 1:
+            raise ValueError(f"模板片段必须出现一次: {fragment}")
+        expanded = '\n'.join(self._render_domain(fragment, module) for module in modules)
+        return content.replace(fragment, expanded)
 
-                        for new_root, _, new_files in os.walk(new_path):
-                            for new_file_name in new_files:
-                                if _camel_to_snake(self.template_module_name) not in new_file_name:
-                                    new_file_path = os.path.join(new_root, new_file_name)
-                                    print(f"ReplaceFilePath: {new_file_path}")
-                                    self._process_module_file_content(new_file_path, module_name)
+    def _process_modules(self, project_path: str, modules: list[str], name: str):
+        project = name.lower()
+        with open(os.path.join(project_path, 'go.mod'), encoding='utf-8') as source:
+            go_mod = source.readline().removeprefix('module ').strip()
+        for template_path in self.domain_paths:
+            relative = template_path.format(project=project)
+            template_source = os.path.join(project_path, relative)
+            original = template_source + '.template'
+            os.rename(template_source, original)
+            for module in modules:
+                domain_name = module.lower() if os.path.isdir(original) else _camel_to_snake(module)
+                destination = os.path.join(
+                    project_path, template_path.replace('module', domain_name).format(project=project)
+                )
+                if os.path.isdir(original):
+                    shutil.copytree(original, destination)
+                    paths = [os.path.join(root, filename)
+                             for root, _, files in os.walk(destination) for filename in files]
+                else:
+                    shutil.copy2(original, destination)
+                    paths = [destination]
+                for path in paths:
+                    with open(path, encoding='utf-8') as source:
+                        content = source.read()
+                    write_to_file(path, self._render_domain(content, module))
+            if os.path.isdir(original):
+                shutil.rmtree(original)
+            else:
+                os.remove(original)
 
-            for src_file_name in files:
-                file_path = os.path.join(root, src_file_name)
-                if _camel_to_snake(self.template_module_name) in src_file_name:
-                    src_dir_name, src_file_name = os.path.split(file_path)
+        for relative, fragments in self.aggregate_fragments.items():
+            path = os.path.join(project_path, relative)
+            with open(path, encoding='utf-8') as source:
+                content = source.read()
+            for fragment in fragments:
+                content = self._expand_fragment(content, fragment.replace('{go_mod}', go_mod), modules)
+            write_to_file(path, content)
 
-                    if file_path not in deleted:
-                        deleted.append(file_path)
+        path = os.path.join(project_path, f'sdk/go/{project}v1/{project}_api.go')
+        with open(path, encoding='utf-8') as source:
+            content = source.read()
+        start = content.index('\tCreateModule(')
+        end = content.index('\n}', start)
+        write_to_file(path, self._expand_fragment(content, content[start:end], modules))
 
-                    for module_name in modules:
-                        new_name = src_file_name.replace(_camel_to_snake(self.template_module_name),
-                                                         _camel_to_snake(module_name))
-                        new_path = os.path.join(src_dir_name, new_name)
-                        shutil.copy2(file_path, new_path)
-                        self._process_module_file_content(new_path, module_name)
-                    continue
+        for relative in ('deploy/scripts/cmd.sh', 'deploy/scripts/curl.sh'):
+            path = os.path.join(project_path, relative)
+            with open(path, encoding='utf-8') as source:
+                content = source.read()
+            header, commands = content.split('\n', 1)
+            write_to_file(path, header + '\n' + '\n'.join(self._render_domain(commands, module) for module in modules))
 
-                # Assembly selects framework resources once, independent of domain count.
-                if (file_path.endswith(".mod") or file_path.endswith("server/server.go")
-                        or (os.path.basename(root) == "service" and src_file_name == "build.go")
-                        or os.path.basename(root) == "openapi"):
-                    continue
-                self._multi_replace_modules_content(file_path, modules)
-
-        for deleted_path in deleted:
-            if not os.path.exists(deleted_path):
-                continue
-            if os.path.isfile(deleted_path):
-                os.remove(deleted_path)
-                continue
-            shutil.rmtree(deleted_path)
-
+        path = os.path.join(project_path, 'README.md')
+        with open(path, encoding='utf-8') as source:
+            content = source.read()
+        start = content.index('以现有 `GetModule`')
+        end = content.index('重新生成接口文档', start)
+        content = self._expand_fragment(content, content[start:end], modules)
+        content = content.replace('`internal/app/module`', '、'.join(f'`internal/app/{module.lower()}`' for module in modules))
+        start = content.index("curl -H 'Content-Type:")
+        end = content.index('\n```', start)
+        content = self._expand_fragment(content, content[start:end], modules)
+        start = content.index(f'./output/bin/{project} module create')
+        end = content.index('\n```', start)
+        content = self._expand_fragment(content, content[start:end], modules)
+        write_to_file(path, content)
         self._process_openapi(project_path, modules)
-        print("end process modules")
 
 
     def _process_openapi(self, project_path: str, modules: list[str]):
@@ -235,35 +295,6 @@ class MultiModuleGenerator:
                                   ensure_ascii=False, indent=4)[1:]
             write_to_file(go_path, go_content[:start] + sections.lstrip() + go_content[end + 1:])
 
-    def _replace_business_module(self, content: str, module: str) -> str:
-        # Lifecycle types belong to the framework, not the generated domain.
-        content = re.sub(r'(?<!db\.)(?<!redis\.)(?<!mongodb\.)(?<!conf\.)Module', module, content)
-        return content.replace('module', module.lower())
-
-    def _process_module_file_content(self, file_path: str, module_name: str):
-        with open(file_path, encoding='utf-8') as source:
-            content = source.read()
-        write_to_file(file_path, self._replace_business_module(content, module_name))
-
-    def _multi_replace_modules_content(self, file_path: str, modules: list[str]):
-        try:
-            with open(file_path, encoding='utf-8') as src:
-                lines = src.readlines()
-        except UnicodeDecodeError:
-            return
-        content = []
-        name = self.template_module_name
-        for line in lines:
-            edited = name in line or name.lower() in line or _camel_to_snake(name) in line
-            for module in modules:
-                if module in line or module.lower() in line or _camel_to_snake(module) in line:
-                    edited = False
-            if edited:
-                for module in modules:
-                    content.append(self._replace_business_module(line, module))
-            else:
-                content.append(line)
-        write_to_file(file_path, ''.join(content))
 
 
 if __name__ == "__main__":

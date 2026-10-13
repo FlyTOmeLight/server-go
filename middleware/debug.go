@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/FlyTOmeLight/server-go/constants"
+	"github.com/FlyTOmeLight/server-go/errors"
+	"github.com/FlyTOmeLight/server-go/internal/httpbody"
 	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
@@ -81,9 +82,11 @@ func Debug(prefixFilters []string, suffixFilters []string) core.HandlerFunc {
 		var rawRequest []byte
 		if shouldLogBody(c) {
 			// 为了输出body，需要将body读取出来，然后再赋值回去
-			rawRequest, _ = c.GetRawData()
-			if rawRequest != nil {
-				c.Request.Body = io.NopCloser(bytes.NewBuffer(rawRequest))
+			var err error
+			rawRequest, err = httpbody.Read(c)
+			if err != nil && httpbody.IsJSON(c) {
+				errors.AbortWithError(c, err)
+				return
 			}
 		}
 

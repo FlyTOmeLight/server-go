@@ -1,9 +1,7 @@
 package helloworldv1
 
 import (
-	"bytes"
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/FlyTOmeLight/server-go/sdk"
@@ -29,14 +27,6 @@ func NewClient(ak, sk, endpoint string) (*Client, error) {
 		Endpoint:    strings.TrimRight(endpoint, "/") + "/helloworld/internal",
 		Timeout:     30,
 	})
-}
-
-// responseError preserves HTTP failure even when the upstream returns HTML or invalid JSON.
-func responseError(status int, body []byte) error {
-	if status < http.StatusBadRequest {
-		return nil
-	}
-	return sdk.DecodeError(status, bytes.NewReader(body))
 }
 
 func NewClientWithConfig(config *sdk.Config) (*Client, error) {

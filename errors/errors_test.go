@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/FlyTOmeLight/server-go/conf"
+	"github.com/FlyTOmeLight/server-go/constants"
 )
 
 func TestWrap(t *testing.T) {
@@ -165,4 +166,68 @@ func TestError(t *testing.T) {
 	require.Equal(t, 400, newErr.Status)
 	newErr.SetStatusCode(345)
 	require.Equal(t, 345400, newErr.StatusCode)
+}
+
+func TestErrorCompletionPolicies(t *testing.T) {
+	for _, test := range []struct {
+		name, path                                            string
+		auto, console, exempt, immediate, written, statusOnly bool
+		status                                                int
+	}{
+		{name: "queued", path: "/example/api/create", status: 422},
+		{name: "immediate", path: "/example/api/create", immediate: true, status: 422},
+		{name: "auto queued", path: "/example/api/create", auto: true, status: 200},
+		{name: "auto immediate", path: "/example/api/create", auto: true, immediate: true, status: 200},
+		{name: "auto exempt", path: "/example/api/create", auto: true, exempt: true, immediate: true, status: 422},
+		{name: "console", path: "/example/api/create", auto: true, console: true, immediate: true, status: 422},
+		{name: "unmatched", path: "/example/internal/create", auto: true, immediate: true, status: 422},
+		{name: "status without body", path: "/example/api/create", auto: true, statusOnly: true, status: 200},
+		{name: "already streaming", path: "/example/api/create", auto: true, immediate: true, written: true, status: 200},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := &conf.Config{AppName: "example", AppCode: 731, HTTPServer: conf.HTTPServerConfig{
+				AltoHandlerAPIError: test.auto, ConsoleEnable: test.console,
+			}}
+			if test.exempt {
+				config.HTTPServer.AllowAPIPathNoHandlerAPIError = []string{"/example/api/create"}
+			}
+			engine := gin.New()
+			engine.Use(ErrorHandler(config))
+			engine.GET(test.path, func(c *gin.Context) {
+				if test.statusOnly {
+					c.Status(200)
+				}
+				if test.written {
+					c.String(200, "event:message\n\n")
+				}
+				err := NewError(422, "InvalidInput", "invalid input")
+				if test.immediate {
+					AbortWithError(c, err)
+				} else {
+					_ = c.Error(err)
+				}
+			})
+			request := httptest.NewRequest(http.MethodGet, test.path, nil)
+			request.Header.Set(constants.HeaderRequestID, "request-123")
+			writer := httptest.NewRecorder()
+			engine.ServeHTTP(writer, request)
+			if writer.Code != test.status {
+				t.Fatalf("status=%d body=%s", writer.Code, writer.Body)
+			}
+			if test.written {
+				if writer.Body.String() != "event:message\n\n" {
+					t.Fatal("error appended to stream")
+				}
+				return
+			}
+			var result Error
+			if err := json.Unmarshal(writer.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Code != "InvalidInput" || result.StatusCode != 731422 ||
+				result.RequestID != "request-123" {
+				t.Fatalf("error contract: %#v", result)
+			}
+		})
+	}
 }

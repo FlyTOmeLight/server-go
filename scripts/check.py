@@ -304,6 +304,7 @@ def main():
         for module in [ROOT, *EXAMPLES]:
             check_module(module)
         run('go', 'test', '-count=1', '-race', './app', '.', './host', './middleware', './console', './errors', './pkg',
+            './cli', './sdk', './internalsdk',
             './stream', './cron', './pkg/binder', './pkg/election', './examples/streaming-service/...', './examples/postgresql-service/...')
         run('go', 'test', '-count=1', '-race', './service', './sdk/go/...', cwd=EXAMPLES[0])
         run(sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts', '-p', 'test_*.py')

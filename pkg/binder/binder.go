@@ -11,6 +11,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/FlyTOmeLight/server-go/errors"
+	"github.com/FlyTOmeLight/server-go/internal/httpbody"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
@@ -118,17 +119,8 @@ func (b *HTTPBinder) JSON() *HTTPBinder {
 }
 
 func (b *HTTPBinder) decodeJSON() error {
-	b.context.Request.Body = http.MaxBytesReader(b.context.Writer, b.context.Request.Body, MaxJSONBytes)
-	err := decodeJSON(b.context.Request, b.req)
-	var oversized *http.MaxBytesError
-	if stderrors.As(err, &oversized) {
-		err = errors.NewError(
-			http.StatusRequestEntityTooLarge,
-			"PayloadTooLarge",
-			"JSON body exceeds size limit",
-		)
-	}
-	return err
+	httpbody.BoundJSON(b.context)
+	return httpbody.ReadError(decodeJSON(b.context.Request, b.req))
 }
 
 func Bind(c *core.Context, req any) *HTTPBinder {
@@ -192,7 +184,7 @@ func translate(tag string) string {
 }
 
 // MaxJSONBytes bounds JSON input consistently across HTTP services.
-const MaxJSONBytes = 1 << 20
+const MaxJSONBytes = httpbody.MaxJSONBytes
 
 func decodeJSON(r *http.Request, dst any) error {
 	decoder := json.NewDecoder(r.Body)

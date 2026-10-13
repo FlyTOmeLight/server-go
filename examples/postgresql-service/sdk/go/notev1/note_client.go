@@ -1,7 +1,6 @@
 package notev1
 
 import (
-	"bytes"
 	"context"
 	"net/url"
 	"strconv"
@@ -26,11 +25,8 @@ func (c *Client) CreateNote(ctx context.Context, req *CreateNoteRequest) (*Note,
 	}
 	var note Note
 	result, err := c.R().SetContext(ctx).SetBody(req).SetResult(&note).Post("/v1/notes")
-	if err != nil {
+	if err := sdk.Complete(result, err); err != nil {
 		return nil, err
-	}
-	if result.IsStatusFailure() {
-		return nil, sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return &note, nil
 }
@@ -41,11 +37,8 @@ func (c *Client) GetNote(ctx context.Context, req *GetNoteRequest) (*Note, error
 	}
 	var note Note
 	result, err := c.R().SetContext(ctx).SetResult(&note).Get("/v1/notes/" + url.PathEscape(req.ID))
-	if err != nil {
+	if err := sdk.Complete(result, err); err != nil {
 		return nil, err
-	}
-	if result.IsStatusFailure() {
-		return nil, sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return &note, nil
 }
@@ -56,11 +49,8 @@ func (c *Client) UpdateNote(ctx context.Context, req *UpdateNoteRequest) (*Note,
 	}
 	var note Note
 	result, err := c.R().SetContext(ctx).SetBody(req).SetResult(&note).Put("/v1/notes/" + url.PathEscape(req.ID))
-	if err != nil {
+	if err := sdk.Complete(result, err); err != nil {
 		return nil, err
-	}
-	if result.IsStatusFailure() {
-		return nil, sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return &note, nil
 }
@@ -70,11 +60,8 @@ func (c *Client) DeleteNote(ctx context.Context, req *DeleteNoteRequest) error {
 		return serrors.ErrorInvalidHTTPRequest
 	}
 	result, err := c.R().SetContext(ctx).Delete("/v1/notes/" + url.PathEscape(req.ID))
-	if err != nil {
+	if err := sdk.Complete(result, err); err != nil {
 		return err
-	}
-	if result.IsStatusFailure() {
-		return sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return nil
 }
@@ -92,11 +79,8 @@ func (c *Client) ListNotes(ctx context.Context, req *ListNotesRequest) (*ListNot
 	}
 	var notes ListNotesResponse
 	result, err := c.R().SetContext(ctx).SetQueryParams(query).SetResult(&notes).Get("/v1/notes")
-	if err != nil {
+	if err := sdk.Complete(result, err); err != nil {
 		return nil, err
-	}
-	if result.IsStatusFailure() {
-		return nil, sdk.DecodeError(result.StatusCode(), bytes.NewReader(result.Bytes()))
 	}
 	return &notes, nil
 }

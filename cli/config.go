@@ -3,11 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
-	"os"
-	"strings"
 
-	"github.com/fsnotify/fsnotify"
-	"github.com/gookit/goutil/fsutil"
 	"github.com/spf13/viper"
 
 	"github.com/FlyTOmeLight/server-go/logger"
@@ -37,16 +33,21 @@ func SetConfig() error {
 		return ErrEndpointNotFound
 	}
 
-	setLog()
-	client, err := newClient()
+	setLog(viper.GetViper())
+	client, err := newClient(viper.GetViper())
 	if err != nil {
 		return err
+	}
+	if Config.Client != nil {
+		if err := Config.Client.Close(); err != nil {
+			return errors.Join(err, client.Close())
+		}
 	}
 	Config.Client = client
 	return nil
 }
 
-func setLog() {
+func logConfig(config *viper.Viper) *logger.Config {
 	defaultConfig := &logger.Config{
 		Outputs: []logger.Output{
 			{
@@ -71,8 +72,8 @@ func setLog() {
 			},
 		},
 	}
-	if viper.IsSet("log.handler") {
-		str := viper.GetString("log.handler")
+	if config.IsSet("log.handler") {
+		str := config.GetString("log.handler")
 		outputs := []logger.Output{}
 		switch str {
 		case "NONE":
@@ -99,19 +100,23 @@ func setLog() {
 		defaultConfig.Outputs = outputs
 	}
 
-	if err := logger.SetDefaultConfig(defaultConfig); err != nil {
+	return defaultConfig
+}
+
+func setLog(config *viper.Viper) {
+	if err := logger.SetDefaultConfig(logConfig(config)); err != nil {
 		logger.Errorf(context.Background(), "CommandLogConfigError: %v", err)
 	}
 }
 
-func newClient() (*sdk.Client, error) {
+func newClient(config *viper.Viper) (*sdk.Client, error) {
 	configuration := sdk.Config{
-		Endpoint: viper.GetString("core.endpoint"),
+		Endpoint: config.GetString("core.endpoint"),
 		Timeout:  30,
 	}
 
-	ak := viper.GetString("core.access_key")
-	sk := viper.GetString("core.secret_key")
+	ak := config.GetString("core.access_key")
+	sk := config.GetString("core.secret_key")
 	if ak != "" || sk != "" {
 		configuration.Credentials = &sdk.Credentials{
 			AuthType:        sdk.AuthTypeAKSK,
@@ -120,7 +125,7 @@ func newClient() (*sdk.Client, error) {
 		}
 	}
 
-	apiKey := viper.GetString("core.api_key")
+	apiKey := config.GetString("core.api_key")
 	if apiKey != "" {
 		if ak != "" || sk != "" {
 			return nil, errors.New("CLI config must select one authentication mode")
@@ -131,50 +136,15 @@ func newClient() (*sdk.Client, error) {
 		}
 	}
 
-	if viper.IsSet("core.timeout") {
-		timeout := viper.GetInt("core.timeout")
+	if config.IsSet("core.timeout") {
+		timeout := config.GetInt("core.timeout")
 		configuration.Timeout = timeout
 	}
 
-	if viper.IsSet("core.retry") {
-		retry := viper.GetInt("core.retry")
+	if config.IsSet("core.retry") {
+		retry := config.GetInt("core.retry")
 		configuration.Retry = retry
 	}
 
 	return sdk.NewClientWithConfig(&configuration)
-}
-
-func initConfig(name string) {
-	if ConfigName == "" {
-		ConfigName = name
-	}
-	if ConfigFilePath == "" {
-		ConfigFilePath = os.Getenv("HOME") + "/." + strings.ToLower(ConfigName) + "/config.yaml"
-	}
-	if ConfigEnvPrefix == "" {
-		ConfigEnvPrefix = strings.ToUpper(ConfigName)
-	}
-
-	if !fsutil.FileExists(ConfigFilePath) {
-		_, err := fsutil.CreateFile(ConfigFilePath, os.ModePerm, os.ModePerm)
-		if err != nil {
-			logger.Errorf(context.Background(), "CommandConfigInitError create file: %v", err)
-			return
-		}
-	}
-
-	viper.SetEnvPrefix(ConfigEnvPrefix)
-	viper.SetConfigFile(ConfigFilePath)
-	viper.SetConfigType("yaml")
-
-	err := viper.ReadInConfig()
-	if err != nil {
-		logger.Errorf(context.Background(), "CommandConfigInitError read in: %v", err)
-		return
-	}
-
-	viper.WatchConfig()
-	viper.OnConfigChange(func(e fsnotify.Event) {
-		logger.Infof(context.Background(), "CommandConfigChanged: %s", e.Name)
-	})
 }
