@@ -3,7 +3,6 @@ package greetingv1
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	serrors "github.com/FlyTOmeLight/server-go/errors"
+	"github.com/FlyTOmeLight/server-go/sdk"
 )
 
 type Client struct {
@@ -48,16 +47,7 @@ func (c *Client) Open(ctx context.Context, name string) (io.ReadCloser, error) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
-		var detail serrors.Error
-		if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil || detail.Code == "" {
-			return nil, serrors.NewError(
-				resp.StatusCode,
-				"UnexpectedResponse",
-				http.StatusText(resp.StatusCode),
-			)
-		}
-		detail.Status = resp.StatusCode
-		return nil, &detail
+		return nil, sdk.DecodeError(resp.StatusCode, resp.Body)
 	}
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if mediaType != "text/event-stream" {

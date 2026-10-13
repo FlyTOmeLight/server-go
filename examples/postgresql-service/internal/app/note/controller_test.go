@@ -9,14 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/FlyTOmeLight/server-go/conf"
-	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/examples/postgresql-service/internal/table"
 )
 
 func TestInvalidRequestsStopBeforeStorage(t *testing.T) {
 	router := gin.New()
-	router.Use(serrors.ErrorHandler(&conf.Config{}))
 	NewController(New(table.New(nil))).RegisterRoutes(router.Group(""))
 	for _, test := range []struct{ name, method, path, body string }{
 		{name: "missing name", method: http.MethodPost, path: "/v1/notes", body: `{}`},

@@ -25,3 +25,11 @@ package: build
 	cp conf/server/config.toml $(OUTDIR)/conf/server/
 clean:
 	rm -rf $(OUTDIR)
+
+.PHONY: doc install-doc
+install-doc:
+	$(MAKE) -C ../example-hello-world install-doc
+doc:
+	$(MAKE) -C ../example-hello-world doc
+	$(MAKE) -C ../example-service1 doc
+	$(MAKE) -C ../example-service2 doc

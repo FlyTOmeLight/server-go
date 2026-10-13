@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/FlyTOmeLight/server-go/db"
@@ -20,7 +21,11 @@ type ExampleService struct {
 
 var _ host.Service = (*ExampleService)(nil)
 
+// NewExampleService borrows the database; the application owns its cleanup.
 func NewExampleService(ctx context.Context, database *db.DB, autoMigrate bool) (*ExampleService, error) {
+	if database == nil {
+		return nil, errors.New("dataset service requires a database")
+	}
 	store := table.New(database)
 	if autoMigrate {
 		if err := store.AutoMigrate(ctx); err != nil {

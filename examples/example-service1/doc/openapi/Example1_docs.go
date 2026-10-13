@@ -18,19 +18,38 @@ const docTemplateExample1 = `{
     "paths": {
         "/v1/projects/{projectName}/datasets": {
             "get": {
-                "description": "List datasets",
+                "description": "按项目分页查询；filter 对数据集本地名称和描述进行包含匹配。0 值页码按 1 处理，0 值页大小按 20 处理。",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "dataset"
                 ],
-                "summary": "List datasets",
+                "summary": "查询数据集列表",
                 "parameters": [
                     {
-                        "maxLength": 100,
+                        "maxLength": 64,
                         "type": "string",
-                        "name": "filter",
+                        "description": "项目名称",
+                        "name": "projectName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "pageNo",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 200,
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数",
+                        "name": "pageSize",
                         "in": "query"
                     },
                     {
@@ -40,77 +59,47 @@ const docTemplateExample1 = `{
                         ],
                         "type": "string",
                         "default": "desc",
-                        "description": "排序规则: asc: 升序, desc: 倒序, 默认倒序\n\nExample: desc",
+                        "description": "排序方向",
                         "name": "order",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "排序依据\n\nExample: name",
+                        "description": "排序字段；省略时使用 created_at，字段名不能包含空格",
                         "name": "orderBy",
                         "in": "query"
                     },
                     {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "example": [
-                            "[{create_ad:desc}",
-                            "{id:asc}]"
-                        ],
-                        "description": "mongo 排序规则\n\nExample: []string{ \"{order: desc}\", \"{id:asc}\" }",
-                        "name": "orders",
-                        "in": "query"
-                    },
-                    {
-                        "minimum": 0,
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码\n\nExample: 1",
-                        "name": "pageNo",
-                        "in": "query"
-                    },
-                    {
-                        "maximum": 200,
-                        "minimum": 0,
-                        "type": "integer",
-                        "default": 20,
-                        "description": "每页的大小\n\nExample: 10",
-                        "name": "pageSize",
-                        "in": "query"
-                    },
-                    {
+                        "maxLength": 100,
                         "type": "string",
-                        "description": "Project Local Name",
-                        "name": "projectName",
-                        "in": "path",
-                        "required": true
+                        "description": "本地名称或描述的包含匹配",
+                        "name": "filter",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "总数和当前页结果",
                         "schema": {
                             "$ref": "#/definitions/trainv1.ListDatasetResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "参数无效",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
             },
             "post": {
-                "description": "Create a dataset",
+                "description": "在指定项目下创建数据集。省略 fileFormat 时使用 File；成功返回数据集对象。clientToken 仅在已有鉴权身份时启用进程内幂等。",
                 "consumes": [
                     "application/json"
                 ],
@@ -120,42 +109,73 @@ const docTemplateExample1 = `{
                 "tags": [
                     "dataset"
                 ],
-                "summary": "Create a dataset",
+                "summary": "创建数据集",
                 "parameters": [
                     {
-                        "description": "Request",
+                        "maxLength": 64,
+                        "type": "string",
+                        "description": "项目名称",
+                        "name": "projectName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "可选幂等令牌，同一身份和操作下重复提交须保持请求一致",
+                        "name": "clientToken",
+                        "in": "query"
+                    },
+                    {
+                        "description": "创建参数，projectName 来自路径",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/trainv1.CreateDatasetRequest"
                         }
-                    },
-                    {
-                        "type": "string",
-                        "description": "Project Local Name",
-                        "name": "projectName",
-                        "in": "path",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "数据集",
                         "schema": {
-                            "$ref": "#/definitions/trainv1.Dataset"
+                            "$ref": "#/definitions/trainv1.CreateDatasetResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "参数无效或请求体读取失败",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "408": {
+                        "description": "等待幂等请求时取消或超时",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "数据库唯一约束冲突或幂等令牌对应的请求不同",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "413": {
+                        "description": "JSON 正文超过 1 MiB",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "幂等处理不可用",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
@@ -163,25 +183,28 @@ const docTemplateExample1 = `{
         },
         "/v1/projects/{projectName}/datasets/{localName}": {
             "get": {
-                "description": "Get a dataset",
+                "description": "按项目名称和数据集本地名称查询数据集。",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "dataset"
                 ],
-                "summary": "Get a dataset with latest artifact",
+                "summary": "查询数据集",
                 "parameters": [
                     {
+                        "maxLength": 64,
                         "type": "string",
-                        "description": "Project Local Name",
+                        "description": "项目名称",
                         "name": "projectName",
                         "in": "path",
                         "required": true
                     },
                     {
+                        "maxLength": 36,
+                        "minLength": 1,
                         "type": "string",
-                        "description": "Dataset Local Name",
+                        "description": "数据集本地名称：首尾为ASCII字母或数字，中间可含下划线和连字符",
                         "name": "localName",
                         "in": "path",
                         "required": true
@@ -189,97 +212,117 @@ const docTemplateExample1 = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "数据集",
                         "schema": {
                             "$ref": "#/definitions/trainv1.GetDatasetResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "参数无效",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "数据集不存在",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
             },
             "put": {
-                "description": "Update a dataset",
+                "description": "仅修改 description。省略该字段或传入 null 时保留原描述；成功返回空正文。未匹配到记录时也返回成功。",
                 "consumes": [
+                    "application/json"
+                ],
+                "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "dataset"
                 ],
-                "summary": "Update a dataset",
+                "summary": "修改数据集描述",
                 "parameters": [
                     {
-                        "description": "Request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/trainv1.UpdateDatasetRequest"
-                        }
-                    },
-                    {
+                        "maxLength": 64,
                         "type": "string",
-                        "description": "Project Local Name",
+                        "description": "项目名称",
                         "name": "projectName",
                         "in": "path",
                         "required": true
                     },
                     {
+                        "maxLength": 36,
+                        "minLength": 1,
                         "type": "string",
-                        "description": "Dataset Local Name",
+                        "description": "数据集本地名称：首尾为ASCII字母或数字，中间可含下划线和连字符",
                         "name": "localName",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "更新参数，项目和本地名称来自路径；无正文时保留原描述",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/trainv1.UpdateDatasetRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "成功，空正文"
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "参数无效或请求体读取失败",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
+                        }
+                    },
+                    "413": {
+                        "description": "JSON 正文超过 1 MiB",
+                        "schema": {
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
             },
             "delete": {
-                "description": "Delete a dataset",
-                "consumes": [
+                "description": "按项目和本地名称软删除数据集，成功返回空正文。未匹配到记录时也返回成功。",
+                "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "dataset"
                 ],
-                "summary": "Delete a dataset, and it's all artifact",
+                "summary": "删除数据集",
                 "parameters": [
                     {
+                        "maxLength": 64,
                         "type": "string",
-                        "description": "Project Local Name",
+                        "description": "项目名称",
                         "name": "projectName",
                         "in": "path",
                         "required": true
                     },
                     {
+                        "maxLength": 36,
+                        "minLength": 1,
                         "type": "string",
-                        "description": "Dataset Local Name",
+                        "description": "数据集本地名称：首尾为ASCII字母或数字，中间可含下划线和连字符",
                         "name": "localName",
                         "in": "path",
                         "required": true
@@ -287,18 +330,18 @@ const docTemplateExample1 = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "成功，空正文"
                     },
                     "400": {
-                        "description": "Invalid Params",
+                        "description": "参数无效",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
                         }
                     },
                     "500": {
-                        "description": "Internal Error",
+                        "description": "内部错误",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/errors.Error"
                         }
                     }
                 }
@@ -306,10 +349,30 @@ const docTemplateExample1 = `{
         }
     },
     "definitions": {
+        "errors.Error": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Code 错误码",
+                    "type": "string"
+                },
+                "message": {
+                    "description": "Message 详细错误信息",
+                    "type": "string"
+                },
+                "requestId": {
+                    "description": "RequestID 请求id，接收到请求的时候由中间件自动注入",
+                    "type": "string"
+                },
+                "statusCode": {
+                    "description": "StatusCode 状态码，推荐6位数字",
+                    "type": "integer"
+                }
+            }
+        },
         "trainv1.CreateDatasetRequest": {
             "type": "object",
             "required": [
-                "fileFormat",
                 "localName"
             ],
             "properties": {
@@ -333,6 +396,41 @@ const docTemplateExample1 = `{
                     ]
                 },
                 "localName": {
+                    "description": "LocalName contains 1..36 ASCII letters, digits, underscores or hyphens, starting and ending with a letter or digit.",
+                    "type": "string",
+                    "maxLength": 36,
+                    "minLength": 1
+                }
+            }
+        },
+        "trainv1.CreateDatasetResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "fileFormat": {
+                    "type": "string"
+                },
+                "localName": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "projectName": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "updatedAt": {
                     "type": "string"
                 }
             }
@@ -420,7 +518,8 @@ const docTemplateExample1 = `{
             "properties": {
                 "description": {
                     "type": "string",
-                    "maxLength": 255
+                    "maxLength": 255,
+                    "x-nullable": true
                 }
             }
         }

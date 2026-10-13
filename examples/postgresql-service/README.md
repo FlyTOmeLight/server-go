@@ -34,6 +34,8 @@ ID 是 UUID；name 必填且最多 64 字符，description 最多 1024 字符，
 
 原生 SQL 使用 PostgreSQL 语法，框架不会改写字符串里的反引号。默认 `DB.AutoMigrate=true` 便于运行示例，已有 schema 时可关闭该配置。
 
+`make doc` 从 Controller 注释和 SDK 类型生成 `doc/openapi`。Swag 会把用于拒绝显式 null 的 `binding:"required"` 误认为请求字段必须传入；文档生成步骤按 `default` tag 修正默认值字段的必填标记，保留 name 必填和 priority/enabled 不接受 null 的契约。
+
 ```sh
 make package OUTDIR=/tmp/postgresql-example
 cd /tmp/postgresql-example

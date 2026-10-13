@@ -1,0 +1,26 @@
+basePath: /
+definitions:
+  hello.HelloResponse:
+    properties:
+      message:
+        example: hello from service2
+        type: string
+    type: object
+info:
+  contact: {}
+  title: Example Service 2 API
+  version: "1.0"
+paths:
+  /service2/hello:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/hello.HelloResponse'
+      summary: 获取服务问候语
+      tags:
+      - Hello
+swagger: "2.0"

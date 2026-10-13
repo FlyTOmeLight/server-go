@@ -154,9 +154,18 @@ func TestDatasetSDKPagination(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var detail serrors.Error
+			err = json.NewDecoder(response.Body).Decode(&detail)
 			response.Body.Close()
-			if response.StatusCode != 400 {
-				t.Fatalf("invalid request %s %s = %d", test.path, test.body, response.StatusCode)
+			if err != nil || response.StatusCode != 400 || detail.Code != "InvalidParameter" {
+				t.Fatalf(
+					"invalid request %s %s = %d %#v, %v",
+					test.path,
+					test.body,
+					response.StatusCode,
+					detail,
+					err,
+				)
 			}
 		}
 	})

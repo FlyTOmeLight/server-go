@@ -1,7 +1,6 @@
 package dataset
 
 import (
-	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/jinzhu/copier"
 
@@ -25,7 +24,6 @@ func (s *Service) CreateDataset(ctx *core.Context, req *sdk.CreateDatasetRequest
 
 	err := s.store.CreateDataset(ctx.Request.Context(), data)
 	if err != nil {
-		logger.Errorf(ctx, "CreateDatasetError: %v", err)
 		return nil, err
 	}
 
@@ -45,7 +43,6 @@ func (s *Service) ListDataset(ctx *core.Context, req *sdk.ListDatasetRequest) (*
 
 	resp.TotalCount, err = s.store.CountDataset(ctx.Request.Context(), filters)
 	if err != nil {
-		logger.Errorf(ctx, "ListDatasetErrorDBCount: req: %#v, err: %v", req, err)
 		return nil, err
 	}
 	if resp.TotalCount == 0 {
@@ -54,7 +51,6 @@ func (s *Service) ListDataset(ctx *core.Context, req *sdk.ListDatasetRequest) (*
 
 	data, listErr := s.store.ListDataset(ctx.Request.Context(), filters, req.PagingRequest)
 	if listErr != nil {
-		logger.Errorf(ctx, "ListDatasetErrorDBQuery: req: %#v, err: %v", req, err)
 		return nil, listErr
 	}
 
@@ -65,7 +61,6 @@ func (s *Service) ListDataset(ctx *core.Context, req *sdk.ListDatasetRequest) (*
 func (s *Service) GetDataset(ctx *core.Context, req *sdk.GetDatasetRequest) (*sdk.GetDatasetResponse, error) {
 	data, err := s.store.GetDataset(ctx.Request.Context(), req.GetName())
 	if err != nil {
-		logger.Errorf(ctx, "GetDatasetErrorDBQuery: req: %#v, err: %v", req, err)
 		return nil, err
 	}
 
@@ -80,7 +75,6 @@ func (s *Service) UpdateDataset(ctx *core.Context, req *sdk.UpdateDatasetRequest
 
 	err := s.store.UpdateDataset(ctx.Request.Context(), &data)
 	if err != nil {
-		logger.Errorf(ctx, "UpdateDatasetErrorDBUpdate: req: %#v, data: %v, err: %v", req, data, err)
 		return err
 	}
 
@@ -90,7 +84,6 @@ func (s *Service) UpdateDataset(ctx *core.Context, req *sdk.UpdateDatasetRequest
 func (s *Service) DeleteDataset(ctx *core.Context, req *sdk.DeleteDatasetRequest) error {
 	err := s.store.DeleteDataset(ctx.Request.Context(), req.GetName())
 	if err != nil {
-		logger.Errorf(ctx, "DeleteDatasetErrorDBDelete: req: %#v, err: %v", req, err)
 		return err
 	}
 

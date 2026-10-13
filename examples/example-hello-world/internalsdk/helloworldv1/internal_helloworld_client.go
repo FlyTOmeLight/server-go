@@ -2,9 +2,11 @@ package helloworldv1
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/FlyTOmeLight/server-go/internalsdk"
 	core "github.com/FlyTOmeLight/server-go/pkg"
+	"github.com/FlyTOmeLight/server-go/sdk"
 	"resty.dev/v3"
 
 	"github.com/FlyTOmeLight/server-go/examples/example-hello-world/sdk/go/helloworldv1"
@@ -21,12 +23,12 @@ func Wrap(c *Client, ctx *core.Context) *resty.Request {
 	return internalsdk.Wrap(c.internal, ctx)
 }
 
-func NewClient(ak, sk, endpoint string) (*Client, error) {
-	c, err := internalsdk.NewInternalClient(ak, sk, endpoint+"/helloworld/internal")
-	if err != nil {
-		return nil, err
-	}
-	return &Client{Client: &helloworldv1.Client{Client: c.Client}, internal: c}, nil
+// NewClient creates an unauthenticated internal client with the default timeout.
+// Use NewClientWithConfig for API keys and request impersonation.
+func NewClient(endpoint string) (*Client, error) {
+	return NewClientWithConfig(&internalsdk.InternalClientConfig{
+		Config: &sdk.Config{Endpoint: endpoint, Timeout: 30},
+	})
 }
 
 func NewClientWithConfig(config *internalsdk.InternalClientConfig) (*Client, error) {
@@ -35,7 +37,7 @@ func NewClientWithConfig(config *internalsdk.InternalClientConfig) (*Client, err
 	}
 	copied := *config
 	base := *config.Config
-	base.Endpoint += "/helloworld/internal"
+	base.Endpoint = strings.TrimRight(base.Endpoint, "/") + "/helloworld/internal"
 	copied.Config = &base
 	c, err := internalsdk.NewInternalClientWithConfig(&copied)
 	if err != nil {

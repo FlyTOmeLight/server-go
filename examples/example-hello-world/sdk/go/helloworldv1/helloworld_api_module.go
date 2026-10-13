@@ -49,7 +49,7 @@ type GetModuleResponse = Module
 type UpdateModuleRequest struct {
 	ModuleID
 
-	Description *string `json:"description" binding:"omitempty,max=200" example:"this is a description"` // 描述
+	Description *string `json:"description" binding:"omitempty,max=200" example:"this is a description" extensions:"x-nullable"` // 描述
 }
 
 type DeleteModuleRequest = ModuleID

@@ -23,3 +23,12 @@ package: build
 	cp conf/server/config.toml $(OUTDIR)/conf/server/
 clean:
 	rm -rf $(OUTDIR)
+
+SWAG := $(shell $(GO) env GOPATH)/bin/swag
+FRAMEWORK_DIR := $(shell $(GO) list -m -f '{{.Dir}}' github.com/FlyTOmeLight/server-go)
+
+.PHONY: doc install-doc
+install-doc:
+	$(GO) install github.com/swaggo/swag/cmd/swag@v1.8.4
+doc:
+	$(SWAG) init -d internal/app/greeting,$(FRAMEWORK_DIR)/errors -g controller.go --instanceName=Streaming --parseInternal --outputTypes json,yaml -o doc/openapi
