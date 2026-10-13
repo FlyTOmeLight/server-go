@@ -84,10 +84,11 @@ def run(*args, cwd=ROOT, capture=False):
 
 
 def check_module(directory):
+    # Compile through the required tests before gorgeous's bounded package load.
+    run('go', 'test', '-count=1', './...', cwd=directory)
     diff = run('gorgeous', '-d', './...', cwd=directory, capture=True)
     if diff.strip():
         raise RuntimeError(f'Formatting differs in {directory}:\n{diff}')
-    run('go', 'test', '-count=1', './...', cwd=directory)
     run('go', 'vet', './...', cwd=directory)
 
 
