@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.3.0
+go get github.com/FlyTOmeLight/server-go@v0.3.1
 go mod tidy
 go run .
 ```
@@ -58,6 +58,19 @@ go build ./cmd/server ./cmd/cli
 ```
 
 生成器使用 HelloWorld 模板及发布版框架。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+
+## 通用 HTTP 行为（v0.3.1）
+
+HTTPHost 默认安装请求 ID、请求日志、Recovery 和标准错误处理，并统一返回 404/405。日志记录方法、路由模板、状态与耗时；Recovery 在响应提交后不追加 JSON，适用于 SSE。
+
+- `binder.Bind(c, req).JSON()` 与 `binder.BindJSON(c, req)`：只接受一个 JSON 文档，拒绝未知字段，限制请求体为 1 MiB，并运行 Gin 校验。非法参数返回 400，超限返回 413。
+- `binder.QueryLimit(c, defaultLimit, maximum)`：解析正整数分页大小；默认值和上限由业务声明。
+- `auth.ParseBearerTokens(raw)`：解析 token 到用户 ID 的 JSON 配置，要求非空、token 至少 24 字符、用户 ID 非空；`auth.BearerTokens(tokens)` 安装静态凭据鉴权，`auth.UserID(c)` 读取身份。
+- `errors.Abort` / `errors.AbortWithError`：输出现有平铺错误契约；业务只负责领域错误映射。
+- `stream.NewSSE(writer, writeTimeout)`：管理 SSE 响应头和每次写入期限；`SendWithID(id, event, data)` 发送带游标的事件，`Heartbeat()` 发送心跳。事件来源与回放规则由业务实现。
+- `sdk.DecodeError(status, body)`：读取框架错误，保留 `Code`、`Message`、`RequestID` 和 `StatusCode`，`Status` 始终保存实际 HTTP 状态。非 JSON 失败仍返回可检查的 HTTP 错误。
+
+Bearer 凭据、严格 JSON 绑定、分页解析、HTTP 中间件和 SDK 错误解码从 v0.3.1 开始提供；SSE 从 v0.3.0 开始提供。正式消费使用发布版本，本地联合开发可使用 Go workspace。
 
 ## 目录约定
 
@@ -92,6 +105,10 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.3.1
+
+HTTPHost 统一安装请求日志和 Recovery，返回标准 404/405；响应已提交后不追加错误 JSON。新增静态 Bearer 凭据与身份读取、严格单文档 JSON 绑定（1 MiB 上限）、分页大小解析及 SDK 标准错误解码。`HTTPBinder.JSON()` 现在拒绝未知字段和连续 JSON 文档，使用该接口的服务需确认请求符合约定。详见上方通用 HTTP 行为。
 
 ## v0.3.0
 

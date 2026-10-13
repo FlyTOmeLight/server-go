@@ -1,6 +1,12 @@
 package binder
 
 import (
+	"encoding/json"
+	stderrors "errors"
+	"io"
+	"net/http"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
@@ -22,7 +28,7 @@ func (b *HTTPBinder) Error() error {
 }
 
 func (b *HTTPBinder) All() *HTTPBinder {
-	if b.context.Request.ContentLength > 0 {
+	if b.context.Request.ContentLength != 0 {
 		switch b.context.ContentType() {
 		case binding.MIMEMultipartPOSTForm:
 			b.MultiForm()
@@ -76,7 +82,16 @@ func (b *HTTPBinder) Query() *HTTPBinder {
 }
 
 func (b *HTTPBinder) JSON() *HTTPBinder {
-	err := b.context.ShouldBindJSON(b.req)
+	b.context.Request.Body = http.MaxBytesReader(b.context.Writer, b.context.Request.Body, MaxJSONBytes)
+	err := b.context.ShouldBindWith(b.req, strictJSONBinding{})
+	var oversized *http.MaxBytesError
+	if stderrors.As(err, &oversized) {
+		err = errors.NewError(
+			http.StatusRequestEntityTooLarge,
+			"PayloadTooLarge",
+			"JSON body exceeds size limit",
+		)
+	}
 	if err != nil {
 		b.errs = append(b.errs, err)
 	}
@@ -96,6 +111,12 @@ func combineErrors(errs []error) error {
 		return nil
 	}
 
+	for _, err := range errs {
+		var detail *errors.Error
+		if stderrors.As(err, &detail) {
+			return detail
+		}
+	}
 	messageSet := make(map[string]struct{})
 	for _, err := range errs {
 		if err == nil {
@@ -135,4 +156,45 @@ func translate(tag string) string {
 		tagLocalname: tagLocalname + " should match regular expression " + LocalnamePattern,
 		tagOrderby:   tagOrderby + " contains invalid character",
 	}[tag]
+}
+
+// MaxJSONBytes bounds JSON input consistently across HTTP services.
+const MaxJSONBytes = 1 << 20
+
+type strictJSONBinding struct{}
+
+func (strictJSONBinding) Name() string { return "json" }
+
+func (strictJSONBinding) Bind(r *http.Request, dst any) error {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return stderrors.New("expected one JSON document")
+	}
+	return binding.Validator.ValidateStruct(dst)
+}
+
+// BindJSON binds one bounded JSON object and writes a framework error on failure.
+func BindJSON(c *gin.Context, dst any) bool {
+	if err := Bind(c, dst).JSON().Error(); err != nil {
+		errors.AbortWithError(c, err)
+		return false
+	}
+	return true
+}
+
+// QueryLimit reads a positive query limit using the caller's pagination policy.
+func QueryLimit(c *gin.Context, fallback, maximum int) (int, bool) {
+	value, err := strconv.Atoi(c.DefaultQuery("limit", strconv.Itoa(fallback)))
+	if err != nil || value < 1 || value > maximum {
+		errors.AbortWithError(c, errors.NewInvalidParameter("invalid page size"))
+		return 0, false
+	}
+	return value, true
 }

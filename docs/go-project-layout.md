@@ -95,6 +95,12 @@ SDK 方法的路径、HTTP 方法、请求编码、响应结构与 Controller、
 7. 配置、DB、Redis、MongoDB、幂等和订阅集合均由实例拥有。配置使用 `manager.Snapshot().UnmarshalKey`；DB 和客户端显式传给业务对象。可选 HTTP 集成通过 `httpintegration.Install` 或自己的 setup 安装。配置动态更新范围见 [conf/README.md](../conf/README.md)。
 8. 后台任务持有明确的取消函数和等待手段。只有确实需要独立部署时才增加 `cmd/worker`，不把独立 worker 入口作为所有新项目的必备目录。
 
+## 通用 HTTP 能力归属
+
+HTTPHost 负责请求 ID、请求日志、Recovery、404/405 和标准错误响应。业务 Controller 复用 `pkg/binder` 的严格 JSON 绑定和分页参数解析，通过 `errors.AbortWithError` 返回框架错误；业务只保留领域错误与 HTTP 状态的映射。静态服务凭据复用 `auth.ParseBearerTokens`、`auth.BearerTokens` 和 `auth.UserID`，项目权限与资源归属校验留在业务层。无需在每个服务复制 HTTP 工具包或相同中间件。
+
+SDK 使用 `sdk.DecodeError` 解析框架错误，向调用方保留 `errors.Error`；`Status` 表示 HTTP 状态，`StatusCode` 表示框架错误编号，不能混用。新增能力的发布边界见 README。
+
 ## 项目契约与公共边界
 
 路由风格、业务枚举、数据库字段和外部系统由项目契约决定。分层职责、context 传递和 worker 退出管理遵循本约定。新项目使用显式依赖注入，按领域分配装配职责和共享代码归属。

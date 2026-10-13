@@ -369,6 +369,10 @@ func (w *statusCodeWriter) Status() int {
 func (w *statusCodeWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func AbortWithError(c *gin.Context, err error) {
+	if c.Writer.Written() {
+		c.Abort()
+		return
+	}
 	logger.Errorf(c, "API Error: %+v", err)
 	wrong := normalize(err, c.GetBool("server.Debug"))
 	wrong.RequestID = c.GetHeader(constants.HeaderRequestID)
@@ -382,4 +386,9 @@ func NewResourceIsExists(message string) error {
 		Code:    "ResourceIsExists",
 		Message: message,
 	}
+}
+
+// Abort sends a named HTTP failure using the framework error contract.
+func Abort(c *gin.Context, status int, code, message string) {
+	AbortWithError(c, NewError(status, code, message))
 }

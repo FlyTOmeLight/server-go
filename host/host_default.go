@@ -71,14 +71,19 @@ func NewHTTPHost(manager *conf.Manager, log *logger.Logger, setup Setup, service
 
 func (h *HTTPHost) buildRouter(config *conf.Config) (*gin.Engine, error) {
 	engine := gin.New()
+	_ = engine.SetTrustedProxies(nil)
+	engine.HandleMethodNotAllowed = true
 	engine.ContextWithFallback = true
 	engine.Use(func(c *gin.Context) {
 		c.Request = c.Request.WithContext(logger.WithContext(c.Request.Context(), h.log))
 		c.Set("server.AppCode", config.AppCode)
 		c.Set("server.Debug", config.RunMode == conf.RunModeDebug)
 		c.Next()
-	}, middleware.RequestID(), gin.Recovery(), serrors.ErrorHandler(config))
+	}, middleware.RequestID(), middleware.RequestLog(), middleware.Recovery(), serrors.ErrorHandler(config))
 	engine.NoRoute(middleware.APINotFound())
+	engine.NoMethod(func(c *gin.Context) {
+		serrors.Abort(c, http.StatusMethodNotAllowed, "MethodNotAllowed", "method not allowed")
+	})
 	engine.GET("/ping", middleware.Ping())
 	engine.GET("/healthz", middleware.Healthz(h.ready.Load))
 	engine.GET("/version", version.Version())

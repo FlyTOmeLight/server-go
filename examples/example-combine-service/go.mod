@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.5
 
 require (
-	github.com/FlyTOmeLight/server-go v0.3.0
+	github.com/FlyTOmeLight/server-go v0.3.1
 	github.com/FlyTOmeLight/server-go/examples/example-service1 v0.0.0
 	github.com/FlyTOmeLight/server-go/examples/example-service2 v0.0.0
 )
@@ -126,7 +126,7 @@ require (
 	resty.dev/v3 v3.0.0-beta.4 // indirect
 )
 
-replace github.com/FlyTOmeLight/server-go v0.3.0 => ../..
+replace github.com/FlyTOmeLight/server-go v0.3.1 => ../..
 
 replace github.com/FlyTOmeLight/server-go/examples/example-service1 v0.0.0 => ../example-service1
 
