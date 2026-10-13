@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.6.0
+go get github.com/FlyTOmeLight/server-go@v0.7.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.6.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.7.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -133,11 +133,11 @@ HTTPHost 默认安装请求 ID、请求日志、Recovery 和标准错误处理�
 
 Bearer 凭据、严格 JSON 绑定、分页解析、HTTP 中间件和 SDK 错误解码从 v0.3.1 开始提供；SSE 从 v0.3.0 开始提供。正式消费使用发布版本，本地联合开发可使用 Go workspace。
 
-## 当前工作树的请求约定
+## 请求约定（v0.7.0）
 
 SDK 的请求结构体用 `binding` tag 声明必填、长度、范围和枚举，用 `json`、`form`、`uri` 指定参数来源。`binder.All()` 合并正文、query 和 URI 后统一校验，路径字段使用 `json:"-"`。优先复用已有 validator；跨业务通用的校验可加入 `pkg/binder`，数据库存在性、权限等领域规则留在 Service。
 
-Controller 对声明了静态 `default` tag 的请求，在绑定前调用 `defaults.Set(&req)` 并处理错误。客户端显式传入的零值会覆盖默认值；局部更新要保留未传字段，不能直接补默认值。完整示例见 [PostgreSQL 服务](examples/postgresql-service/README.md) 和 [请求约定](docs/go-project-layout.md)。这批请求处理改动将在合入 main 后发布；service1 当前需要本地 `replace` 使用本次 `binder.All` 修复。
+Controller 对声明了静态 `default` tag 的请求，在绑定前调用 `defaults.Set(&req)` 并处理错误。客户端显式传入的零值会覆盖默认值；局部更新要保留未传字段，不能直接补默认值。完整示例见 [PostgreSQL 服务](examples/postgresql-service/README.md) 和 [请求约定](docs/go-project-layout.md)。这批请求处理改动从 v0.7.0 提供；使用新增 URI 必填标签时，框架消费版本至少为 v0.7.0。
 
 ## 发布约定
 
@@ -176,6 +176,12 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.7.0
+
+`binder.All` 合并正文、query 和 URI 后统一校验，支持 SDK 请求的必填路径标签。Controller 在绑定前设置静态默认值；Dataset 创建省略 fileFormat 时使用 File，显式空串或未知枚举返回 400。CLI apply 单独映射路径字段，Swagger 同步请求契约。
+
+新增 PostgreSQL CRUD、分页与 Go SDK 示例，验证真实数据库类型、NULL、默认值、取消和资源关闭。每次修改由 `make check` 和 GitHub Actions 实际运行全部示例及生成项目。
 
 ## v0.5.0
 
