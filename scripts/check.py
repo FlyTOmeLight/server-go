@@ -71,8 +71,15 @@ def postgres_database():
 
 def run(*args, cwd=ROOT, capture=False):
     print(f'[{cwd.name}] {" ".join(map(str, args))}', flush=True)
-    result = subprocess.run(list(map(str, args)), cwd=cwd, env=ENV,
-                            text=True, capture_output=capture, check=True)
+    try:
+        result = subprocess.run(list(map(str, args)), cwd=cwd, env=ENV,
+                                text=True, capture_output=capture, check=True)
+    except subprocess.CalledProcessError as error:
+        if capture:
+            for output in (error.stdout, error.stderr):
+                if output:
+                    print(output, file=sys.stderr, end='')
+        raise
     return result.stdout if capture else None
 
 

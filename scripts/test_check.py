@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 from pathlib import Path
 import subprocess
 import unittest
@@ -8,6 +10,20 @@ SCRIPT = Path(__file__).with_name('check.py')
 spec = importlib.util.spec_from_file_location('check_script', SCRIPT)
 check_script = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check_script)
+
+
+class CommandFailureTest(unittest.TestCase):
+    def test_captured_failure_prints_tool_output_and_keeps_exit_code(self):
+        failure = subprocess.CalledProcessError(2, ['gorgeous'],
+                                               output='formatter details\n', stderr='formatter error\n')
+        diagnostic = io.StringIO()
+        with patch.object(check_script.subprocess, 'run', side_effect=failure), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(diagnostic):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                check_script.run('gorgeous', capture=True)
+        self.assertEqual(raised.exception.returncode, 2)
+        self.assertIn('formatter details', diagnostic.getvalue())
+        self.assertIn('formatter error', diagnostic.getvalue())
 
 
 class PostgreSQLFixtureTest(unittest.TestCase):
