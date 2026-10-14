@@ -83,5 +83,40 @@ class PostgreSQLFixtureTest(unittest.TestCase):
                     pass
 
 
+class MySQLFixtureTest(unittest.TestCase):
+    def test_owned_container_is_removed_on_success_and_failures(self):
+        for failure in (None, 'create', 'start', 'readiness', 'verification'):
+            with self.subTest(failure=failure):
+                removals = []
+
+                def fake_docker(*args, **kwargs):
+                    action = args[0]
+                    if action == 'create':
+                        if failure == 'create':
+                            raise RuntimeError('create failed')
+                        Path(args[args.index('--cidfile') + 1]).write_text('owned-mysql')
+                    if action == 'start' and failure == 'start':
+                        raise RuntimeError('start failed')
+                    if action == 'rm':
+                        removals.append(args[-1])
+                    code = 1 if action == 'exec' and failure == 'readiness' else 0
+                    output = '127.0.0.1:54321\n' if action == 'port' else ''
+                    return subprocess.CompletedProcess(args, code, output, '')
+
+                with patch.object(check_script.shutil, 'which', return_value='/fake/docker'), \
+                        patch.object(check_script, 'docker', side_effect=fake_docker), \
+                        patch.object(check_script.time, 'monotonic', side_effect=[0, 91]):
+                    if failure is None:
+                        with check_script.mysql_database() as dsn:
+                            self.assertIn('@tcp(127.0.0.1:54321)/servergo', dsn)
+                    else:
+                        with self.assertRaises(RuntimeError):
+                            with check_script.mysql_database():
+                                if failure == 'verification':
+                                    raise RuntimeError('verification failed')
+                                self.fail('failed fixture reached verification')
+                self.assertEqual(removals, [] if failure == 'create' else ['owned-mysql'])
+
+
 if __name__ == '__main__':
     unittest.main()

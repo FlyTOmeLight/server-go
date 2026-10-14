@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.9.0
+go get github.com/FlyTOmeLight/server-go@v0.10.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.9.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.10.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -99,6 +99,8 @@ func Build(ctx context.Context, runtime *app.Runtime, cfg *Config) error {
     return runtime.AddService(svc)
 }
 ```
+
+数据库事务使用 [`db.Transaction`](db/README.md)，支持显式隔离级别、只读事务、context 取消及有次数和时间预算的整笔事务重试。
 
 数据库 SQL 日志统一通过框架 logger 输出：普通查询为 Info，超过 200 毫秒的慢查询为 Warn，失败查询为 Error，并遵守日志实例的级别过滤。RequestID 中间件将请求 ID 写入标准请求 context，GORM 日志适配器从每次操作的 context 读取日志实例和 Request ID。初始化与迁移使用应用日志实例。
 
@@ -176,7 +178,7 @@ go install ./cmd/gorgeous
 
 该仓库保留原模块路径，因此通过仓库源码安装。将 `GOBIN`（未设置时为 `$(go env GOPATH)/bin`）加入 `PATH`。
 
-检查覆盖根模块与四个独立示例的格式、测试和 vet、并发路径的竞态检测、所有可运行示例及生成项目的实际启动、HTTP/SDK/CLI 请求与 SIGTERM 退出。PostgreSQL 检查创建独立临时容器，验证真实数据库 CRUD、字段类型、默认值和参数错误；缺少 Docker 时检查失败。生成项目通过临时 `replace` 引用当前工作树。检查结束清理进程、容器和临时文件，不修改现有模块的依赖文件。GitHub Actions 在 push 和 PR 时执行同一条 `make check`。
+检查覆盖根模块与四个独立示例的格式、测试和 vet、并发路径的竞态检测、所有可运行示例及生成项目的实际启动、HTTP/SDK/CLI 请求与 SIGTERM 退出。数据库检查创建独立 PostgreSQL 17 和 MySQL 8.4 临时容器，验证真实双库事务与死锁重试。PostgreSQL 示例检查验证真实数据库 CRUD、字段类型、默认值和参数错误；缺少 Docker 时检查失败。生成项目通过临时 `replace` 引用当前工作树。检查结束清理进程、容器和临时文件，不修改现有模块的依赖文件。GitHub Actions 在 push 和 PR 时执行同一条 `make check`。
 
 单独检查当前模块时仍可使用：
 
@@ -186,6 +188,10 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.10.0
+
+新增 `db.Transaction`，提供显式 SQL 隔离级别与只读选项、context 取消、带次数和时间预算的 PostgreSQL/MySQL 整笔事务重试。嵌套调用拒绝执行，现有 GORM 事务接口保持不变。使用方式及回调边界见 [事务文档](db/README.md)。完整检查新增 MySQL 8.4 隔离数据库与双库真实死锁测试。
 
 ## v0.9.0
 

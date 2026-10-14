@@ -3,7 +3,7 @@ module github.com/FlyTOmeLight/server-go/examples/example-combine-service
 go 1.27.0
 
 require (
-	github.com/FlyTOmeLight/server-go v0.9.0
+	github.com/FlyTOmeLight/server-go v0.10.0
 	github.com/FlyTOmeLight/server-go/examples/example-hello-world v0.0.0
 	github.com/FlyTOmeLight/server-go/examples/example-service1 v0.0.0
 	github.com/FlyTOmeLight/server-go/examples/example-service2 v0.0.0
@@ -134,7 +134,7 @@ require (
 	resty.dev/v3 v3.0.0-rc.4 // indirect
 )
 
-replace github.com/FlyTOmeLight/server-go v0.9.0 => ../..
+replace github.com/FlyTOmeLight/server-go v0.10.0 => ../..
 
 replace github.com/FlyTOmeLight/server-go/examples/example-service1 v0.0.0 => ../example-service1
 
