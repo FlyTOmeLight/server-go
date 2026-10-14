@@ -69,6 +69,47 @@ def postgres_database():
                     raise RuntimeError(f'Failed to clean up PostgreSQL container {container}: {removed.stderr.strip()}')
 
 
+@contextlib.contextmanager
+def mysql_database():
+    """Own one temporary MySQL container for transaction verification."""
+    if shutil.which('docker') is None:
+        raise RuntimeError('Docker is required for MySQL checks; install Docker and start its daemon')
+    docker('info')
+    with tempfile.TemporaryDirectory(prefix='server-go-mysql-') as temporary:
+        cidfile = Path(temporary) / 'container.id'
+        name = 'server-go-mysql-' + uuid.uuid4().hex
+        password = uuid.uuid4().hex
+        try:
+            docker('create', '--cidfile', str(cidfile), '--name', name, '--rm',
+                   '--tmpfs', '/var/lib/mysql', '--publish', '127.0.0.1::3306',
+                   '--env', f'MYSQL_ROOT_PASSWORD={password}',
+                   '--env', 'MYSQL_USER=servergo', '--env', f'MYSQL_PASSWORD={password}',
+                   '--env', 'MYSQL_DATABASE=servergo', 'mysql:8.4', timeout=180)
+            container = cidfile.read_text().strip()
+            docker('start', container)
+            deadline = time.monotonic() + 90
+            while True:
+                # TCP verifies the final server, not the temporary initialization server.
+                ready = docker('exec', container, 'mysql', '--protocol=TCP', '-h', '127.0.0.1',
+                               '-uservergo', f'-p{password}', '-D', 'servergo', '-e', 'SELECT 1',
+                               check=False, timeout=5)
+                if ready.returncode == 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('MySQL did not become ready within 90 seconds')
+                time.sleep(0.1)
+            address = docker('port', container, '3306/tcp').stdout.strip()
+            host, port = address.rsplit(':', 1)
+            if host != '127.0.0.1' or not port.isdecimal():
+                raise RuntimeError(f'Unexpected MySQL port mapping: {address}')
+            yield f'servergo:{password}@tcp(127.0.0.1:{port})/servergo?parseTime=true'
+        finally:
+            if cidfile.exists():
+                removed = docker('rm', '--force', '--volumes', cidfile.read_text().strip(), check=False)
+                if removed.returncode and not ('No such container' in removed.stderr):
+                    raise RuntimeError(f'Failed to clean up MySQL container: {removed.stderr.strip()}')
+
+
 def run(*args, cwd=ROOT, capture=False):
     print(f'[{cwd.name}] {" ".join(map(str, args))}', flush=True)
     try:
@@ -299,13 +340,13 @@ def main():
             raise RuntimeError(f'Missing required command: {command}')
     # Turn termination into an exception so the contexts still remove owned resources.
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
-    with postgres_database() as dsn:
-        ENV.update(SERVER_GO_TEST_POSTGRES_DSN=dsn, DATABASE_URL=dsn)
+    with postgres_database() as dsn, mysql_database() as mysql_dsn:
+        ENV.update(SERVER_GO_TEST_POSTGRES_DSN=dsn, SERVER_GO_TEST_MYSQL_DSN=mysql_dsn, DATABASE_URL=dsn)
         for module in [ROOT, *EXAMPLES]:
             check_module(module)
         run('go', 'test', '-count=1', '-race', './app', '.', './host', './middleware', './console', './errors', './pkg',
             './cli', './sdk', './internalsdk',
-            './stream', './cron', './pkg/binder', './pkg/election', './examples/streaming-service/...', './examples/postgresql-service/...')
+            './db', './stream', './cron', './pkg/binder', './pkg/election', './examples/streaming-service/...', './examples/postgresql-service/...')
         run('go', 'test', '-count=1', '-race', './service', './sdk/go/...', cwd=EXAMPLES[0])
         run(sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts', '-p', 'test_*.py')
         with tempfile.TemporaryDirectory(prefix='server-go-check-') as temporary:
