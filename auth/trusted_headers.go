@@ -13,6 +13,7 @@ import (
 // TrustedIdentityHeaders accepts identity headers only after verify authenticates
 // the gateway and checks that it controls those headers. verify must not trust the
 // identity headers themselves. Existing authenticated identities are not replaced.
+// The project header is optional; when present it is published as KeyProjectID.
 func TrustedIdentityHeaders(verify func(*http.Request) error) (core.HandlerFunc, error) {
 	if verify == nil {
 		return nil, errors.New("trusted identity headers require a gateway verifier")
@@ -33,12 +34,14 @@ func TrustedIdentityHeaders(verify func(*http.Request) error) (core.HandlerFunc,
 		}
 		tenantID := strings.TrimSpace(c.GetHeader(constants.HeaderTenantID))
 		userID := strings.TrimSpace(c.GetHeader(constants.HeaderUserID))
+		projectID := strings.TrimSpace(c.GetHeader(constants.HeaderProjectID))
 		if tenantID == "" || userID == "" {
 			serrors.Abort(c, http.StatusUnauthorized, "Unauthorized", "complete identity headers required")
 			return
 		}
 		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
+		c.Set(constants.KeyProjectID, projectID)
 		c.Next()
 	}, nil
 }

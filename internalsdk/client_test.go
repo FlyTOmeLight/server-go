@@ -28,6 +28,12 @@ func TestWrapPropagatesContextAndKeepsRequestsIsolated(t *testing.T) {
 		if user := r.Header.Get(constants.HeaderImpersonateUserID); user != r.URL.Query().Get("user") {
 			t.Errorf("identity mixed between requests: %v", r.Header)
 		}
+		if project := r.Header.Get(
+			constants.HeaderImpersonateProjectID,
+		); project != "project-"+r.URL.Query().
+			Get("user") {
+			t.Errorf("project identity mixed between requests: %v", r.Header)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
@@ -66,6 +72,7 @@ func TestWrapPropagatesContextAndKeepsRequestsIsolated(t *testing.T) {
 			ctx := &core.Context{Request: httptest.NewRequest(http.MethodGet, "/", nil)}
 			ctx.Set(constants.KeyUserID, user)
 			ctx.Set(constants.KeyTenantID, "tenant")
+			ctx.Set(constants.KeyProjectID, "project-"+user)
 			if _, err := client.R(ctx).SetQueryParam("user", user).Get("/"); err != nil {
 				t.Error(err)
 			}
