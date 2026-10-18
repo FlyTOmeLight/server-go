@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.11.0
+go get github.com/FlyTOmeLight/server-go@v0.12.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.11.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.12.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -188,6 +188,17 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.12.0
+
+新增 `middleware.HTTPAuthorization`，把标准 `net/http` 鉴权中间件接入 Gin 链路：鉴权失败时由鉴权中间件写响应，成功后把请求 context 中的身份发布到 Gin context。
+
+组织标识统一改为租户，这是不兼容变更，需要调用方迁移：
+
+- 请求头：`x-ceai-user-organization-id` 改为 `x-ceai-tenant-id`（`constants.HeaderTenantID`）；代理请求头 `x-impersonate-target-org-id` 改为 `x-impersonate-target-tenant-id`（`HeaderImpersonateTenantID`）。上游网关与客户端需同步修改。
+- 查询参数：`constants.QueryOrgID`（`orgID`）已删除，没有直接替代。
+- 上下文键：`KeyOrgID` 改为 `KeyTenantID`，值为 `TenantID`；`KeyImpersonateOriginOrgID` 改为 `KeyImpersonateOriginTenantID`。新增 `KeyProjectID`。
+- 假鉴权：`conf.FakeAuthConfig.OrgID` 改为 `TenantID`，默认值由 `test-org-id` 改为 `test-tenant-id`；`auth.FakeAuthWithID` 的首个参数随之改名。自定义配置中若引用了旧字段，需同步改名。
 
 ## v0.11.0
 
