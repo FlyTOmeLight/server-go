@@ -6,12 +6,13 @@ const (
 	HeaderContentType   = "Content-Type"
 	HeaderAuthorization = "Authorization"
 
-	HeaderImpersonateTenantID     = "x-impersonate-target-tenant-id"
-	HeaderImpersonateUserID       = "x-impersonate-target-user-id"
-	HeaderImpersonateDepartmentID = "x-impersonate-target-department-id"
+	HeaderImpersonateTenantID  = "x-impersonate-target-tenant-id"
+	HeaderImpersonateUserID    = "x-impersonate-target-user-id"
+	HeaderImpersonateProjectID = "x-impersonate-target-project-id"
 
-	HeaderTenantID = "x-forge-tenant-id"
-	HeaderUserID   = "x-forge-user-id"
+	HeaderTenantID  = "x-forge-tenant-id"
+	HeaderUserID    = "x-forge-user-id"
+	HeaderProjectID = "x-forge-project-id"
 
 	ContentTypeJSON = "application/json"
 )
@@ -33,8 +34,9 @@ const (
 	KeyUserRole  = "UserRole"  // 用户角色
 	KeyAuthMode  = "AuthMode"  // 用户认证方式
 
-	KeyImpersonateOriginTenantID = "ImpersonateOriginTenantID" // A impersonate成B访问服务时的tenantID
-	KeyImpersonateOriginUserID   = "ImpersonateOriginUserID"   // A impersonate成B访问服务时的userID
+	KeyImpersonateOriginTenantID  = "ImpersonateOriginTenantID"  // A impersonate成B访问服务时的tenantID
+	KeyImpersonateOriginUserID    = "ImpersonateOriginUserID"    // A impersonate成B访问服务时的userID
+	KeyImpersonateOriginProjectID = "ImpersonateOriginProjectID" // A impersonate成B访问服务时的projectID
 )
 
 const (

@@ -49,6 +49,7 @@ func Impersonate(authorize func(c *core.Context, tenantID, userID string) error)
 		}
 		c.Set(constants.KeyImpersonateOriginTenantID, c.GetString(constants.KeyTenantID))
 		c.Set(constants.KeyImpersonateOriginUserID, c.GetString(constants.KeyUserID))
+		c.Set(constants.KeyImpersonateOriginProjectID, c.GetString(constants.KeyProjectID))
 		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
 		c.Set(constants.KeyAuthMode, "Impersonate")

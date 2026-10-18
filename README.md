@@ -195,9 +195,9 @@ go vet ./...
 
 组织标识统一改为租户，这是不兼容变更，需要调用方迁移：
 
-- 请求头：`x-ceai-user-organization-id` 改为 `x-forge-tenant-id`（`constants.HeaderTenantID`），用户头同步改为 `x-forge-user-id`（`HeaderUserID`）；代理请求头 `x-impersonate-target-org-id` 改为 `x-impersonate-target-tenant-id`（`HeaderImpersonateTenantID`）。上游网关与客户端需同步修改。
+- 请求头：用户组织头改为 `x-forge-tenant-id`（`constants.HeaderTenantID`），用户头同步改为 `x-forge-user-id`（`HeaderUserID`），新增项目头 `x-forge-project-id`（`HeaderProjectID`）；代理请求头 `x-impersonate-target-org-id` 改为 `x-impersonate-target-tenant-id`（`HeaderImpersonateTenantID`），代理部门头 `x-impersonate-target-department-id` 改为 `x-impersonate-target-project-id`（`HeaderImpersonateProjectID`）。上游网关与客户端需同步修改。框架当前只读取租户与用户头，项目头和代理项目头目前只定义常量。
 - 查询参数：`constants.QueryOrgID`（`orgID`）已删除，没有直接替代。
-- 上下文键：`KeyOrgID` 改为 `KeyTenantID`，值为 `TenantID`；`KeyImpersonateOriginOrgID` 改为 `KeyImpersonateOriginTenantID`。新增 `KeyProjectID`。
+- 上下文键：`KeyOrgID` 改为 `KeyTenantID`，值为 `TenantID`；`KeyImpersonateOriginOrgID` 改为 `KeyImpersonateOriginTenantID`。新增 `KeyProjectID`，以及代理时记录原项目的 `KeyImpersonateOriginProjectID`。
 - 假鉴权：`conf.FakeAuthConfig.OrgID` 改为 `TenantID`，默认值由 `test-org-id` 改为 `test-tenant-id`；`auth.FakeAuthWithID` 的首个参数随之改名。自定义配置中若引用了旧字段，需同步改名。
 
 ## v0.11.0
