@@ -13,6 +13,7 @@ import (
 // Impersonate must follow authentication. authorize must verify that the current
 // caller is a service account allowed to act as the requested tenant and user.
 // Without impersonation headers the authenticated identity is left unchanged.
+// The project header is optional and replaces KeyProjectID when present.
 func Impersonate(authorize func(c *core.Context, tenantID, userID string) error) (core.HandlerFunc, error) {
 	if authorize == nil {
 		return nil, errors.New("impersonation requires a service account authorizer")
@@ -20,6 +21,7 @@ func Impersonate(authorize func(c *core.Context, tenantID, userID string) error)
 	return func(c *core.Context) {
 		tenantID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateTenantID))
 		userID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateUserID))
+		projectID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateProjectID))
 		if tenantID == "" && userID == "" {
 			c.Next()
 			return
@@ -49,8 +51,12 @@ func Impersonate(authorize func(c *core.Context, tenantID, userID string) error)
 		}
 		c.Set(constants.KeyImpersonateOriginTenantID, c.GetString(constants.KeyTenantID))
 		c.Set(constants.KeyImpersonateOriginUserID, c.GetString(constants.KeyUserID))
+		c.Set(constants.KeyImpersonateOriginProjectID, c.GetString(constants.KeyProjectID))
 		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
+		if projectID != "" {
+			c.Set(constants.KeyProjectID, projectID)
+		}
 		c.Set(constants.KeyAuthMode, "Impersonate")
 		c.Next()
 	}, nil

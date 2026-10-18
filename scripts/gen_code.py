@@ -126,7 +126,7 @@ class MultiModuleGenerator:
         os.remove(f"{file_path}/go.sum")
         # 重写go.mod
         go_mod_content = (f"module {go_mod}\n\ngo 1.27\n\nrequire (\n"
-                          f"   github.com/FlyTOmeLight/server-go v0.11.0\n"
+                          f"   github.com/FlyTOmeLight/server-go v0.12.0\n"
                           f"   github.com/spf13/cobra v1.7.0\n"
                           f"   github.com/swaggo/swag v1.8.1\n)")
         write_to_file(f"{file_path}/go.mod", go_mod_content)

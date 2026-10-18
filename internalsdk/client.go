@@ -70,6 +70,7 @@ func (c *InternalClient) R(ctx *core.Context) *resty.Request {
 	if c.Config.EnableImpersonate {
 		request.SetHeader(constants.HeaderImpersonateTenantID, ctx.GetString(constants.KeyTenantID))
 		request.SetHeader(constants.HeaderImpersonateUserID, ctx.GetString(constants.KeyUserID))
+		request.SetHeader(constants.HeaderImpersonateProjectID, ctx.GetString(constants.KeyProjectID))
 	}
 	return request
 }
