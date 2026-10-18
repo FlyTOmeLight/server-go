@@ -14,6 +14,9 @@ import (
 // caller is a service account allowed to act as the requested tenant and user.
 // Without impersonation headers the authenticated identity is left unchanged.
 // The project header is optional and replaces KeyProjectID when present.
+//
+// For internal service chains that forward an already verified end-user identity,
+// use InternalPropagatedIdentity instead.
 func Impersonate(authorize func(c *core.Context, tenantID, userID string) error) (core.HandlerFunc, error) {
 	if authorize == nil {
 		return nil, errors.New("impersonation requires a service account authorizer")

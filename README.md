@@ -110,6 +110,28 @@ HTTP Controller 和对应业务 Service 使用 `*core.Context`；数据库和 SD
 
 `app.Run` 从 v0.5.0 开始提供；正式消费使用发布版本，本地联合开发可使用 `replace`。
 
+## 身份来源
+
+身份在入口确定后，沿着请求往下传。三种入口最后落到同一组 context 键：`KeyUserID`、`KeyTenantID`、`KeyProjectID`。内部服务之间只透传这组键，不再回 tenant 服务鉴权。
+
+### 1. 前端已登录
+
+浏览器请求直接带 `x-forge-user-id`、`x-forge-tenant-id`、`x-forge-project-id`。入口服务确认请求来自可信网关后，用 `auth.TrustedIdentityHeaders(verify)` 读这三个头，写入 `KeyUserID`、`KeyTenantID`、`KeyProjectID`。不写 `KeyImpersonateOrigin*`。
+
+### 2. OpenAPI
+
+调用方只带凭据（AK/SK 或 API key），不带身份头。入口服务自己解析凭据，向 tenant 服务换出 user、tenant、project，同样写入这三个 `Key*`。不写 `KeyImpersonateOrigin*`。
+
+### 3. 内部服务互相调用
+
+上游 context 里已有身份，来自场景一或场景二。`internalsdk.Wrap(client, ctx)` 读出 `KeyUserID`、`KeyTenantID`、`KeyProjectID`，写到下游请求的 `x-impersonate-target-user-id`、`x-impersonate-target-tenant-id`、`x-impersonate-target-project-id`。下游先用 `auth.BearerTokens` 确认调用方是内部服务，再用 `auth.InternalPropagatedIdentity(authorize)` 读这三个头：把透传的身份覆盖 `Key*`，同时写入 `KeyImpersonateOrigin*`，作为“来自上游、不用再问 tenant”的标记。下游看到 origin 键有值就跳过 tenant 解析。
+
+`KeyImpersonateOrigin*` 记录的是透传的用户身份，不是调用方服务账号。服务账号只用于确认调用方是内部服务，不写入身份键。
+
+### 代理
+
+`auth.Impersonate` 保留用于真正的代理场景：调用方已经有自己的身份，且代表另一个身份去操作。代理时 origin 键记录调用方本身，被代理的身份写入 `Key*`。内部透传不要走 `Impersonate`，用 `InternalPropagatedIdentity`。
+
 ## v0.6.0 接口调整
 
 本次设计修复记录在 [issues #1–#9](https://github.com/FlyTOmeLight/server-go/issues)，已发布为 [v0.6.0](https://github.com/FlyTOmeLight/server-go/releases/tag/v0.6.0)：
@@ -188,6 +210,12 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## 未发布的改动
+
+新增 `auth.InternalPropagatedIdentity(authorize)`，用于内部服务之间透传已经验证过的用户身份。安装位置在 `auth.BearerTokens` 之后，`authorize` 必须确认调用方是允许透传身份的授权内部服务。请求带 `x-impersonate-target-*` 时，把用户、租户、项目同时写入 `Key*` 和 `KeyImpersonateOrigin*`，并把 `KeyAuthMode` 设成 `Internal`。不带透传头时该中间件是空操作。下游通过检查 `KeyImpersonateOrigin*` 是否为空判断身份来自上游还是本服务自己解析的。
+
+`auth.Impersonate` 行为不变，仍用于真正的代理场景，origin 键记录调用方本身。
 
 ## v0.12.0
 
