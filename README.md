@@ -195,7 +195,7 @@ go vet ./...
 
 组织标识统一改为租户，这是不兼容变更，需要调用方迁移：
 
-- 请求头：`x-ceai-user-organization-id` 改为 `x-ceai-tenant-id`（`constants.HeaderTenantID`）；代理请求头 `x-impersonate-target-org-id` 改为 `x-impersonate-target-tenant-id`（`HeaderImpersonateTenantID`）。上游网关与客户端需同步修改。
+- 请求头：`x-ceai-user-organization-id` 改为 `x-forge-tenant-id`（`constants.HeaderTenantID`），用户头同步改为 `x-forge-user-id`（`HeaderUserID`）；代理请求头 `x-impersonate-target-org-id` 改为 `x-impersonate-target-tenant-id`（`HeaderImpersonateTenantID`）。上游网关与客户端需同步修改。
 - 查询参数：`constants.QueryOrgID`（`orgID`）已删除，没有直接替代。
 - 上下文键：`KeyOrgID` 改为 `KeyTenantID`，值为 `TenantID`；`KeyImpersonateOriginOrgID` 改为 `KeyImpersonateOriginTenantID`。新增 `KeyProjectID`。
 - 假鉴权：`conf.FakeAuthConfig.OrgID` 改为 `TenantID`，默认值由 `test-org-id` 改为 `test-tenant-id`；`auth.FakeAuthWithID` 的首个参数随之改名。自定义配置中若引用了旧字段，需同步改名。

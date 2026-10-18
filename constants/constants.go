@@ -10,8 +10,8 @@ const (
 	HeaderImpersonateUserID       = "x-impersonate-target-user-id"
 	HeaderImpersonateDepartmentID = "x-impersonate-target-department-id"
 
-	HeaderTenantID = "x-ceai-tenant-id"
-	HeaderUserID   = "x-ceai-user-id"
+	HeaderTenantID = "x-forge-tenant-id"
+	HeaderUserID   = "x-forge-user-id"
 
 	ContentTypeJSON = "application/json"
 )
