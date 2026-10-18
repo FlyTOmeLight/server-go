@@ -22,7 +22,7 @@ func TrustedIdentityHeaders(verify func(*http.Request) error) (core.HandlerFunc,
 			serrors.Abort(c, http.StatusUnauthorized, "Unauthorized", "untrusted identity source")
 			return
 		}
-		if c.GetString(constants.KeyUserID) != "" || c.GetString(constants.KeyOrgID) != "" {
+		if c.GetString(constants.KeyUserID) != "" || c.GetString(constants.KeyTenantID) != "" {
 			serrors.Abort(
 				c,
 				http.StatusForbidden,
@@ -31,13 +31,13 @@ func TrustedIdentityHeaders(verify func(*http.Request) error) (core.HandlerFunc,
 			)
 			return
 		}
-		orgID := strings.TrimSpace(c.GetHeader(constants.HeaderOrgID))
+		tenantID := strings.TrimSpace(c.GetHeader(constants.HeaderTenantID))
 		userID := strings.TrimSpace(c.GetHeader(constants.HeaderUserID))
-		if orgID == "" || userID == "" {
+		if tenantID == "" || userID == "" {
 			serrors.Abort(c, http.StatusUnauthorized, "Unauthorized", "complete identity headers required")
 			return
 		}
-		c.Set(constants.KeyOrgID, orgID)
+		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
 		c.Next()
 	}, nil

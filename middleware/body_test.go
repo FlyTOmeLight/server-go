@@ -82,7 +82,7 @@ func TestJSONReadBudgetAcrossMiddleware(t *testing.T) {
 					engine.POST("/create", handler)
 					request := idempotentRequest(
 						"/create?clientToken=token",
-						"org",
+						"tenant",
 						"user",
 						payload,
 					)
@@ -150,7 +150,7 @@ func TestAuto200ImmediateErrorsAreNotCached(t *testing.T) {
 		writer := httptest.NewRecorder()
 		engine.ServeHTTP(
 			writer,
-			idempotentRequest("/example/api/create?clientToken=token", "org", "user", `{}`),
+			idempotentRequest("/example/api/create?clientToken=token", "tenant", "user", `{}`),
 		)
 		if writer.Code != 200 || !strings.Contains(writer.Body.String(), `"statusCode":731422`) {
 			t.Fatalf("failure contract: %d %s", writer.Code, writer.Body)
@@ -192,7 +192,7 @@ func TestJSONReadFailureAcrossMiddleware(t *testing.T) {
 				handler = Idempotent(controller, handler)
 			}
 			engine.POST("/create", handler)
-			request := idempotentRequest("/create?clientToken=token", "org", "user", `{}`)
+			request := idempotentRequest("/create?clientToken=token", "tenant", "user", `{}`)
 			request.Body = failedBody{}
 			request.ContentLength = -1
 			writer := httptest.NewRecorder()

@@ -30,10 +30,10 @@ func idempotenceHandler(controller *idempotence.Controller, next core.HandlerFun
 	return func(c *core.Context) {
 		clientToken := c.Query(constants.QueryClientToken)
 		mediaType, _, _ := mime.ParseMediaType(c.GetHeader(constants.HeaderContentType))
-		orgID := c.GetString(constants.KeyOrgID)
+		tenantID := c.GetString(constants.KeyTenantID)
 		userID := c.GetString(constants.KeyUserID)
 		if clientToken == "" || c.Request.Method != http.MethodPost || mediaType != constants.ContentTypeJSON ||
-			orgID == "" ||
+			tenantID == "" ||
 			userID == "" {
 			next(c)
 			return
@@ -60,7 +60,7 @@ func idempotenceHandler(controller *idempotence.Controller, next core.HandlerFun
 			append([]byte(c.Request.URL.RequestURI()+"\x00"+mediaType+"\x00"), body...),
 		)
 		key := idempotence.Key{
-			OrgID:     orgID,
+			TenantID:  tenantID,
 			UserID:    userID,
 			Operation: c.Request.Method + " " + c.Request.URL.Path,
 			Token:     clientToken,

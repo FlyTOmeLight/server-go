@@ -14,7 +14,7 @@ import (
 func TestDoConcurrentReplayAndConflict(t *testing.T) {
 	controller := New(time.Minute)
 	defer controller.Close()
-	key := Key{OrgID: "org", UserID: "alice", Operation: "POST /create", Token: "token"}
+	key := Key{TenantID: "tenant", UserID: "alice", Operation: "POST /create", Token: "token"}
 	fingerprint := sha256.Sum256([]byte("request"))
 	entered := make(chan struct{})
 	release := make(chan struct{})

@@ -18,7 +18,7 @@ func Use(engine *core.Engine, config *conf.Config) error {
 	switch config.HTTPServer.AuthType {
 	case "", conf.AuthTypeFake:
 		engine.Use(FakeAuthWithID(
-			config.FakeAuth.OrgID,
+			config.FakeAuth.TenantID,
 			config.FakeAuth.UserID,
 			config.FakeAuth.UserName,
 			config.FakeAuth.UserRole))
@@ -35,9 +35,9 @@ func FakeAuth() core.HandlerFunc {
 	return FakeAuthWithID("", "", "", "")
 }
 
-func FakeAuthWithID(orgID, userID, userName, userRole string) core.HandlerFunc {
-	if orgID == "" {
-		orgID = "test-org-id"
+func FakeAuthWithID(tenantID, userID, userName, userRole string) core.HandlerFunc {
+	if tenantID == "" {
+		tenantID = "test-tenant-id"
 	}
 	if userID == "" {
 		userID = "test-user-id"
@@ -49,7 +49,7 @@ func FakeAuthWithID(orgID, userID, userName, userRole string) core.HandlerFunc {
 		userRole = "test-user-role"
 	}
 	return func(c *core.Context) {
-		c.Set(constants.KeyOrgID, orgID)
+		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
 		c.Set(constants.KeyUserName, userName)
 		c.Set(constants.KeyUserRole, userRole)

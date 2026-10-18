@@ -31,7 +31,7 @@ func TestModuleRebuiltRoutesReuseBusinessResources(t *testing.T) {
 	for index := 0; index < 2; index++ {
 		engine := gin.New()
 		engine.Use(func(c *core.Context) {
-			c.Set(constants.KeyOrgID, "tenant")
+			c.Set(constants.KeyTenantID, "tenant")
 			c.Set(constants.KeyUserID, "user")
 			c.Next()
 		})

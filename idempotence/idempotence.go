@@ -17,7 +17,7 @@ var (
 
 // Key scopes a token to a verified tenant, user and operation.
 type Key struct {
-	OrgID     string
+	TenantID  string
 	UserID    string
 	Operation string
 	Token     string

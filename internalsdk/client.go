@@ -68,7 +68,7 @@ func Wrap(client *InternalClient, ctx *core.Context) *resty.Request {
 func (c *InternalClient) R(ctx *core.Context) *resty.Request {
 	request := c.Client.R().SetContext(ctx.Request.Context())
 	if c.Config.EnableImpersonate {
-		request.SetHeader(constants.HeaderImpersonateOrgID, ctx.GetString(constants.KeyOrgID))
+		request.SetHeader(constants.HeaderImpersonateTenantID, ctx.GetString(constants.KeyTenantID))
 		request.SetHeader(constants.HeaderImpersonateUserID, ctx.GetString(constants.KeyUserID))
 	}
 	return request
