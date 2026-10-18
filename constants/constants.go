@@ -27,11 +27,13 @@ const (
 const (
 	KeyRequestID = "RequestID"
 
-	KeyOrgID    = "OrgID"    // auth后获得的OrgID，不可修改
-	KeyUserID   = "UserID"   // auth后获得的UserID，不可修改
-	KeyUserName = "UserName" // auth后获得的用户名称
-	KeyUserRole = "UserRole" // 用户角色
-	KeyAuthMode = "AuthMode" // 用户认证方式
+	KeyOrgID     = "OrgID"     // auth后获得的OrgID，不可修改
+	KeyUserID    = "UserID"    // auth后获得的UserID，不可修改
+	KeyTenantID  = "TenantID"  // auth后获得的TenantID，不可修改
+	KeyProjectID = "ProjectID" // auth后获得的ProjectID，不可修改
+	KeyUserName  = "UserName"  // auth后获得的用户名称
+	KeyUserRole  = "UserRole"  // 用户角色
+	KeyAuthMode  = "AuthMode"  // 用户认证方式
 
 	KeyImpersonateOriginOrgID  = "ImpersonateOriginOrgID"  // A impersonate成B访问服务时的orgID
 	KeyImpersonateOriginUserID = "ImpersonateOriginUserID" // A impersonate成B访问服务时的userID
