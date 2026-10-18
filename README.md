@@ -211,7 +211,7 @@ go vet ./...
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
 
-## 未发布的改动
+## v0.13.0
 
 新增 `auth.InternalPropagatedIdentity(authorize)`，用于内部服务之间透传已经验证过的用户身份。安装位置在 `auth.BearerTokens` 之后，`authorize` 必须确认调用方是允许透传身份的授权内部服务。请求带 `x-impersonate-target-*` 时，把用户、租户、项目同时写入 `Key*` 和 `KeyImpersonateOrigin*`，并把 `KeyAuthMode` 设成 `Internal`。不带透传头时该中间件是空操作。下游通过检查 `KeyImpersonateOrigin*` 是否为空判断身份来自上游还是本服务自己解析的。
 
