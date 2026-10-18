@@ -24,15 +24,15 @@ func TestTrustedIdentityHeaders(t *testing.T) {
 		return nil
 	}
 	for _, test := range []struct {
-		name, token, org, user string
-		prior                  core.HandlerFunc
-		status                 int
+		name, token, tenant, user string
+		prior                     core.HandlerFunc
+		status                    int
 	}{
-		{name: "forged identity", org: "target-org", user: "target-user", status: 401},
+		{name: "forged identity", tenant: "target-tenant", user: "target-user", status: 401},
 		{name: "missing identity", token: "gateway-secret", status: 401},
 		{name: "partial identity", token: "gateway-secret", user: "target-user", status: 401},
-		{name: "trusted gateway", token: "gateway-secret", org: "target-org", user: "target-user", status: 200},
-		{name: "cannot replace bearer identity", token: "gateway-secret", org: "target-org", user: "target-user", prior: BearerTokens(map[string]string{"gateway-secret": "caller"}), status: 403},
+		{name: "trusted gateway", token: "gateway-secret", tenant: "target-tenant", user: "target-user", status: 200},
+		{name: "cannot replace bearer identity", token: "gateway-secret", tenant: "target-tenant", user: "target-user", prior: BearerTokens(map[string]string{"gateway-secret": "caller"}), status: 403},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			handler, err := TrustedIdentityHeaders(verify)
@@ -45,7 +45,7 @@ func TestTrustedIdentityHeaders(t *testing.T) {
 			}
 			engine.Use(handler)
 			engine.GET("/", func(c *core.Context) {
-				if c.GetString(constants.KeyOrgID) != test.org || UserID(c) != test.user {
+				if c.GetString(constants.KeyTenantID) != test.tenant || UserID(c) != test.user {
 					t.Fatal("trusted identity was not installed")
 				}
 				c.Status(http.StatusOK)
@@ -54,7 +54,7 @@ func TestTrustedIdentityHeaders(t *testing.T) {
 			if test.token != "" {
 				req.Header.Set("Authorization", "Bearer "+test.token)
 			}
-			req.Header.Set(constants.HeaderOrgID, test.org)
+			req.Header.Set(constants.HeaderTenantID, test.tenant)
 			req.Header.Set(constants.HeaderUserID, test.user)
 			writer := httptest.NewRecorder()
 			engine.ServeHTTP(writer, req)
@@ -80,19 +80,19 @@ func TestImpersonateRequiresAuthorizedServiceAccount(t *testing.T) {
 		t.Fatal("missing service account authorizer accepted")
 	}
 	for _, test := range []struct {
-		name, caller, org, user string
-		status                  int
+		name, caller, tenant, user string
+		status                     int
 	}{
-		{name: "anonymous", org: "target-org", user: "target-user", status: 401},
-		{name: "ordinary user", caller: "person", org: "target-org", user: "target-user", status: 403},
-		{name: "partial target", caller: "service", org: "target-org", status: 403},
-		{name: "unauthorized target", caller: "service", org: "other-org", user: "target-user", status: 403},
-		{name: "authorized service", caller: "service", org: "target-org", user: "target-user", status: 200},
+		{name: "anonymous", tenant: "target-tenant", user: "target-user", status: 401},
+		{name: "ordinary user", caller: "person", tenant: "target-tenant", user: "target-user", status: 403},
+		{name: "partial target", caller: "service", tenant: "target-tenant", status: 403},
+		{name: "unauthorized target", caller: "service", tenant: "other-tenant", user: "target-user", status: 403},
+		{name: "authorized service", caller: "service", tenant: "target-tenant", user: "target-user", status: 200},
 		{name: "no impersonation", caller: "person", status: 200},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handler, err := Impersonate(func(c *core.Context, orgID, userID string) error {
-				if UserID(c) != "service" || orgID != "target-org" || userID != "target-user" {
+			handler, err := Impersonate(func(c *core.Context, tenantID, userID string) error {
+				if UserID(c) != "service" || tenantID != "target-tenant" || userID != "target-user" {
 					return errors.New("caller may not impersonate this target")
 				}
 				return nil
@@ -110,7 +110,7 @@ func TestImpersonateRequiresAuthorizedServiceAccount(t *testing.T) {
 					if UserID(c) != test.caller {
 						t.Fatal("caller identity changed without impersonation")
 					}
-				} else if UserID(c) != test.user || c.GetString(constants.KeyOrgID) != test.org ||
+				} else if UserID(c) != test.user || c.GetString(constants.KeyTenantID) != test.tenant ||
 					c.GetString(constants.KeyImpersonateOriginUserID) != test.caller {
 					t.Fatal("target or original identity was lost")
 				}
@@ -120,7 +120,7 @@ func TestImpersonateRequiresAuthorizedServiceAccount(t *testing.T) {
 			if test.caller != "" {
 				req.Header.Set("Authorization", "Bearer caller-token")
 			}
-			req.Header.Set(constants.HeaderImpersonateOrgID, test.org)
+			req.Header.Set(constants.HeaderImpersonateTenantID, test.tenant)
 			req.Header.Set(constants.HeaderImpersonateUserID, test.user)
 			writer := httptest.NewRecorder()
 			engine.ServeHTTP(writer, req)

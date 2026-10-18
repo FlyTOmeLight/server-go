@@ -47,7 +47,7 @@ func TestInternalClientConstructor(t *testing.T) {
 func TestInternalClientConfigPreservesAuthenticationAndImpersonation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/helloworld/internal/check" || r.Header.Get("Authorization") != "Bearer token" ||
-			r.Header.Get(constants.HeaderImpersonateOrgID) != "org" ||
+			r.Header.Get(constants.HeaderImpersonateTenantID) != "tenant" ||
 			r.Header.Get(constants.HeaderImpersonateUserID) != "user" {
 			t.Errorf("request = %s headers=%v", r.URL.Path, r.Header)
 		}
@@ -71,7 +71,7 @@ func TestInternalClientConfigPreservesAuthenticationAndImpersonation(t *testing.
 	}
 	inbound, _ := gin.CreateTestContext(httptest.NewRecorder())
 	inbound.Request = httptest.NewRequest(http.MethodGet, "/", nil).WithContext(t.Context())
-	inbound.Set(constants.KeyOrgID, "org")
+	inbound.Set(constants.KeyTenantID, "tenant")
 	inbound.Set(constants.KeyUserID, "user")
 	response, err := Wrap(client, inbound).Get("/check")
 	if err := sdk.Complete(response, err); err != nil {

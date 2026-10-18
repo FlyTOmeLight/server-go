@@ -79,7 +79,7 @@ func (c *Config) setDefaults() {
 }
 
 type FakeAuthConfig struct {
-	OrgID    string
+	TenantID string
 	UserID   string
 	UserName string
 	UserRole string

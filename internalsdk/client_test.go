@@ -65,7 +65,7 @@ func TestWrapPropagatesContextAndKeepsRequestsIsolated(t *testing.T) {
 			user := fmt.Sprint(i)
 			ctx := &core.Context{Request: httptest.NewRequest(http.MethodGet, "/", nil)}
 			ctx.Set(constants.KeyUserID, user)
-			ctx.Set(constants.KeyOrgID, "organization")
+			ctx.Set(constants.KeyTenantID, "tenant")
 			if _, err := client.R(ctx).SetQueryParam("user", user).Get("/"); err != nil {
 				t.Error(err)
 			}

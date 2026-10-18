@@ -19,15 +19,15 @@ import (
 )
 
 func identityMiddleware(c *core.Context) {
-	c.Set(constants.KeyOrgID, c.GetHeader("Test-Org"))
+	c.Set(constants.KeyTenantID, c.GetHeader("Test-Tenant"))
 	c.Set(constants.KeyUserID, c.GetHeader("Test-User"))
 	c.Next()
 }
 
-func idempotentRequest(path, org, user, body string) *http.Request {
+func idempotentRequest(path, tenant, user, body string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("Test-Org", org)
+	req.Header.Set("Test-Tenant", tenant)
 	req.Header.Set("Test-User", user)
 	return req
 }
@@ -51,29 +51,29 @@ func TestIdempotenceAuthorizationAndIdentityScopes(t *testing.T) {
 		executions++
 		c.JSON(
 			http.StatusCreated,
-			gin.H{"org": c.GetString(constants.KeyOrgID), "owner": c.GetString(constants.KeyUserID)},
+			gin.H{"tenant": c.GetString(constants.KeyTenantID), "owner": c.GetString(constants.KeyUserID)},
 		)
 	}
 	engine.POST("/create", authorize, Idempotent(controller, handler))
 	engine.POST("/another", authorize, Idempotent(controller, handler))
 	for _, tc := range []struct {
-		name, path, org, user, body string
-		revoked                     bool
-		status, executions          int
+		name, path, tenant, user, body string
+		revoked                        bool
+		status, executions             int
 	}{
-		{name: "original", path: "/create?clientToken=token", org: "org1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 1},
-		{name: "replay", path: "/create?clientToken=token", org: "org1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 1},
-		{name: "revoked", path: "/create?clientToken=token", org: "org1", user: "alice", body: `{}`, revoked: true, status: 403, executions: 1},
-		{name: "other user", path: "/create?clientToken=token", org: "org1", user: "bob", body: `{}`, revoked: false, status: 201, executions: 2},
-		{name: "other org", path: "/create?clientToken=token", org: "org2", user: "alice", body: `{}`, revoked: false, status: 201, executions: 3},
-		{name: "other operation", path: "/another?clientToken=token", org: "org1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 4},
-		{name: "body conflict", path: "/create?clientToken=token", org: "org1", user: "alice", body: `{"x":1}`, revoked: false, status: 409, executions: 4},
-		{name: "query conflict", path: "/create?clientToken=token&x=1", org: "org1", user: "alice", body: `{}`, revoked: false, status: 409, executions: 4},
-		{name: "anonymous first", path: "/create?clientToken=token", org: "", user: "", body: `{}`, revoked: false, status: 201, executions: 5},
-		{name: "anonymous repeat", path: "/create?clientToken=token", org: "", user: "", body: `{}`, revoked: false, status: 201, executions: 6},
+		{name: "original", path: "/create?clientToken=token", tenant: "tenant1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 1},
+		{name: "replay", path: "/create?clientToken=token", tenant: "tenant1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 1},
+		{name: "revoked", path: "/create?clientToken=token", tenant: "tenant1", user: "alice", body: `{}`, revoked: true, status: 403, executions: 1},
+		{name: "other user", path: "/create?clientToken=token", tenant: "tenant1", user: "bob", body: `{}`, revoked: false, status: 201, executions: 2},
+		{name: "other tenant", path: "/create?clientToken=token", tenant: "tenant2", user: "alice", body: `{}`, revoked: false, status: 201, executions: 3},
+		{name: "other operation", path: "/another?clientToken=token", tenant: "tenant1", user: "alice", body: `{}`, revoked: false, status: 201, executions: 4},
+		{name: "body conflict", path: "/create?clientToken=token", tenant: "tenant1", user: "alice", body: `{"x":1}`, revoked: false, status: 409, executions: 4},
+		{name: "query conflict", path: "/create?clientToken=token&x=1", tenant: "tenant1", user: "alice", body: `{}`, revoked: false, status: 409, executions: 4},
+		{name: "anonymous first", path: "/create?clientToken=token", tenant: "", user: "", body: `{}`, revoked: false, status: 201, executions: 5},
+		{name: "anonymous repeat", path: "/create?clientToken=token", tenant: "", user: "", body: `{}`, revoked: false, status: 201, executions: 6},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := idempotentRequest(tc.path, tc.org, tc.user, tc.body)
+			req := idempotentRequest(tc.path, tc.tenant, tc.user, tc.body)
 			if tc.revoked {
 				req.Header.Set("Revoked", "true")
 			}
@@ -127,7 +127,7 @@ func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 				w := httptest.NewRecorder()
 				engine.ServeHTTP(
 					w,
-					idempotentRequest("/create?clientToken=token", "org", "alice", `{}`),
+					idempotentRequest("/create?clientToken=token", "tenant", "alice", `{}`),
 				)
 				if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.body) {
 					t.Fatalf("unexpected response: %d %s", w.Code, w.Body.String())
@@ -178,7 +178,7 @@ func TestIdempotenceConcurrentWaitCancellation(t *testing.T) {
 	original := httptest.NewRecorder()
 	go func() {
 		defer close(finished)
-		engine.ServeHTTP(original, idempotentRequest("/create?clientToken=token", "org", "alice", `{}`))
+		engine.ServeHTTP(original, idempotentRequest("/create?clientToken=token", "tenant", "alice", `{}`))
 	}()
 	select {
 	case <-entered:
@@ -190,7 +190,7 @@ func TestIdempotenceConcurrentWaitCancellation(t *testing.T) {
 	waiter := httptest.NewRecorder()
 	go func() {
 		defer close(waiterDone)
-		req := idempotentRequest("/create?clientToken=token", "org", "alice", `{}`).WithContext(ctx)
+		req := idempotentRequest("/create?clientToken=token", "tenant", "alice", `{}`).WithContext(ctx)
 		engine.ServeHTTP(waiter, req)
 	}()
 	cancel()
@@ -223,7 +223,7 @@ func TestIdempotenceBodyReadFailureDoesNotExecute(t *testing.T) {
 	engine := gin.New()
 	engine.Use(identityMiddleware, Idempotence(controller))
 	engine.POST("/create", func(c *core.Context) { t.Error("invalid body reached handler") })
-	req := idempotentRequest("/create?clientToken=token", "org", "alice", `{}`)
+	req := idempotentRequest("/create?clientToken=token", "tenant", "alice", `{}`)
 	req.Body = failedBody{}
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)

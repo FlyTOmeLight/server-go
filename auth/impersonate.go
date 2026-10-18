@@ -13,14 +13,14 @@ import (
 // Impersonate must follow authentication. authorize must verify that the current
 // caller is a service account allowed to act as the requested tenant and user.
 // Without impersonation headers the authenticated identity is left unchanged.
-func Impersonate(authorize func(c *core.Context, orgID, userID string) error) (core.HandlerFunc, error) {
+func Impersonate(authorize func(c *core.Context, tenantID, userID string) error) (core.HandlerFunc, error) {
 	if authorize == nil {
 		return nil, errors.New("impersonation requires a service account authorizer")
 	}
 	return func(c *core.Context) {
-		orgID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateOrgID))
+		tenantID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateTenantID))
 		userID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateUserID))
-		if orgID == "" && userID == "" {
+		if tenantID == "" && userID == "" {
 			c.Next()
 			return
 		}
@@ -34,7 +34,7 @@ func Impersonate(authorize func(c *core.Context, orgID, userID string) error) (c
 			)
 			return
 		}
-		if orgID == "" || userID == "" {
+		if tenantID == "" || userID == "" {
 			serrors.Abort(
 				c,
 				http.StatusForbidden,
@@ -43,13 +43,13 @@ func Impersonate(authorize func(c *core.Context, orgID, userID string) error) (c
 			)
 			return
 		}
-		if err := authorize(c, orgID, userID); err != nil {
+		if err := authorize(c, tenantID, userID); err != nil {
 			serrors.Abort(c, http.StatusForbidden, "AccessDenied", "impersonation is not permitted")
 			return
 		}
-		c.Set(constants.KeyImpersonateOriginOrgID, c.GetString(constants.KeyOrgID))
+		c.Set(constants.KeyImpersonateOriginTenantID, c.GetString(constants.KeyTenantID))
 		c.Set(constants.KeyImpersonateOriginUserID, c.GetString(constants.KeyUserID))
-		c.Set(constants.KeyOrgID, orgID)
+		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
 		c.Set(constants.KeyAuthMode, "Impersonate")
 		c.Next()

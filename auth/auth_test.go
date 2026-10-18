@@ -17,7 +17,7 @@ func TestDefaultFakeAuthIsSafeForConcurrentRequests(t *testing.T) {
 	engine.Use(FakeAuth())
 	engine.GET("/identity", func(c *core.Context) {
 		for key, want := range map[string]string{
-			constants.KeyOrgID: "test-org-id", constants.KeyUserID: "test-user-id",
+			constants.KeyTenantID: "test-tenant-id", constants.KeyUserID: "test-user-id",
 			constants.KeyUserName: "test-user-name", constants.KeyUserRole: "test-user-role",
 		} {
 			if got := c.GetString(key); got != want {

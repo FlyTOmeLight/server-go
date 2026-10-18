@@ -124,7 +124,7 @@ func TestInstallWithVerifiedAuthentication(t *testing.T) {
 	for _, token := range []string{"", "gateway-secret"} {
 		request := httptest.NewRequest(http.MethodGet, "/business", nil)
 		request.Header.Set("Authorization", "Bearer "+token)
-		request.Header.Set(constants.HeaderOrgID, "org")
+		request.Header.Set(constants.HeaderTenantID, "tenant")
 		request.Header.Set(constants.HeaderUserID, "user")
 		writer := httptest.NewRecorder()
 		engine.ServeHTTP(writer, request)

@@ -6,19 +6,18 @@ const (
 	HeaderContentType   = "Content-Type"
 	HeaderAuthorization = "Authorization"
 
-	HeaderImpersonateOrgID        = "x-impersonate-target-org-id"
+	HeaderImpersonateTenantID     = "x-impersonate-target-tenant-id"
 	HeaderImpersonateUserID       = "x-impersonate-target-user-id"
 	HeaderImpersonateDepartmentID = "x-impersonate-target-department-id"
 
-	HeaderOrgID  = "x-ceai-user-organization-id"
-	HeaderUserID = "x-ceai-user-id"
+	HeaderTenantID = "x-ceai-tenant-id"
+	HeaderUserID   = "x-ceai-user-id"
 
 	ContentTypeJSON = "application/json"
 )
 
 // http url query key
 const (
-	QueryOrgID       = "orgID"
 	QueryUserID      = "userID"
 	QueryClientToken = "clientToken"
 )
@@ -27,14 +26,15 @@ const (
 const (
 	KeyRequestID = "RequestID"
 
-	KeyOrgID    = "OrgID"    // auth后获得的OrgID，不可修改
-	KeyUserID   = "UserID"   // auth后获得的UserID，不可修改
-	KeyUserName = "UserName" // auth后获得的用户名称
-	KeyUserRole = "UserRole" // 用户角色
-	KeyAuthMode = "AuthMode" // 用户认证方式
+	KeyUserID    = "UserID"    // auth后获得的UserID，不可修改
+	KeyTenantID  = "TenantID"  // auth后获得的TenantID，不可修改
+	KeyProjectID = "ProjectID" // auth后获得的ProjectID，不可修改
+	KeyUserName  = "UserName"  // auth后获得的用户名称
+	KeyUserRole  = "UserRole"  // 用户角色
+	KeyAuthMode  = "AuthMode"  // 用户认证方式
 
-	KeyImpersonateOriginOrgID  = "ImpersonateOriginOrgID"  // A impersonate成B访问服务时的orgID
-	KeyImpersonateOriginUserID = "ImpersonateOriginUserID" // A impersonate成B访问服务时的userID
+	KeyImpersonateOriginTenantID = "ImpersonateOriginTenantID" // A impersonate成B访问服务时的tenantID
+	KeyImpersonateOriginUserID   = "ImpersonateOriginUserID"   // A impersonate成B访问服务时的userID
 )
 
 const (

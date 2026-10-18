@@ -16,14 +16,14 @@ import (
 	"gorm.io/plugin/soft_delete"
 )
 
-type BaseDataWithOrg struct {
+type BaseDataWithTenant struct {
 	Pk          int64   `gorm:"primaryKey;autoIncrement"`
 	ID          string  `gorm:"column:id;uniqueIndex;type:varchar(32)"`
 	Name        string  `gorm:"type:varchar(64);default:'';NOT NULL"`
 	Description *string `gorm:"type:varchar(2049);default:'';NOT NULL"`
 
-	OrgID  string `gorm:"column:org_id;type:varchar(32);default:'';NOT NULL"`
-	UserID string `gorm:"column:user_id;type:varchar(32);default:'';NOT NULL"`
+	TenantID string `gorm:"column:tenant_id;type:varchar(32);default:'';NOT NULL"`
+	UserID   string `gorm:"column:user_id;type:varchar(32);default:'';NOT NULL"`
 
 	CreatedAt UTCTime               `gorm:"NOT NULL"`
 	UpdatedAt UTCTime               `gorm:"NOT NULL"`
