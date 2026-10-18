@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.10.0
+go get github.com/FlyTOmeLight/server-go@v0.11.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.10.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.11.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -188,6 +188,10 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.11.0
+
+新增 `redis.NewRedisLazy`：构造客户端时不验证连接，首次使用时连接并自动重连，Redis 不可用时服务仍可启动，连接恢复后自动恢复订阅；`NewRedis` 保持启动即 ping 的行为。`redis.XReadArgs` 与 `redis.Nil` 重新导出驱动符号，流订阅调用方不再需要直接依赖 `github.com/redis/go-redis/v9`。
 
 ## v0.10.0
 
