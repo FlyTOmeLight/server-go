@@ -34,9 +34,9 @@ const (
 	KeyUserRole  = "UserRole"  // 用户角色
 	KeyAuthMode  = "AuthMode"  // 用户认证方式
 
-	KeyImpersonateOriginTenantID  = "ImpersonateOriginTenantID"  // A impersonate成B访问服务时的tenantID
-	KeyImpersonateOriginUserID    = "ImpersonateOriginUserID"    // A impersonate成B访问服务时的userID
-	KeyImpersonateOriginProjectID = "ImpersonateOriginProjectID" // A impersonate成B访问服务时的projectID
+	KeyImpersonateOriginTenantID  = "ImpersonateOriginTenantID"  // 上游透传或代理前的 tenant；内部透传时与 KeyTenantID 相同
+	KeyImpersonateOriginUserID    = "ImpersonateOriginUserID"    // 上游透传或代理前的 user；内部透传时与 KeyUserID 相同
+	KeyImpersonateOriginProjectID = "ImpersonateOriginProjectID" // 上游透传或代理前的 project；内部透传时与 KeyProjectID 相同
 )
 
 const (
