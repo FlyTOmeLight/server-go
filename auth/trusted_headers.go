@@ -58,6 +58,7 @@ func TrustedIdentityHeaders(verify func(*http.Request) error) (core.HandlerFunc,
 		c.Set(constants.KeyUserName, "")
 		c.Set(constants.KeyUserRole, "")
 		c.Set(constants.KeyProjectID, projectID)
+		SyncIdentityToRequestContext(c)
 		c.Next()
 	}, nil
 }

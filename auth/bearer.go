@@ -43,6 +43,7 @@ func BearerTokens(tokens map[string]string) core.HandlerFunc {
 			return
 		}
 		c.Set(constants.KeyUserID, credentials[matched].user)
+		SyncIdentityToRequestContext(c)
 		c.Next()
 	}
 }

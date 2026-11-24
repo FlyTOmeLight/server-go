@@ -42,25 +42,30 @@ func TestInternalPropagationReachesDownstream(t *testing.T) {
 	}
 	downstream.Use(propagate)
 	downstream.GET("/check", func(c *core.Context) {
+		identity, ok := auth.IdentityFromContext(c.Request.Context())
+		if !ok {
+			t.Error("authenticated identity missing from downstream request context")
+		}
 		c.JSON(http.StatusOK, gin.H{
-			"tenant":        c.GetString(constants.KeyTenantID),
-			"user":          c.GetString(constants.KeyUserID),
-			"project":       c.GetString(constants.KeyProjectID),
-			"originUser":    c.GetString(constants.KeyImpersonateOriginUserID),
-			"originTenant":  c.GetString(constants.KeyImpersonateOriginTenantID),
-			"originProject": c.GetString(constants.KeyImpersonateOriginProjectID),
-			"authMode":      c.GetString(constants.KeyAuthMode),
+			"tenant":        identity.TenantID,
+			"user":          identity.UserID,
+			"project":       identity.ProjectID,
+			"originUser":    identity.OriginUserID,
+			"originTenant":  identity.OriginTenantID,
+			"originProject": identity.OriginProjectID,
+			"authMode":      identity.AuthMode,
+			"requestID":     c.GetHeader(constants.HeaderRequestID),
 		})
 	})
 	server := httptest.NewServer(downstream)
 	defer server.Close()
 
 	for _, test := range []struct {
-		name   string
-		token  string
-		status int
+		name, token, project string
+		status               int
 	}{
-		{name: "internal service", token: serviceToken, status: http.StatusOK},
+		{name: "internal service", token: serviceToken, project: "project-1", status: http.StatusOK},
+		{name: "internal service without project", token: serviceToken, status: http.StatusOK},
 		{name: "ordinary user", token: personToken, status: http.StatusForbidden},
 		{name: "unknown token", token: "unknown-token-0000000000001", status: http.StatusUnauthorized},
 	} {
@@ -81,7 +86,9 @@ func TestInternalPropagationReachesDownstream(t *testing.T) {
 			inbound.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 			inbound.Set(constants.KeyTenantID, "tenant-1")
 			inbound.Set(constants.KeyUserID, "alice")
-			inbound.Set(constants.KeyProjectID, "project-1")
+			inbound.Set(constants.KeyProjectID, test.project)
+			inbound.Set(constants.KeyRequestID, "verified-request-id")
+			inbound.Request.Header.Set(constants.HeaderRequestID, "raw-request-id")
 
 			response, err := internalsdk.Wrap(caller, inbound).Get("/check")
 			if err != nil {
@@ -105,11 +112,12 @@ func TestInternalPropagationReachesDownstream(t *testing.T) {
 			want := map[string]string{
 				"tenant":        "tenant-1",
 				"user":          "alice",
-				"project":       "project-1",
+				"project":       test.project,
 				"originUser":    "alice",
 				"originTenant":  "tenant-1",
-				"originProject": "project-1",
+				"originProject": test.project,
 				"authMode":      "Internal",
+				"requestID":     "verified-request-id",
 			}
 			for key, value := range want {
 				if got[key] != value {

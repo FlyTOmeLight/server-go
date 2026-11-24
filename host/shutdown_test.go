@@ -229,9 +229,9 @@ func waitDraining(t *testing.T, h *HTTPHost) {
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
 	for {
-		h.requestMu.Lock()
+		h.requestMu.RLock()
 		draining := h.draining
-		h.requestMu.Unlock()
+		h.requestMu.RUnlock()
 		if draining {
 			return
 		}

@@ -74,6 +74,7 @@ func InternalPropagatedIdentity(authorize func(c *core.Context) error) (core.Han
 		c.Set(constants.KeyImpersonateOriginUserID, userID)
 		c.Set(constants.KeyImpersonateOriginProjectID, projectID)
 		c.Set(constants.KeyAuthMode, "Internal")
+		SyncIdentityToRequestContext(c)
 		c.Next()
 	}, nil
 }

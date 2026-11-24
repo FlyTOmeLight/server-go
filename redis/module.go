@@ -8,13 +8,22 @@ import (
 type Module struct {
 	Config *Config
 	Redis  Redis
+
+	// Lazy skips the startup connection check when true.
+	Lazy bool
 }
 
 func (m *Module) Initialize(ctx context.Context) error {
 	if m.Redis != nil {
 		return errors.New("redis module is already initialized")
 	}
-	client, err := NewRedis(ctx, m.Config)
+	var client Redis
+	var err error
+	if m.Lazy {
+		client, err = NewRedisLazy(m.Config)
+	} else {
+		client, err = NewRedis(ctx, m.Config)
+	}
 	if err != nil {
 		return err
 	}
@@ -26,7 +35,9 @@ func (m *Module) Close(ctx context.Context) error {
 	if m.Redis == nil {
 		return nil
 	}
-	client := m.Redis
+	if err := m.Redis.Close(); err != nil {
+		return err
+	}
 	m.Redis = nil
-	return client.Close()
+	return nil
 }

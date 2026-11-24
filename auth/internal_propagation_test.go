@@ -78,6 +78,15 @@ func TestInternalPropagatedIdentity(t *testing.T) {
 					c.GetString(constants.KeyAuthMode) != "Internal" {
 					t.Fatal("propagated identity was not installed")
 				}
+				requireRequestIdentity(t, c, Identity{
+					TenantID:        test.tenant,
+					UserID:          test.user,
+					ProjectID:       test.project,
+					AuthMode:        "Internal",
+					OriginTenantID:  test.tenant,
+					OriginUserID:    test.user,
+					OriginProjectID: test.project,
+				})
 				c.Status(http.StatusOK)
 			})
 			req := httptest.NewRequest(http.MethodGet, "/", nil)

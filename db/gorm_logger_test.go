@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
@@ -127,5 +128,70 @@ func TestSQLLogsUseRequestContextAndRespectLogMode(t *testing.T) {
 	}
 	if len(entries) != 4 {
 		t.Fatalf("unexpected SQL log entries: %v", entries)
+	}
+}
+
+func TestSQLLogsOmitBoundValues(t *testing.T) {
+	const secret = "super-secret-value"
+	path := filepath.Join(t.TempDir(), "sql.log")
+	log, err := logger.NewLogger(&logger.Config{Outputs: []logger.Output{{Type: "file", Path: path}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(log.Close)
+	database := &db.Module{Config: &db.Config{Driver: db.DriverSQLite, DB: ":memory:", MaxOpenConns: 1}}
+	if err := database.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close(context.Background()) })
+	for _, sql := range []string{
+		"CREATE TABLE records (secret TEXT)",
+		"CREATE TRIGGER reject_secret BEFORE INSERT ON records BEGIN SELECT RAISE(ABORT, NEW.secret); END",
+	} {
+		if err := database.DB.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tx := database.DB.WithContext(logger.WithContext(t.Context(), log)).Debug()
+	var count int64
+	if err := tx.Table("records").Where("secret = ?", secret).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Exec(
+		"INSERT INTO records (secret) VALUES (?)",
+		secret,
+	).Error; err == nil ||
+		err.Error() != secret {
+		t.Fatalf("expected driver error to retain its original value, got %v", err)
+	}
+	wrapped, err := gorm.Open(db.NewAIBaseDialector("postgres", postgres.Open("host=localhost")), &gorm.Config{
+		Logger: database.DB.Logger, DryRun: true, DisableAutomaticPing: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := wrapped.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	if err := wrapped.WithContext(logger.WithContext(t.Context(), log)).
+		Table("records").Where("secret = ?", secret).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := log.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	logged, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := string(logged)
+	if !strings.Contains(message, "secret = ?") || !strings.Contains(message, "secret = $1") ||
+		!strings.Contains(message, "VALUES (?)") ||
+		!strings.Contains(message, `"level":"error"`) || strings.Contains(message, secret) {
+		t.Fatalf("unexpected SQL logs: %s", message)
 	}
 }

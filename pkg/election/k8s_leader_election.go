@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,29 +38,17 @@ type K8sLeaderElection struct {
 	// kubeconfig的文件路径, 默认使用inClusterConfig
 	kubeConfigFilePath string
 
-	// leader超时时间，最小值和默认值均为3s
-	leaseDuration time.Duration
-
-	/************************************/
-
-	/**********  回调函数  ****************/
-	// 成为leader之后的回调
-	startLeaderCallback func(context.Context)
-
-	// 失去leader之后的回调
-	stopLeaderCallback func()
-
-	// leader切换时的回调
-	leaderChangeCallback func(string)
-
-	/******************/
+	leaseDuration    time.Duration
+	renewDeadline    time.Duration
+	retryPeriod      time.Duration
+	leaseDurationSet bool
+	renewDeadlineSet bool
+	retryPeriodSet   bool
 
 	mu            sync.RWMutex
 	leaderElector *leaderelection.LeaderElector
 	client        *clientset.Clientset
-
-	// 在leader上运行的任务列表
-	leaderTasks []func(context.Context)
+	work          leaderWork
 
 	// 选举已经启动
 	started atomic.Bool
@@ -70,10 +59,10 @@ type K8sElectionOption func(e *K8sLeaderElection)
 // NewK8sLeaderElection validates Kubernetes configuration without starting an election.
 func NewK8sLeaderElection(appName string, options ...K8sElectionOption) (*K8sLeaderElection, error) {
 	e := &K8sLeaderElection{
-		namespace:     "",
-		id:            "",
 		appName:       appName,
-		leaseDuration: 3 * time.Second,
+		leaseDuration: 15 * time.Second,
+		renewDeadline: 10 * time.Second,
+		retryPeriod:   2 * time.Second,
 	}
 	for _, option := range options {
 		option(e)
@@ -81,23 +70,56 @@ func NewK8sLeaderElection(appName string, options ...K8sElectionOption) (*K8sLea
 	if e.appName == "" || len(validation.IsDNS1123Subdomain("app-election-"+e.appName)) > 0 {
 		return nil, errors.New("app name must form a valid Kubernetes lease name")
 	}
-	if e.id == "" {
-		// 未传入id时尝试自动获取ip地址作为自己的id
-		// 若ip地址获取失败，则使用随机字符串作为id
-		ip := GetLocalIP("")
-		if ip == "" {
-			e.id = uuid.New().String()
-		} else {
-			e.id = strings.ReplaceAll(ip, ".", "-")
+	if e.leaseDurationSet {
+		if !e.renewDeadlineSet {
+			e.renewDeadline = e.leaseDuration - e.leaseDuration/3
+		}
+		if !e.retryPeriodSet {
+			e.retryPeriod = e.renewDeadline / 5
 		}
 	}
-	if e.leaseDuration < 3*time.Second {
-		e.leaseDuration = 3 * time.Second
+	// Kubernetes stores lease duration in whole seconds.
+	if e.leaseDuration < time.Second {
+		return nil, fmt.Errorf(
+			"invalid leader election lease duration %s: must be at least one second",
+			e.leaseDuration,
+		)
+	}
+	if e.retryPeriod <= 0 || e.leaseDuration.Truncate(time.Second) <= e.renewDeadline ||
+		float64(e.renewDeadline) <= leaderelection.JitterFactor*float64(e.retryPeriod) {
+		return nil, fmt.Errorf(
+			"invalid leader election timings: lease duration (%s) must exceed renew deadline (%s), "+
+				"which must exceed %g times the positive retry period (%s)",
+			e.leaseDuration,
+			e.renewDeadline,
+			leaderelection.JitterFactor,
+			e.retryPeriod,
+		)
+	}
+	if e.id == "" {
+		e.id = defaultIdentity()
 	}
 	if err := e.createClient(); err != nil {
 		return nil, err
 	}
 	return e, nil
+}
+
+func defaultIdentity() string {
+	node := os.Getenv("POD_NAME")
+	if node == "" {
+		node, _ = os.Hostname()
+	}
+	if node == "" {
+		if ip, err := LookupLocalIP(""); err == nil {
+			node = strings.ReplaceAll(ip, ".", "-")
+		}
+	}
+	id := uuid.New().String()
+	if node == "" {
+		return id
+	}
+	return node + "-" + id[:8]
 }
 
 // NewLeaderElection always selects Kubernetes. Use NewDummyAppElection explicitly for local work.
@@ -152,7 +174,7 @@ func (e *K8sLeaderElection) createClient() error {
 	return nil
 }
 
-func (e *K8sLeaderElection) startElection(ctx context.Context) error {
+func (e *K8sLeaderElection) startElection(ctx context.Context) (bool, error) {
 	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{
 			Name:      "app-election-" + e.appName,
@@ -163,32 +185,33 @@ func (e *K8sLeaderElection) startElection(ctx context.Context) error {
 			Identity: e.id,
 		},
 	}
-	// 到达renewDeadline之后，leader放弃继续renew
-	renewDeadline := e.leaseDuration - 1*time.Second
-
+	var led atomic.Bool
 	elector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
 		Lock:            lock,
 		LeaseDuration:   e.leaseDuration,
-		RenewDeadline:   renewDeadline,
-		RetryPeriod:     1 * time.Second,
+		RenewDeadline:   e.renewDeadline,
+		RetryPeriod:     e.retryPeriod,
 		ReleaseOnCancel: true,
-		Callbacks:       e.leaderCallbacks(ctx),
+		Callbacks:       e.leaderCallbacks(ctx, func() { led.Store(true) }),
 	})
 	if err != nil {
-		return fmt.Errorf("initialize Kubernetes leader election: %w", err)
+		return false, fmt.Errorf("initialize Kubernetes leader election: %w", err)
 	}
 	e.mu.Lock()
 	e.leaderElector = elector
 	e.mu.Unlock()
-	// 开始选举，Run会一直执行到ctx被取消
 	elector.Run(ctx)
-	return nil
+	e.mu.Lock()
+	e.leaderElector = nil
+	e.mu.Unlock()
+	return led.Load(), nil
 }
 
 // leaderCallbacks joins every owned leader task before a term finishes. The
 // upstream elector dispatches OnStartedLeading asynchronously, so the mutex also
 // prevents a late callback from starting work after OnStoppedLeading.
-func (e *K8sLeaderElection) leaderCallbacks(runCtx context.Context) leaderelection.LeaderCallbacks {
+func (e *K8sLeaderElection) leaderCallbacks(runCtx context.Context, onStarted func()) leaderelection.LeaderCallbacks {
+	hooks := e.work.snapshot()
 	var mu sync.Mutex
 	var stopped bool
 	var cancel context.CancelFunc
@@ -205,22 +228,14 @@ func (e *K8sLeaderElection) leaderCallbacks(runCtx context.Context) leaderelecti
 			finished := done
 			mu.Unlock()
 			defer close(finished)
+			if onStarted != nil {
+				onStarted()
+			}
 			logger.Infof(ctx, "%s became leader now", e.id)
-			if e.startLeaderCallback != nil {
-				e.startLeaderCallback(ctx)
+			for _, callback := range hooks.started {
+				callback(ctx)
 			}
-			var tasks sync.WaitGroup
-			for _, task := range e.leaderTasks {
-				if ctx.Err() != nil {
-					break
-				}
-				tasks.Add(1)
-				go func() {
-					defer tasks.Done()
-					task(ctx)
-				}()
-			}
-			tasks.Wait()
+			runLeaderTasks(ctx, hooks.tasks)
 		},
 		OnStoppedLeading: func() {
 			mu.Lock()
@@ -232,14 +247,14 @@ func (e *K8sLeaderElection) leaderCallbacks(runCtx context.Context) leaderelecti
 				<-finished
 			}
 			logger.Warnf(runCtx, "%s lost leader", e.id)
-			if e.stopLeaderCallback != nil {
-				e.stopLeaderCallback()
+			for _, callback := range hooks.stopped {
+				callback()
 			}
 		},
 		OnNewLeader: func(identity string) {
 			logger.Infof(runCtx, "%s: new leader is %s", e.id, identity)
-			if e.leaderChangeCallback != nil {
-				e.leaderChangeCallback(identity)
+			for _, callback := range hooks.changed {
+				callback(identity)
 			}
 		},
 	}
@@ -263,21 +278,34 @@ func (e *K8sLeaderElection) Run(ctx context.Context) error {
 		return errors.New("app election already started")
 	}
 
-	for {
-		if err := e.startElection(ctx); err != nil {
+	return runElection(ctx, e.startElection)
+}
+
+func runElection(ctx context.Context, run func(context.Context) (bool, error)) error {
+	const initialDelay, maxDelay = 500 * time.Millisecond, 5 * time.Second
+	delay := initialDelay
+	for ctx.Err() == nil {
+		led, err := run(ctx)
+		if err != nil {
 			return err
 		}
+		if ctx.Err() != nil {
+			break
+		}
+		if led {
+			delay = initialDelay
+		}
+		logger.Warnf(ctx, "app election ended, retrying in %s", delay)
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
-			// 取消选举，退出
-			logger.Warnf(ctx, "app election canceled")
-			return nil
-		default:
-			// 没有被取消，继续尝试竞选
-			logger.Warnf(ctx, "app election failed, retrying...")
-			continue
+			timer.Stop()
+		case <-timer.C:
+			delay = min(delay*2, maxDelay)
 		}
 	}
+	logger.Warnf(ctx, "app election canceled")
+	return nil
 }
 
 // 设置kubeconfig文件路径, 默认使用inClusterConfig
@@ -290,10 +318,27 @@ func WithKubeConfigFilePath(kubeConfigFilePath string) K8sElectionOption {
 func WithLeaseDuration(d time.Duration) K8sElectionOption {
 	return func(e *K8sLeaderElection) {
 		e.leaseDuration = d
+		e.leaseDurationSet = true
 	}
 }
 
-// 设置选举的id，默认使用当前IP地址
+// WithRenewDeadline sets how long the leader retries renewal before stepping down.
+func WithRenewDeadline(d time.Duration) K8sElectionOption {
+	return func(e *K8sLeaderElection) {
+		e.renewDeadline = d
+		e.renewDeadlineSet = true
+	}
+}
+
+// WithRetryPeriod sets the interval between acquisition or renewal attempts.
+func WithRetryPeriod(d time.Duration) K8sElectionOption {
+	return func(e *K8sLeaderElection) {
+		e.retryPeriod = d
+		e.retryPeriodSet = true
+	}
+}
+
+// WithIdentify sets the identity recorded on the lease.
 func WithIdentify(id string) K8sElectionOption {
 	return func(e *K8sLeaderElection) {
 		e.id = id
@@ -309,36 +354,24 @@ func WithNamespace(namespace string) K8sElectionOption {
 
 // 添加成为leader的回调
 func (e *K8sLeaderElection) WithStartedLeadingCallback(cb func(context.Context)) LeaderElection {
-	currCallback := e.startLeaderCallback
-	e.startLeaderCallback = func(ctx context.Context) {
-		if currCallback != nil {
-			currCallback(ctx)
-		}
-		cb(ctx)
+	if cb != nil {
+		addLeaderHook(&e.work.mu, &e.work.started, cb)
 	}
 	return e
 }
 
-// 添加时区leader的回调
+// 添加失去leader的回调
 func (e *K8sLeaderElection) WithStoppedLeadingCallback(cb func()) LeaderElection {
-	currCallback := e.stopLeaderCallback
-	e.stopLeaderCallback = func() {
-		if currCallback != nil {
-			currCallback()
-		}
-		cb()
+	if cb != nil {
+		addLeaderHook(&e.work.mu, &e.work.stopped, cb)
 	}
 	return e
 }
 
 // 添加leader变化的回调
 func (e *K8sLeaderElection) WithNewLeaderCallback(cb func(string)) LeaderElection {
-	currCallback := e.leaderChangeCallback
-	e.leaderChangeCallback = func(newLeader string) {
-		if currCallback != nil {
-			currCallback(newLeader)
-		}
-		cb(newLeader)
+	if cb != nil {
+		addLeaderHook(&e.work.mu, &e.work.changed, cb)
 	}
 	return e
 }
@@ -365,5 +398,7 @@ func (e *K8sLeaderElection) IsLeader() bool {
 
 // RunOnLeader需要在Run()执行之前调用，否则不会被执行
 func (e *K8sLeaderElection) RunOnLeader(task func(context.Context)) {
-	e.leaderTasks = append(e.leaderTasks, task)
+	if task != nil {
+		addLeaderHook(&e.work.mu, &e.work.tasks, task)
+	}
 }

@@ -18,7 +18,10 @@ func TestBearerTokensOwnsCredentials(t *testing.T) {
 	tokens["later"] = "other"
 	delete(tokens, "longer-service-credential")
 	engine := gin.New()
-	engine.GET("/", middleware, func(c *core.Context) { c.String(200, UserID(c)) })
+	engine.GET("/", middleware, func(c *core.Context) {
+		requireRequestIdentity(t, c, Identity{UserID: UserID(c)})
+		c.String(200, UserID(c))
+	})
 	for _, tc := range []struct {
 		header, body string
 		status       int

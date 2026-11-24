@@ -11,6 +11,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/migrator"
 	"gorm.io/gorm/schema"
 )
 
@@ -19,6 +20,27 @@ var errBooleanValue = errors.New("boolean value conversion failed")
 type rejectedBoolean bool
 
 func (rejectedBoolean) Value() (driver.Value, error) { return nil, errBooleanValue }
+
+func TestBindVarWithoutStatementVars(t *testing.T) {
+	dialect := NewAIBaseDialectorWithIntegerBoolean("postgres", postgres.New(postgres.Config{}))
+	var sql strings.Builder
+	dialect.BindVarTo(&sql, &gorm.Statement{}, true)
+	if !strings.HasPrefix(sql.String(), "$") {
+		t.Fatalf("underlying dialect did not bind a placeholder: %q", sql.String())
+	}
+}
+
+func TestSwapMigratorDialectorSkipsReadOnlyFields(t *testing.T) {
+	base := postgres.New(postgres.Config{})
+	dialect := NewAIBaseDialector("postgres", base)
+	value := migrator.Config{Dialector: base}
+	if swapMigratorDialector(reflect.ValueOf(value), dialect) {
+		t.Fatal("replaced a dialector in a read-only field")
+	}
+	if !swapMigratorDialector(reflect.ValueOf(&value).Elem(), dialect) || value.Dialector != dialect {
+		t.Fatal("did not replace a dialector in a settable field")
+	}
+}
 
 func TestTinyIntPreservesFieldSemantics(t *testing.T) {
 	type row struct {

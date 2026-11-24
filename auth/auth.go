@@ -65,6 +65,7 @@ func FakeAuthWithID(tenantID, userID, userName, userRole string) core.HandlerFun
 		c.Set(constants.KeyUserID, userID)
 		c.Set(constants.KeyUserName, userName)
 		c.Set(constants.KeyUserRole, userRole)
+		SyncIdentityToRequestContext(c)
 		c.Next()
 	}
 }

@@ -2,7 +2,8 @@ package election
 
 import (
 	"context"
-	"sync"
+	"errors"
+	"sync/atomic"
 
 	"github.com/FlyTOmeLight/server-go/logger"
 )
@@ -12,8 +13,8 @@ type DummyAppElection struct {
 	// 当前节点ID
 	ID string
 
-	// 要执行的函数
-	leaderTasks []func(context.Context)
+	work    leaderWork
+	running atomic.Bool
 }
 
 func NewDummyAppElection(id string) *DummyAppElection {
@@ -22,20 +23,25 @@ func NewDummyAppElection(id string) *DummyAppElection {
 
 // 添加成为leader的回调
 func (e *DummyAppElection) WithStartedLeadingCallback(cb func(context.Context)) LeaderElection {
-	// 也在leaderTasks中执行，因为leaderTasks也只会被执行一次
-	e.leaderTasks = append(e.leaderTasks, cb)
+	if cb != nil {
+		addLeaderHook(&e.work.mu, &e.work.started, cb)
+	}
 	return e
 }
 
-// 添加时区leader的回调
-func (e *DummyAppElection) WithStoppedLeadingCallback(_ func()) LeaderElection {
-	// 不需要实现，因为永远是leader
+// 添加失去leader的回调
+func (e *DummyAppElection) WithStoppedLeadingCallback(cb func()) LeaderElection {
+	if cb != nil {
+		addLeaderHook(&e.work.mu, &e.work.stopped, cb)
+	}
 	return e
 }
 
 // 添加leader变化的回调
-func (e *DummyAppElection) WithNewLeaderCallback(_ func(string)) LeaderElection {
-	// 不需要实现，因为永远是leader，不会发生切换
+func (e *DummyAppElection) WithNewLeaderCallback(cb func(string)) LeaderElection {
+	if cb != nil {
+		addLeaderHook(&e.work.mu, &e.work.changed, cb)
+	}
 	return e
 }
 
@@ -52,21 +58,32 @@ func (e *DummyAppElection) IsLeader() bool {
 }
 
 func (e *DummyAppElection) RunOnLeader(task func(context.Context)) {
-	e.leaderTasks = append(e.leaderTasks, task)
+	if task != nil {
+		addLeaderHook(&e.work.mu, &e.work.tasks, task)
+	}
 }
 
 func (e *DummyAppElection) Run(ctx context.Context) error {
-	// The application owns cancellation. Wait for every owned task to stop.
-	var tasks sync.WaitGroup
-	for _, task := range e.leaderTasks {
-		tasks.Add(1)
-		go func() {
-			defer tasks.Done()
-			task(ctx)
-		}()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+	if !e.running.CompareAndSwap(false, true) {
+		return errors.New("app election already started")
+	}
+	defer e.running.Store(false)
+
+	hooks := e.work.snapshot()
+	for _, callback := range hooks.started {
+		callback(ctx)
+	}
+	for _, callback := range hooks.changed {
+		callback(e.ID)
+	}
+	runLeaderTasks(ctx, hooks.tasks)
 	<-ctx.Done()
-	tasks.Wait()
+	for _, callback := range hooks.stopped {
+		callback()
+	}
 	logger.Infof(ctx, "app election canceled")
 	return nil
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -16,9 +17,21 @@ func TestKubernetesConfigurationErrorAndExplicitLocalMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	canceledCtx, cancelImmediately := context.WithCancel(context.Background())
+	cancelImmediately()
+	if err := worker.Run(canceledCtx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled Run returned %v; want context.Canceled", err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	worker.election.WithStartedLeadingCallback(func(context.Context) { close(started) })
+	cancelAfterStart := make(chan error, 1)
+	go func() {
+		cancelAfterStart <- worker.Run(ctx)
+	}()
+	<-started
 	cancel()
-	if err := worker.Run(ctx); err != nil {
-		t.Fatal(err)
+	if err := <-cancelAfterStart; err != nil {
+		t.Fatalf("stopped Run returned %v", err)
 	}
 }

@@ -2,9 +2,7 @@ package db
 
 import (
 	"database/sql/driver"
-	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/bsontype"
@@ -48,30 +46,34 @@ type UTCTime struct {
 }
 
 func (t UTCTime) Value() (driver.Value, error) {
-	var zeroTime time.Time
-	if t.Time.UnixNano() == zeroTime.UnixNano() {
+	if t.Time.IsZero() {
 		return nil, nil
 	}
 	return t.Time, nil
 }
 
 func (t *UTCTime) Scan(v any) error {
-	vType := reflect.TypeOf(v)
-	if vType == nil {
-		return errors.New("can not convert NULL to timestamp")
-	}
-	// 适配SQLite
-	if vType.Kind() == reflect.String {
-		tm, err := time.Parse("2006-01-02 15:04:05", v.(string))
-		if err != nil {
-			return err
-		}
-		*t = UTCTime{Time: tm.UTC()}
-		return nil
-	}
-	if value, ok := v.(time.Time); ok {
+	switch value := v.(type) {
+	case nil:
+		*t = UTCTime{}
+	case time.Time:
 		*t = UTCTime{Time: value.UTC()}
-		return nil
+	case []byte:
+		return t.Scan(string(value))
+	case string:
+		for _, layout := range []string{
+			time.RFC3339Nano,
+			"2006-01-02 15:04:05.999999999-07:00",
+			"2006-01-02 15:04:05.999999999",
+		} {
+			if parsed, err := time.Parse(layout, value); err == nil {
+				*t = UTCTime{Time: parsed.UTC()}
+				return nil
+			}
+		}
+		return fmt.Errorf("can not parse %q as a timestamp", value)
+	default:
+		return fmt.Errorf("can not convert %T to timestamp", v)
 	}
-	return fmt.Errorf("can not convert %v to timestamp", v)
+	return nil
 }

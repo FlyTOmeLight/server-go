@@ -92,18 +92,23 @@ func Run[T any](ctx context.Context, options Options, build func(context.Context
 	if err != nil {
 		return err
 	}
-	r := &Runtime{Log: log, cleanup: []cleanupOperation{{release: func(context.Context) error {
-		log.Close()
-		return nil
-	}}}}
-	runCtx, cancelRun := context.WithCancel(ctx)
-	defer func() {
+	r := &Runtime{Log: log}
+	runCtx, cancelRun := context.WithCancel(logger.WithContext(ctx, log))
+	stopWatching := func() error {
 		cancelRun()
+		if r.Config != nil {
+			return r.Config.Close(context.WithoutCancel(runCtx))
+		}
+		return nil
+	}
+	defer func() {
+		result = errors.Join(result, stopWatching())
 		for _, v := range slices.Backward(r.cleanup) {
 			if v.service {
 				err, stopped := lifecycle.Stop(ctx, options.CloseTimeout, v.release)
 				result = errors.Join(result, err)
 				if !stopped {
+					_ = log.Sync()
 					return
 				}
 				continue
@@ -112,19 +117,19 @@ func Run[T any](ctx context.Context, options Options, build func(context.Context
 			result = errors.Join(result, v.release(closeCtx))
 			cancel()
 		}
+		log.Close()
 	}()
 	r.Config, err = conf.NewManager(options.ConfigPath)
 	if err != nil {
 		return err
 	}
-	r.cleanup = append(r.cleanup, cleanupOperation{release: r.Config.Close})
 	var config T
 	if err := r.Config.Snapshot().Unmarshal(&config); err != nil {
 		return fmt.Errorf("decode application config: %w", err)
 	}
 	initCtx, cancelInit := context.WithTimeout(runCtx, options.InitTimeout)
 	startupDeadline, _ := initCtx.Deadline()
-	err = build(logger.WithContext(initCtx, log), r, &config)
+	err = build(initCtx, r, &config)
 	if err == nil {
 		err = initCtx.Err()
 	}
@@ -142,7 +147,7 @@ func Run[T any](ctx context.Context, options Options, build func(context.Context
 	r.cleanup = append(r.cleanup, cleanupOperation{release: func(context.Context) error { return h.Close() }})
 	if err := r.Config.Watch(
 		runCtx,
-		func(err error) { log.Errorf(runCtx, "reload configuration: %v", err) },
+		func(err error) { logger.Errorf(runCtx, "reload configuration: %v", err) },
 	); err != nil {
 		return err
 	}
@@ -150,5 +155,5 @@ func Run[T any](ctx context.Context, options Options, build func(context.Context
 	if startupTimeout <= 0 {
 		return context.DeadlineExceeded
 	}
-	return h.RunWithStartupTimeout(runCtx, startupTimeout)
+	return h.RunWithShutdownHook(runCtx, startupTimeout, stopWatching)
 }

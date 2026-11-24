@@ -72,6 +72,7 @@ func Impersonate(authorize func(c *core.Context, tenantID, userID string) error)
 			c.Set(constants.KeyProjectID, projectID)
 		}
 		c.Set(constants.KeyAuthMode, "Impersonate")
+		SyncIdentityToRequestContext(c)
 		c.Next()
 	}, nil
 }

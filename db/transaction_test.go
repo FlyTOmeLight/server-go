@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/HuaweiCloudDeveloper/gaussdb-go/gaussdbconn"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/sqlite"
@@ -95,13 +97,43 @@ func TestTransactionLifecycle(t *testing.T) {
 	}
 }
 
-type transactionTestDialect struct{ gorm.Dialector }
+type transactionTestDialect struct {
+	gorm.Dialector
+	name string
+}
 
-func (transactionTestDialect) Name() string { return "postgres" }
+func (d transactionTestDialect) Name() string { return d.name }
+
+func TestTransactionRejectsInvalidInputs(t *testing.T) {
+	validDB := transactionTestDB(t)
+	aborted := &pgconn.PgError{Code: "40001"}
+	callback := func(*DB) error {
+		t.Fatal("callback called with invalid inputs")
+		return nil
+	}
+	if err := Transaction(nil, validDB, TransactionOptions{}, callback); err == nil ||
+		err.Error() != "transaction context is nil" {
+		t.Fatalf("nil context: %v", err)
+	}
+	for _, database := range []*DB{
+		nil,
+		{},
+		{Config: &gorm.Config{Dialector: validDB.Dialector}},
+		{Statement: &gorm.Statement{}},
+		{Config: &gorm.Config{}, Statement: &gorm.Statement{}},
+	} {
+		if err := Transaction(t.Context(), database, TransactionOptions{}, callback); err == nil {
+			t.Error("invalid database accepted")
+		}
+		if transactionAborted(database, aborted) {
+			t.Error("invalid database classified a transaction error")
+		}
+	}
+}
 
 func TestTransactionRetryBounds(t *testing.T) {
 	database := transactionTestDB(t)
-	database.Dialector = transactionTestDialect{Dialector: database.Dialector}
+	database.Dialector = transactionTestDialect{Dialector: database.Dialector, name: "postgres"}
 	aborted := fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: "40001"})
 	t.Run("whole transaction", func(t *testing.T) {
 		attempts := 0
@@ -171,8 +203,42 @@ func TestTransactionRetryBounds(t *testing.T) {
 			if tc.want != aborted && !errors.Is(err, aborted) {
 				t.Fatalf("original error lost: %v", err)
 			}
+			if tc.want != aborted && calls != 1 {
+				t.Fatalf("attempts after cancellation or deadline: %d, want 1", calls)
+			}
 		})
 	}
+}
+
+func TestTransactionRetryBackoff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		database := transactionTestDB(t)
+		database.Dialector = transactionTestDialect{Dialector: database.Dialector, name: "gaussdb"}
+		aborted := &gaussdbconn.GaussdbError{Code: "40P01"}
+		windows := []time.Duration{400 * time.Millisecond, 800 * time.Millisecond, time.Second, time.Second}
+		var attempts []time.Time
+		err := Transaction(t.Context(), database, TransactionOptions{Retry: &TransactionRetry{
+			MaxAttempts: len(windows) + 1, Timeout: 5 * time.Second, Delay: windows[0],
+		}}, func(*DB) error {
+			attempts = append(attempts, time.Now())
+			return aborted
+		})
+		if !errors.Is(err, aborted) || len(attempts) != len(windows)+1 {
+			t.Fatalf("attempts=%d error=%v", len(attempts), err)
+		}
+		for i, window := range windows {
+			wait := attempts[i+1].Sub(attempts[i])
+			if wait < window-window/4 || wait > window {
+				t.Errorf(
+					"retry %d waited %s, want between %s and %s",
+					i+1,
+					wait,
+					window-window/4,
+					window,
+				)
+			}
+		}
+	})
 }
 
 func TestTransactionCanceledCallback(t *testing.T) {
@@ -199,13 +265,20 @@ func TestTransactionAborted(t *testing.T) {
 		{dialect: "postgres", err: &pgconn.PgError{Code: "40001"}, want: true},
 		{dialect: "postgres", err: &pgconn.PgError{Code: "40P01"}, want: true},
 		{dialect: "postgres", err: &pgconn.PgError{Code: "23505"}, want: false},
+		{dialect: "gaussdb", err: &gaussdbconn.GaussdbError{Code: "40001"}, want: true},
+		{dialect: "gaussdb", err: &gaussdbconn.GaussdbError{Code: "40P01"}, want: true},
+		{dialect: "gaussdb", err: &gaussdbconn.GaussdbError{Code: "23505"}, want: false},
 		{dialect: "mysql", err: &mysql.MySQLError{Number: 1213}, want: true},
 		{dialect: "mysql", err: &mysql.MySQLError{Number: 1205}, want: false},
 		{dialect: "mysql", err: &mysql.MySQLError{Number: 1062}, want: false},
 		{dialect: "sqlite", err: &pgconn.PgError{Code: "40001"}, want: false},
 		{dialect: "postgres", err: errors.New("connection lost during commit"), want: false},
 	} {
-		if got := transactionAborted(tc.dialect, fmt.Errorf("wrapped: %w", tc.err)); got != tc.want {
+		database := &DB{
+			Config:    &gorm.Config{Dialector: transactionTestDialect{name: tc.dialect}},
+			Statement: &gorm.Statement{},
+		}
+		if got := transactionAborted(database, fmt.Errorf("wrapped: %w", tc.err)); got != tc.want {
 			t.Errorf("%s %v: %v", tc.dialect, tc.err, got)
 		}
 	}
@@ -234,7 +307,7 @@ func (tx failingCommitTx) Commit() error { _ = tx.Tx.Rollback(); return tx.err }
 
 func TestTransactionUnknownCommitResultDoesNotRetry(t *testing.T) {
 	database := transactionTestDB(t)
-	database.Dialector = transactionTestDialect{Dialector: database.Dialector}
+	database.Dialector = transactionTestDialect{Dialector: database.Dialector, name: "postgres"}
 	connection, err := database.DB()
 	if err != nil {
 		t.Fatal(err)

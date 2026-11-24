@@ -16,7 +16,7 @@ type XReadArgs = redis.XReadArgs
 // Nil is the driver's no-result sentinel. Get returns it when the key does not
 // exist, and a blocking XRead returns it when the wait times out without new
 // entries. Compare with errors.Is.
-var Nil = redis.Nil
+const Nil = redis.Nil
 
 func NewRedis(ctx context.Context, config *Config) (Redis, error) {
 	if config == nil {

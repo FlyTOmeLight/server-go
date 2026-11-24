@@ -5,6 +5,7 @@ import (
 
 	"resty.dev/v3"
 
+	"github.com/FlyTOmeLight/server-go/auth"
 	"github.com/FlyTOmeLight/server-go/constants"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/sdk"
@@ -24,6 +25,7 @@ type InternalClientConfig struct {
 	STSACL            string
 }
 
+// Deprecated: AK/SK authentication is not implemented; use NewInternalClientWithConfig.
 func NewInternalClient(ak, sk, endpoint string) (*InternalClient, error) {
 	return NewInternalClientWithConfig(&InternalClientConfig{
 		Config: &sdk.Config{
@@ -63,14 +65,32 @@ func Wrap(client *InternalClient, ctx *core.Context) *resty.Request {
 	return client.R(ctx)
 }
 
-// R creates a request tied to the inbound request's cancellation and deadline.
-// ctx must contain an inbound HTTP request.
+// R creates a request and uses the inbound HTTP request's context when available.
 func (c *InternalClient) R(ctx *core.Context) *resty.Request {
-	request := c.Client.R().SetContext(ctx.Request.Context())
+	request := c.Client.R()
+	if ctx == nil {
+		return request
+	}
+	requestID := ctx.GetString(constants.KeyRequestID)
+	if ctx.Request != nil {
+		request.SetContext(ctx.Request.Context())
+		if requestID == "" {
+			requestID = ctx.GetHeader(constants.HeaderRequestID)
+		}
+	}
+	if requestID != "" {
+		request.SetHeader(constants.HeaderRequestID, requestID)
+	}
 	if c.Config.EnableImpersonate {
-		request.SetHeader(constants.HeaderImpersonateTenantID, ctx.GetString(constants.KeyTenantID))
-		request.SetHeader(constants.HeaderImpersonateUserID, ctx.GetString(constants.KeyUserID))
-		request.SetHeader(constants.HeaderImpersonateProjectID, ctx.GetString(constants.KeyProjectID))
+		if tenantID := auth.TenantID(ctx); tenantID != "" {
+			request.SetHeader(constants.HeaderImpersonateTenantID, tenantID)
+		}
+		if userID := auth.UserID(ctx); userID != "" {
+			request.SetHeader(constants.HeaderImpersonateUserID, userID)
+		}
+		if projectID := auth.ProjectID(ctx); projectID != "" {
+			request.SetHeader(constants.HeaderImpersonateProjectID, projectID)
+		}
 	}
 	return request
 }

@@ -4,10 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/panjf2000/ants/v2"
+
+	"github.com/FlyTOmeLight/server-go/logger"
 )
 
 type testTask struct {
@@ -239,6 +246,226 @@ func TestRunPeriodDoesNotMutateInput(t *testing.T) {
 	if (&RunPeriod{}).IsValid() {
 		t.Fatal("missing times accepted")
 	}
+}
+
+func TestRunPeriodUsesTargetTimeZone(t *testing.T) {
+	start := time.Date(2000, 1, 1, 14, 0, 0, 0, time.UTC)
+	end := time.Date(2000, 1, 1, 18, 0, 0, 0, time.UTC)
+	period := RunPeriod{Start: &start, End: &end}
+	local := time.FixedZone("UTC+8", 8*60*60)
+	for _, tt := range []struct {
+		hour int
+		want bool
+	}{
+		{hour: 0, want: true}, {hour: 2, want: true}, {hour: 3, want: false}, {hour: 14, want: false}, {hour: 21, want: false}, {hour: 22, want: true}, {hour: 23, want: true},
+	} {
+		now := time.Date(2026, 10, 12, tt.hour, 0, 0, 0, local)
+		if got := period.IsValid(now); got != tt.want {
+			t.Errorf("period.IsValid(%s)=%v; want %v", now, got, tt.want)
+		}
+	}
+}
+
+func TestUnstartedTaskSkipsWindowStop(t *testing.T) {
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name    string
+		enabled bool
+		periods []RunPeriod
+	}{
+		{name: "disabled"},
+		{name: "outside window", enabled: true, periods: []RunPeriod{{}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			task := &testTask{name: tt.name}
+			manager := newStartedTaskManager(t, ctx, false)
+			period := NewPeriodTask(task, tt.periods, AutoUpdate, tt.enabled)
+			if err := manager.Add(ctx, period); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := period.Exec(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if period.Status() != TaskStatusStopped || task.started.Load() != 0 ||
+				task.stopped.Load() != 0 {
+				t.Fatalf(
+					"new task: status=%s, starts=%d, stops=%d",
+					period.Status(),
+					task.started.Load(),
+					task.stopped.Load(),
+				)
+			}
+			if err := manager.Remove(ctx, task.name); err != nil {
+				t.Fatal(err)
+			}
+			if task.stopped.Load() != 1 {
+				t.Fatal("removal did not clean up initialized resources")
+			}
+		})
+	}
+}
+
+func TestExpiredTaskUsesBoundedCleanupWhenManagerContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	manager := newStartedTaskManager(t, ctx, false)
+	cleaned := make(chan error, 1)
+	task := &testTask{name: "expired", stop: func(ctx context.Context) error {
+		err := ctx.Err()
+		if _, ok := ctx.Deadline(); !ok {
+			err = errors.New("missing window cleanup deadline")
+		}
+		cleaned <- err
+		return err
+	}}
+	period := NewPeriodTask(task, nil, AutoUpdate, true)
+	if err := manager.Add(ctx, period); err != nil {
+		t.Fatal(err)
+	}
+	if err := period.Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Add(ctx, NewPeriodTask(task, []RunPeriod{{}}, AutoUpdate, true)); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := manager.Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-cleaned:
+		if err != nil || period.Status() != TaskStatusStopped {
+			t.Fatalf("expired task: status=%s, cleanup=%v", period.Status(), err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expired task was not cleaned up")
+	}
+}
+
+func TestWorkerReportsTaskErrorsAndPanic(t *testing.T) {
+	ctx := context.Background()
+	manager := newStartedTaskManager(t, ctx, false)
+	failStart, failStop := errors.New("start failed"), errors.New("window stop failed")
+	reported := make(chan error, 8)
+	manager.SetErrorHandler(func(err error) { reported <- err })
+	panickingCtx := make(chan context.Context, 1)
+	badStart := &testTask{name: "bad-start", startErr: failStart}
+	var stopAttempts atomic.Int32
+	badStop := &testTask{name: "bad-stop", stop: func(context.Context) error {
+		if stopAttempts.Add(1) == 1 {
+			return failStop
+		}
+		return nil
+	}}
+	panicking := &testTask{name: "panicking", start: func(ctx context.Context) error {
+		panickingCtx <- ctx
+		panic("panic from Start")
+	}}
+	for _, task := range []*testTask{badStart, badStop, panicking} {
+		period := NewPeriodTask(task, nil, AutoUpdate, true)
+		if err := manager.Add(ctx, period); err != nil {
+			t.Fatal(err)
+		}
+		if task == badStop {
+			if err := period.Exec(ctx); err != nil {
+				t.Fatal(err)
+			}
+			period.SetEnabled(false)
+		}
+	}
+	if err := manager.Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var startSeen, stopSeen, panicSeen bool
+	deadline := time.After(time.Second)
+	for range 3 {
+		select {
+		case err := <-reported:
+			startSeen = startSeen || errors.Is(err, failStart)
+			stopSeen = stopSeen || errors.Is(err, failStop)
+			panicSeen = panicSeen || strings.Contains(err.Error(), "task worker panic: panic from Start")
+		case <-deadline:
+			t.Fatal("worker did not report all failures")
+		}
+	}
+	if !startSeen || !stopSeen || !panicSeen {
+		t.Fatalf("reported start=%v, stop=%v, panic=%v", startSeen, stopSeen, panicSeen)
+	}
+	if work := <-panickingCtx; work.Err() != context.Canceled {
+		t.Fatal("panicking task left its worker context active")
+	}
+	if manager.GetTask(badStop.name) != badStop {
+		t.Fatal("failed resource was discarded")
+	}
+}
+
+func TestPoolSubmissionErrorReachesHandler(t *testing.T) {
+	ctx := context.Background()
+	manager := newStartedTaskManager(t, ctx, false)
+	if err := manager.Add(ctx, NewPeriodTask(&testTask{name: "job"}, nil, AutoUpdate, true)); err != nil {
+		t.Fatal(err)
+	}
+	reported := make(chan error, 1)
+	manager.SetErrorHandler(func(err error) { reported <- err })
+	manager.pool.Release()
+	if err := manager.Exec(ctx); !errors.Is(err, ants.ErrPoolClosed) {
+		t.Fatalf("pool submission returned %v", err)
+	}
+	select {
+	case err := <-reported:
+		if !errors.Is(err, ants.ErrPoolClosed) {
+			t.Fatalf("handler received %v", err)
+		}
+	default:
+		t.Fatal("pool submission error was not reported")
+	}
+}
+
+func TestSchedulerErrorsUseContextLoggerByDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scheduler.log")
+	log, err := logger.NewLogger(
+		&logger.Config{Level: "Error", Outputs: []logger.Output{{Type: "File", Path: path}}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { log.Close() })
+	ctx := logger.WithContext(context.Background(), log)
+	manager := newStartedTaskManager(t, ctx, true)
+	failure := errors.New("sync failure in context logger")
+	if err := manager.RegisterSyncHandler(func(context.Context) (map[string]*PeriodTask, error) {
+		return nil, failure
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Exec(ctx); !errors.Is(err, failure) {
+		t.Fatalf("Exec returned %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), failure.Error()) {
+		t.Fatalf("context log=%q, error=%v", data, err)
+	}
+}
+
+func newStartedTaskManager(t *testing.T, ctx context.Context, autoSync bool) *TaskManager {
+	t.Helper()
+	manager, err := NewTaskManager(time.Hour, 1, autoSync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := manager.Stop(ctx); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := manager.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return manager
 }
 
 func TestBackgroundTaskContextLivesUntilManagerStop(t *testing.T) {

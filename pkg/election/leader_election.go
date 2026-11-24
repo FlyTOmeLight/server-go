@@ -1,14 +1,18 @@
 // 用来处理微服务多副本的leader选举；本地单节点运行需显式选择 DummyAppElection。
 package election
 
-import "context"
+import (
+	"context"
+	"slices"
+	"sync"
+)
 
 // 主节点选举
 type LeaderElection interface {
 	// 添加成为leader的回调
 	WithStartedLeadingCallback(cb func(context.Context)) LeaderElection
 
-	// 添加时区leader的回调
+	// 添加失去leader的回调
 	WithStoppedLeadingCallback(cb func()) LeaderElection
 
 	// 添加leader变化的回调
@@ -32,4 +36,44 @@ type LeaderElection interface {
 
 	// 开始异步选举。调用方通过返回的 channel 等待结束并接收初始化错误。
 	RunAsync(ctx context.Context) <-chan error
+}
+
+type leaderHooks struct {
+	started []func(context.Context)
+	stopped []func()
+	changed []func(string)
+	tasks   []func(context.Context)
+}
+
+type leaderWork struct {
+	mu sync.Mutex
+	leaderHooks
+}
+
+func addLeaderHook[T any](mu *sync.Mutex, hooks *[]T, hook T) {
+	mu.Lock()
+	defer mu.Unlock()
+	*hooks = append(*hooks, hook)
+}
+
+func (work *leaderWork) snapshot() leaderHooks {
+	work.mu.Lock()
+	defer work.mu.Unlock()
+	return leaderHooks{
+		started: slices.Clone(work.started),
+		stopped: slices.Clone(work.stopped),
+		changed: slices.Clone(work.changed),
+		tasks:   slices.Clone(work.tasks),
+	}
+}
+
+func runLeaderTasks(ctx context.Context, tasks []func(context.Context)) {
+	var running sync.WaitGroup
+	for _, task := range tasks {
+		if ctx.Err() != nil {
+			break
+		}
+		running.Go(func() { task(ctx) })
+	}
+	running.Wait()
 }

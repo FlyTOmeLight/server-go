@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/robfig/cron/v3"
+
+	"github.com/FlyTOmeLight/server-go/logger"
 )
 
 type Task interface {
@@ -41,11 +44,12 @@ type TaskManager struct {
 	mu           sync.RWMutex
 	updateMu     sync.Mutex
 	execMu       sync.Mutex
-	tasks        map[string]*PeriodTask
+	tasks        map[string]*managedTask
 	scheduler    *cron.Cron
 	pool         *ants.PoolWithFunc
 	autoSync     bool
 	syncHandlers []SyncFunc
+	errorHandler func(error)
 	active       sync.WaitGroup
 	started      bool
 	stopping     bool
@@ -54,9 +58,10 @@ type TaskManager struct {
 	stop         *stopAttempt
 }
 
-type execution struct {
-	ctx  context.Context
-	task *PeriodTask
+type managedTask struct {
+	name       string
+	period     *PeriodTask
+	initFailed bool
 }
 
 type stopAttempt struct {
@@ -77,22 +82,55 @@ func NewTaskManager(interval time.Duration, concurrency int, autoSync bool) (*Ta
 		return nil, errors.New("task concurrency must be positive")
 	}
 	manager := &TaskManager{
-		tasks: make(map[string]*PeriodTask), scheduler: cron.New(),
+		tasks: make(map[string]*managedTask), scheduler: cron.New(),
 		autoSync: autoSync,
 	}
 	pool, err := ants.NewPoolWithFunc(concurrency, func(payload any) {
+		defer func() {
+			if failure := recover(); failure != nil {
+				// The pool's panic handler reports the panic before marking this job done.
+				panic(failure)
+			}
+			manager.active.Done()
+		}()
+		task := payload.(*managedTask)
+		if err := manager.execTask(task); err != nil {
+			manager.reportError(fmt.Errorf("execute task %s: %w", task.name, err))
+		}
+	}, ants.WithPanicHandler(func(failure any) {
 		defer manager.active.Done()
-		job := payload.(execution)
-		_ = job.task.Exec(job.ctx)
-	})
+		manager.reportError(fmt.Errorf("task worker panic: %v\n%s", failure, debug.Stack()))
+	}))
 	if err != nil {
 		return nil, fmt.Errorf("initialize task pool: %w", err)
 	}
 	manager.pool = pool
 	manager.scheduler.Schedule(cron.Every(interval), cron.FuncJob(func() {
-		_ = manager.Exec(manager.runCtx)
+		manager.Exec(manager.runCtx)
 	}))
 	return manager, nil
+}
+
+// SetErrorHandler installs a synchronous handler for scheduler errors. Reports
+// may come from concurrent workers. A nil handler restores logging.
+func (m *TaskManager) SetErrorHandler(fn func(error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.errorHandler = fn
+}
+
+func (m *TaskManager) reportError(err error) {
+	if err == nil {
+		return
+	}
+	m.mu.RLock()
+	handler, ctx := m.errorHandler, m.runCtx
+	m.mu.RUnlock()
+	if handler != nil {
+		handler(err)
+		return
+	}
+	logger.FromContext(ctx).Errorf(ctx, "task manager: %v", err)
 }
 
 func (m *TaskManager) RegisterSyncHandler(handler SyncFunc) error {
@@ -109,89 +147,108 @@ func (m *TaskManager) RegisterSyncHandler(handler SyncFunc) error {
 }
 
 func (m *TaskManager) Add(ctx context.Context, task *PeriodTask) error {
-	if task == nil || task.task == nil || task.task.Name() == "" {
+	if task == nil || task.task == nil {
 		return errors.New("task and its name must be provided")
 	}
+	name := task.task.Name()
+	if name == "" {
+		return errors.New("task and its name must be provided")
+	}
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	return m.add(ctx, name, task, false)
+}
+
+// add requires updateMu to be held through lookup, cleanup, and publication.
+func (m *TaskManager) add(ctx context.Context, name string, task *PeriodTask, syncing bool) error {
 	switch task.updatePolicy {
 	case AutoUpdate, ForbiddenUpdate, Recreate:
 	default:
 		return fmt.Errorf("unknown task update policy: %s", task.updatePolicy)
 	}
-	m.updateMu.Lock()
-	defer m.updateMu.Unlock()
-	name := task.task.Name()
 	m.mu.RLock()
 	old, stopping := m.tasks[name], m.stopping
 	m.mu.RUnlock()
 	if stopping {
 		return errors.New("task manager is stopping")
 	}
-	if old != nil {
+	if old != nil && old.initFailed {
+		if err := m.cleanupFailedInit(ctx, old); err != nil {
+			return err
+		}
+	} else if old != nil {
 		switch task.updatePolicy {
 		case ForbiddenUpdate:
+			if syncing {
+				return nil
+			}
 			return errors.New("task already exists")
 		case AutoUpdate:
-			old.updateSchedule(task)
+			old.period.updateSchedule(task)
 			return nil
 		case Recreate:
-			if err := old.close(ctx); err != nil {
+			if err := m.remove(ctx, old); err != nil {
 				return err
 			}
-			m.mu.Lock()
-			delete(m.tasks, name)
-			m.mu.Unlock()
-		default:
-			return fmt.Errorf("unknown task update policy: %s", task.updatePolicy)
 		}
 	}
-	if err := task.task.Init(ctx); err != nil {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), taskCleanupTimeout)
-		cleanupErr := task.close(cleanupCtx)
-		cancel()
-		if cleanupErr != nil {
-			// Failed initialization still owns resources when its cleanup fails.
+	entry := &managedTask{name: name, period: task}
+	if err := task.init(ctx); err != nil {
+		entry.initFailed = true
+		if cleanupErr := m.cleanupFailedInit(ctx, entry); cleanupErr != nil {
 			m.mu.Lock()
-			m.tasks[name] = task
+			m.tasks[name] = entry
 			m.mu.Unlock()
+			return errors.Join(err, cleanupErr)
 		}
-		task.mu.Lock()
-		task.status = TaskStatusFailed
-		task.enabled = false
-		task.mu.Unlock()
-		return errors.Join(err, cleanupErr)
+		return err
 	}
 	m.mu.Lock()
-	m.tasks[name] = task
+	m.tasks[name] = entry
 	m.mu.Unlock()
 	return nil
 }
 
 func (m *TaskManager) SyncTasks(ctx context.Context, tasks map[string]*PeriodTask, syncErr error) error {
+	err := m.syncTasks(ctx, tasks, syncErr)
+	m.reportError(err)
+	return err
+}
+
+func (m *TaskManager) syncTasks(ctx context.Context, tasks map[string]*PeriodTask, syncErr error) error {
 	if syncErr != nil {
 		return syncErr
 	}
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	m.mu.RLock()
+	stopping := m.stopping
+	m.mu.RUnlock()
+	if stopping {
+		return errors.New("task manager is stopping")
+	}
+	var errs []error
 	for name, task := range tasks {
-		if task == nil || task.task == nil || task.task.Name() != name {
-			return fmt.Errorf("invalid synced task: %s", name)
-		}
-		if task.updatePolicy == ForbiddenUpdate && m.GetPeriodTask(name) != nil {
+		if name == "" || task == nil || task.task == nil || task.task.Name() != name {
+			errs = append(errs, fmt.Errorf("invalid synced task: %s", name))
 			continue
 		}
-		if err := m.Add(ctx, task); err != nil {
-			return err
+		if err := m.add(ctx, name, task, true); err != nil {
+			errs = append(errs, fmt.Errorf("sync task %s: %w", name, err))
 		}
 	}
 	m.mu.RLock()
-	var deleted []string
-	for name := range m.tasks {
-		if tasks[name] == nil {
-			deleted = append(deleted, name)
+	var deleted []*managedTask
+	for name, task := range m.tasks {
+		if _, exists := tasks[name]; !exists {
+			deleted = append(deleted, task)
 		}
 	}
 	m.mu.RUnlock()
-	var errs []error
-	for _, name := range deleted {
-		errs = append(errs, m.Remove(ctx, name))
+	for _, task := range deleted {
+		if err := m.remove(ctx, task); err != nil {
+			errs = append(errs, fmt.Errorf("remove task %s: %w", task.name, err))
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -199,7 +256,10 @@ func (m *TaskManager) SyncTasks(ctx context.Context, tasks map[string]*PeriodTas
 func (m *TaskManager) GetPeriodTask(name string) *PeriodTask {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.tasks[name]
+	if task := m.tasks[name]; task != nil {
+		return task.period
+	}
+	return nil
 }
 
 func (m *TaskManager) GetTask(name string) Task {
@@ -218,13 +278,46 @@ func (m *TaskManager) Remove(ctx context.Context, name string) error {
 	if task == nil {
 		return nil
 	}
-	if err := task.close(ctx); err != nil {
+	return m.remove(ctx, task)
+}
+
+func (m *TaskManager) remove(ctx context.Context, task *managedTask) error {
+	closeTask := task.period.close
+	if task.initFailed {
+		closeTask = task.period.cleanupFailedInit
+	}
+	if err := closeTask(ctx); err != nil {
 		return err
 	}
 	m.mu.Lock()
-	delete(m.tasks, name)
+	if m.tasks[task.name] == task {
+		delete(m.tasks, task.name)
+	}
 	m.mu.Unlock()
 	return nil
+}
+
+// cleanupFailedInit requires updateMu. A failed Init stays owned only while it
+// still needs cleanup.
+func (m *TaskManager) cleanupFailedInit(ctx context.Context, task *managedTask) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), taskCleanupTimeout)
+	defer cancel()
+	return m.remove(cleanupCtx, task)
+}
+
+func (m *TaskManager) execTask(task *managedTask) error {
+	if !task.initFailed {
+		return task.period.Exec(m.runCtx)
+	}
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	m.mu.RLock()
+	current := m.tasks[task.name]
+	m.mu.RUnlock()
+	if current != task {
+		return nil
+	}
+	return m.cleanupFailedInit(m.runCtx, task)
 }
 
 func (m *TaskManager) Start(ctx context.Context) error {
@@ -285,6 +378,13 @@ func (m *TaskManager) Stop(ctx context.Context) error {
 }
 
 func (m *TaskManager) finishStop(ctx context.Context, attempt *stopAttempt) {
+	err := m.closeTasks(ctx)
+	m.reportError(err)
+	attempt.err = err
+	close(attempt.done)
+}
+
+func (m *TaskManager) closeTasks(ctx context.Context) error {
 	m.updateMu.Lock()
 	defer m.updateMu.Unlock()
 	// Begin the cleanup deadline after active work has drained. An expired
@@ -292,26 +392,27 @@ func (m *TaskManager) finishStop(ctx context.Context, attempt *stopAttempt) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), taskCleanupTimeout)
 	defer cancel()
 	m.mu.RLock()
-	tasks := make(map[string]*PeriodTask, len(m.tasks))
-	for name, task := range m.tasks {
-		tasks[name] = task
+	tasks := make([]*managedTask, 0, len(m.tasks))
+	for _, task := range m.tasks {
+		tasks = append(tasks, task)
 	}
 	m.mu.RUnlock()
 	var errs []error
-	for name, task := range tasks {
-		if err := task.close(cleanupCtx); err != nil {
-			errs = append(errs, fmt.Errorf("stop task %s: %w", name, err))
-			continue
+	for _, task := range tasks {
+		if err := m.remove(cleanupCtx, task); err != nil {
+			errs = append(errs, fmt.Errorf("stop task %s: %w", task.name, err))
 		}
-		m.mu.Lock()
-		delete(m.tasks, name)
-		m.mu.Unlock()
 	}
-	attempt.err = errors.Join(errs...)
-	close(attempt.done)
+	return errors.Join(errs...)
 }
 
 func (m *TaskManager) Exec(ctx context.Context) error {
+	err := m.exec(ctx)
+	m.reportError(err)
+	return err
+}
+
+func (m *TaskManager) exec(ctx context.Context) error {
 	m.execMu.Lock()
 	defer m.execMu.Unlock()
 	m.mu.RLock()
@@ -324,28 +425,15 @@ func (m *TaskManager) Exec(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if m.autoSync {
-		synced := make(map[string]*PeriodTask)
-		for _, handler := range handlers {
-			tasks, err := handler(ctx)
-			if err != nil {
-				return err
-			}
-			for name, task := range tasks {
-				if _, exists := synced[name]; exists {
-					return fmt.Errorf("multiple sync handlers returned task %s", name)
-				}
-				synced[name] = task
-			}
-		}
-		if len(handlers) > 0 {
-			if err := m.SyncTasks(ctx, synced, nil); err != nil {
-				return err
-			}
+	var errs []error
+	if m.autoSync && len(handlers) > 0 {
+		synced, err := collectSyncedTasks(ctx, handlers)
+		if err := m.syncTasks(ctx, synced, err); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	m.mu.RLock()
-	tasks := make([]*PeriodTask, 0, len(m.tasks))
+	tasks := make([]*managedTask, 0, len(m.tasks))
 	for _, task := range m.tasks {
 		tasks = append(tasks, task)
 	}
@@ -354,18 +442,36 @@ func (m *TaskManager) Exec(ctx context.Context) error {
 		m.mu.Lock()
 		if m.stopping {
 			m.mu.Unlock()
-			return errors.New("task manager is stopping")
+			errs = append(errs, errors.New("task manager is stopping"))
+			break
 		}
 		m.active.Add(1)
 		m.mu.Unlock()
 		// Task.Start may launch background work. Its context belongs to the
 		// manager's running lifecycle, not to this scheduling invocation.
-		if err := m.pool.Invoke(execution{ctx: m.runCtx, task: task}); err != nil {
+		if err := m.pool.Invoke(task); err != nil {
 			m.active.Done()
-			return err
+			errs = append(errs, fmt.Errorf("submit task %s: %w", task.name, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
+}
+
+func collectSyncedTasks(ctx context.Context, handlers []SyncFunc) (map[string]*PeriodTask, error) {
+	synced := make(map[string]*PeriodTask)
+	for _, handler := range handlers {
+		tasks, err := handler(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for name, task := range tasks {
+			if _, exists := synced[name]; exists {
+				return nil, fmt.Errorf("multiple sync handlers returned task %s", name)
+			}
+			synced[name] = task
+		}
+	}
+	return synced, nil
 }
 
 type PeriodTask struct {
@@ -376,6 +482,8 @@ type PeriodTask struct {
 	enabled      bool
 	status       TaskStatus
 	closed       bool
+	initFailed   bool
+	skippedStop  bool
 	cancel       context.CancelFunc
 }
 
@@ -392,24 +500,25 @@ func (p *RunPeriod) IsValid(target ...time.Time) bool {
 	if len(target) > 0 {
 		now = target[0]
 	}
-	start := time.Date(
+	start, end := p.Start.In(now.Location()), p.End.In(now.Location())
+	start = time.Date(
 		now.Year(),
 		now.Month(),
 		now.Day(),
-		p.Start.Hour(),
-		p.Start.Minute(),
-		p.Start.Second(),
-		p.Start.Nanosecond(),
+		start.Hour(),
+		start.Minute(),
+		start.Second(),
+		start.Nanosecond(),
 		now.Location(),
 	)
-	end := time.Date(
+	end = time.Date(
 		now.Year(),
 		now.Month(),
 		now.Day(),
-		p.End.Hour(),
-		p.End.Minute(),
-		p.End.Second(),
-		p.End.Nanosecond(),
+		end.Hour(),
+		end.Minute(),
+		end.Second(),
+		end.Nanosecond(),
 		now.Location(),
 	)
 	if end.Before(start) {
@@ -448,38 +557,63 @@ func (task *PeriodTask) SetEnabled(enabled bool) {
 func (task *PeriodTask) Exec(ctx context.Context) error {
 	task.mu.Lock()
 	defer task.mu.Unlock()
-	if task.closed {
+	if task.closed || task.initFailed {
 		return nil
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	if task.enabled && task.timeValid() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if task.status == TaskStatusRunning {
 			return nil
 		}
 		workerCtx, cancel := context.WithCancel(ctx)
+		task.status = TaskStatusFailed
+		defer func() {
+			if task.status != TaskStatusRunning {
+				cancel()
+			}
+		}()
 		if err := task.task.Start(workerCtx); err != nil {
-			cancel()
-			task.status = TaskStatusFailed
 			return err
 		}
 		task.cancel = cancel
 		task.status = TaskStatusRunning
 		return nil
 	}
-	if task.status != TaskStatusStopped {
-		if task.cancel != nil {
-			task.cancel()
-			task.cancel = nil
-		}
-		if err := task.task.Stop(ctx); err != nil {
-			task.status = TaskStatusFailed
-			return err
-		}
+	if task.status == TaskStatusInit {
+		// The window never started this task. Removal still owns Init's resources.
+		task.skippedStop = true
 		task.status = TaskStatusStopped
 	}
+	if task.status == TaskStatusStopped {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), taskCleanupTimeout)
+	defer cancel()
+	return task.stop(cleanupCtx)
+}
+
+func (task *PeriodTask) init(ctx context.Context) error {
+	err := task.task.Init(ctx)
+	task.mu.Lock()
+	defer task.mu.Unlock()
+	if err != nil {
+		task.initFailed = true
+		task.status = TaskStatusFailed
+		return err
+	}
+	if task.initFailed {
+		task.status = TaskStatusInit
+		task.initFailed = false
+	}
 	return nil
+}
+
+func (task *PeriodTask) cleanupFailedInit(ctx context.Context) error {
+	task.mu.Lock()
+	defer task.mu.Unlock()
+	return task.stop(ctx)
 }
 
 func (task *PeriodTask) close(ctx context.Context) error {
@@ -488,18 +622,29 @@ func (task *PeriodTask) close(ctx context.Context) error {
 	if task.closed {
 		return nil
 	}
-	if task.status != TaskStatusStopped {
-		if task.cancel != nil {
-			task.cancel()
-			task.cancel = nil
-		}
-		if err := task.task.Stop(ctx); err != nil {
-			task.status = TaskStatusFailed
+	if task.status != TaskStatusStopped || task.skippedStop {
+		if err := task.stop(ctx); err != nil {
 			return err
 		}
 	}
-	task.status = TaskStatusStopped
 	task.closed = true
+	return nil
+}
+
+// stop requires task.mu. Failed initialization remains failed after cleanup.
+func (task *PeriodTask) stop(ctx context.Context) error {
+	if task.cancel != nil {
+		task.cancel()
+		task.cancel = nil
+	}
+	task.status = TaskStatusFailed
+	if err := task.task.Stop(ctx); err != nil {
+		return err
+	}
+	if !task.initFailed {
+		task.status = TaskStatusStopped
+	}
+	task.skippedStop = false
 	return nil
 }
 

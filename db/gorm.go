@@ -62,6 +62,35 @@ type BaseDataWithoutDeleted struct {
 
 type DB = gorm.DB
 
+type parameterizedGORMLogger struct{ gormLogger }
+
+func (l parameterizedGORMLogger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
+	l.level = level
+	return l
+}
+
+func (parameterizedGORMLogger) ParamsFilter(_ context.Context, sql string, _ ...any) (string, []any) {
+	return sql, nil
+}
+
+func (l parameterizedGORMLogger) Trace(ctx context.Context, begin time.Time, query func() (string, int64), err error) {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		// Driver errors can echo bound values. The operation still returns the original error.
+		err = fmt.Errorf("%T", err)
+	}
+	l.gormLogger.Trace(ctx, begin, query, err)
+}
+
+func newGORMConfig(disableForeignKeys bool) *gorm.Config {
+	return &gorm.Config{
+		Logger: parameterizedGORMLogger{
+			gormLogger: gormLogger{level: gormlogger.Info},
+		},
+		DisableAutomaticPing:                     true,
+		DisableForeignKeyConstraintWhenMigrating: disableForeignKeys,
+	}
+}
+
 func NewDB(ctx context.Context, config *Config) (*DB, error) {
 	if config == nil {
 		return nil, errors.New("database config is nil")
@@ -141,20 +170,12 @@ func mysqlDSN(config *Config) string {
 }
 
 func newMySQL(config *Config) (*DB, error) {
-	db, err := gorm.Open(NewAIBaseDialector("mysql", mysql.Open(mysqlDSN(config))), &gorm.Config{
-		Logger:                                   gormLogger{level: gormlogger.Info},
-		DisableAutomaticPing:                     true,
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
+	db, err := gorm.Open(NewAIBaseDialector("mysql", mysql.Open(mysqlDSN(config))), newGORMConfig(true))
 	return db, err
 }
 
 func newSQLite(config *Config) (*DB, error) {
-	db, err := gorm.Open(sqlite.Open(config.DB), &gorm.Config{
-		Logger:                                   gormLogger{level: gormlogger.Info},
-		DisableAutomaticPing:                     true,
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
+	db, err := gorm.Open(sqlite.Open(config.DB), newGORMConfig(true))
 	return db, err
 }
 
@@ -183,7 +204,7 @@ func newPostgreSQL(config *Config) (*DB, error) {
 	db, err := gorm.Open(NewAIBaseDialector("postgres", postgres.New(postgres.Config{
 		DSN:                  postgresDSN(config),
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
-	})), &gorm.Config{DisableAutomaticPing: true, Logger: gormLogger{level: gormlogger.Info}})
+	})), newGORMConfig(false))
 	return db, err
 }
 
@@ -202,10 +223,7 @@ func clickhouseDSN(config *Config) string {
 }
 
 func newClickHouse(config *Config) (*DB, error) {
-	db, err := gorm.Open(
-		clickhouse.Open(clickhouseDSN(config)),
-		&gorm.Config{DisableAutomaticPing: true, Logger: gormLogger{level: gormlogger.Info}},
-	)
+	db, err := gorm.Open(clickhouse.Open(clickhouseDSN(config)), newGORMConfig(false))
 	return db, err
 }
 
@@ -222,11 +240,7 @@ func newGaussDB(config *Config) (*DB, error) {
 	db, err := gorm.Open(NewAIBaseDialectorWithIntegerBoolean("gaussdb", gaussdb.New(gaussdb.Config{
 		DSN:                  gaussdbDSN(config),
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
-	})), &gorm.Config{
-		Logger:                                   gormLogger{level: gormlogger.Info},
-		DisableAutomaticPing:                     true,
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
+	})), newGORMConfig(true))
 	return db, err
 }
 
@@ -248,11 +262,7 @@ func newKingbase(config *Config) (*gorm.DB, error) {
 	baseDialector := NewAIBaseDialectorWithIntegerBoolean("postgres", pgDialector)
 
 	// 使用 PostgreSQL 方言连接 KingbaseES（人大金仓 PG 兼容模式）
-	db, err := gorm.Open(baseDialector, &gorm.Config{
-		Logger:                                   gormLogger{level: gormlogger.Info},
-		DisableAutomaticPing:                     true,
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
+	db, err := gorm.Open(baseDialector, newGORMConfig(true))
 	if err != nil {
 		return nil, err
 	}

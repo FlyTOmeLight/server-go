@@ -34,8 +34,9 @@ type Output struct {
 }
 
 type Logger struct {
-	log   *zap.Logger
-	files []io.Closer
+	log       *zap.Logger
+	files     []io.Closer
+	closeOnce sync.Once
 }
 
 // ParseConfigFile reads an explicit TOML path.
@@ -118,17 +119,28 @@ func NewLogger(config *Config) (*Logger, error) {
 
 // Close flushes logs and releases files. Call after all log writers have stopped.
 func (l *Logger) Close() {
-	if l.log != nil {
-		_ = l.log.Sync()
+	if l == nil {
+		return
 	}
-	for _, file := range l.files {
-		_ = file.Close()
-	}
+	l.closeOnce.Do(func() {
+		_ = l.Sync()
+		for _, file := range l.files {
+			_ = file.Close()
+		}
+	})
 }
 
-func (l *Logger) Sync() error { return l.log.Sync() }
+func (l *Logger) Sync() error {
+	if l == nil || l.log == nil {
+		return nil
+	}
+	return l.log.Sync()
+}
 
 func (l *Logger) write(ctx context.Context, level zapcore.Level, format string, args ...any) {
+	if l == nil || l.log == nil || !l.log.Core().Enabled(level) {
+		return
+	}
 	if entry := l.log.Check(level, fmt.Sprintf(format, args...)); entry != nil {
 		var fields []zap.Field
 		if ctx != nil {

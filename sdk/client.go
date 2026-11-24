@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
 	"resty.dev/v3"
+
+	"github.com/FlyTOmeLight/server-go/constants"
 )
 
 const (
@@ -59,7 +63,7 @@ func (c *Client) Clone() *Client {
 
 // Close releases resources owned by this client. Borrowed clones do not own them.
 func (c *Client) Close() error {
-	if c.borrowed {
+	if c == nil || c.borrowed {
 		return nil
 	}
 	c.closeOnce.Do(func() { c.closeErr = c.Client.Close() })
@@ -74,6 +78,13 @@ func NewClientWithConfig(config *Config) (*Client, error) {
 	if err != nil || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") {
 		return nil, errors.New("SDK endpoint must be an absolute HTTP or HTTPS URL")
 	}
+	if config.ProxyURL != "" {
+		proxy, err := url.Parse(config.ProxyURL)
+		if err != nil || proxy.Hostname() == "" ||
+			(proxy.Scheme != "http" && proxy.Scheme != "https" && proxy.Scheme != "socks5") {
+			return nil, errors.New("SDK proxy must be an absolute HTTP, HTTPS or SOCKS5 URL")
+		}
+	}
 	if config.Timeout < 0 || config.Retry < 0 {
 		return nil, errors.New("SDK timeout and retry count must not be negative")
 	}
@@ -87,6 +98,14 @@ func NewClientWithConfig(config *Config) (*Client, error) {
 	}
 	config = copyConfig(config)
 	client := resty.New().SetBaseURL(config.Endpoint)
+	client.AddRequestMiddleware(func(_ *resty.Client, request *resty.Request) error {
+		if id, ok := request.Context().Value(constants.KeyRequestID).(string); ok && id != "" {
+			if _, explicit := requestHeader(request.Header, constants.HeaderRequestID); !explicit {
+				request.SetHeader(constants.HeaderRequestID, id)
+			}
+		}
+		return nil
+	})
 
 	if config.ProxyURL != "" {
 		client = client.SetProxy(config.ProxyURL)
@@ -96,15 +115,59 @@ func NewClientWithConfig(config *Config) (*Client, error) {
 	}
 
 	if config.Retry > 0 {
-		client = client.SetRetryCount(config.Retry).
-			SetRetryWaitTime(2 * time.Second).
-			SetRetryMaxWaitTime(10 * time.Second)
+		client.SetRetryCount(config.Retry).
+			SetRetryWaitTime(2*time.Second).
+			SetRetryMaxWaitTime(10*time.Second).
+			SetRetryAllowNonIdempotent(true).
+			AddRetryConditions(resty.RetryConditionStatusTooManyRequests, resty.RetryConditionStatus5XX)
+		client.AddRequestMiddleware(func(_ *resty.Client, request *resty.Request) error {
+			// Resty's retry conditions are ORed with the built-in transport checks.
+			if !canRetry(request) {
+				request.SetRetryCount(0)
+			}
+			return nil
+		})
 	}
 	if config.Credentials != nil {
 		client = client.SetAuthToken(config.Credentials.APIKey)
 	}
 
 	return &Client{Client: client, Config: config}, nil
+}
+
+func canRetry(request *resty.Request) bool {
+	switch request.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPut, http.MethodDelete:
+		return true
+	}
+	if values, _ := requestHeader(
+		request.Header,
+		"Idempotency-Key",
+	); len(values) > 0 &&
+		strings.TrimSpace(values[0]) != "" {
+		return true
+	}
+	// Resty appends QueryParams after the query parameters already in the URL.
+	if parsed, err := url.Parse(request.URL); err == nil {
+		query := parsed.Query()
+		if query.Has(constants.QueryClientToken) {
+			return strings.TrimSpace(query.Get(constants.QueryClientToken)) != ""
+		}
+	}
+	return strings.TrimSpace(request.QueryParams.Get(constants.QueryClientToken)) != ""
+}
+
+func requestHeader(headers http.Header, key string) ([]string, bool) {
+	if values, ok := headers[http.CanonicalHeaderKey(key)]; ok {
+		return values, true
+	}
+	// Resty also allows callers to set header names verbatim.
+	for name, values := range headers {
+		if strings.EqualFold(name, key) {
+			return values, true
+		}
+	}
+	return nil, false
 }
 
 func copyConfig(config *Config) *Config {

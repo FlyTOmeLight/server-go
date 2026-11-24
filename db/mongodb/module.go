@@ -29,7 +29,7 @@ func (m *Module) Initialize(ctx context.Context) error {
 			},
 		}).Err()
 		if err != nil {
-			return errors.Join(err, client.Disconnect(ctx))
+			return errors.Join(err, disconnectAfterInitFailure(ctx, client.Client))
 		}
 	}
 	m.Client = client
@@ -40,7 +40,9 @@ func (m *Module) Close(ctx context.Context) error {
 	if m.Client == nil {
 		return nil
 	}
-	client := m.Client
+	if err := m.Client.Disconnect(ctx); err != nil {
+		return err
+	}
 	m.Client = nil
-	return client.Disconnect(ctx)
+	return nil
 }

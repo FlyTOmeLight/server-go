@@ -108,3 +108,45 @@ func TestNewInternalClientRejectsUnsupportedModes(t *testing.T) {
 		t.Fatalf("expected unsupported AKSK error, got %v", err)
 	}
 }
+
+func TestInternalRequestHandlesMissingContextAndEmptyHeaders(t *testing.T) {
+	client, err := NewInternalClientWithConfig(&InternalClientConfig{
+		Config: &sdk.Config{Endpoint: "http://localhost"}, EnableImpersonate: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	withHeader := &core.Context{Request: httptest.NewRequest(http.MethodGet, "/", nil)}
+	withHeader.Request.Header.Set(constants.HeaderRequestID, "header-id")
+	withIdentity := &core.Context{}
+	withIdentity.Set(constants.KeyRequestID, "gin-id")
+	withIdentity.Set(constants.KeyTenantID, "tenant")
+	withIdentity.Set(constants.KeyUserID, "user")
+
+	for _, test := range []struct {
+		name, requestID, tenant, user string
+		ctx                           *core.Context
+	}{
+		{name: "nil context"},
+		{name: "missing HTTP request", ctx: &core.Context{}},
+		{name: "request ID header fallback", ctx: withHeader, requestID: "header-id"},
+		{name: "partial Gin identity", ctx: withIdentity, requestID: "gin-id", tenant: "tenant", user: "user"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := client.R(test.ctx)
+			for header, want := range map[string]string{
+				constants.HeaderRequestID:            test.requestID,
+				constants.HeaderImpersonateTenantID:  test.tenant,
+				constants.HeaderImpersonateUserID:    test.user,
+				constants.HeaderImpersonateProjectID: "",
+			} {
+				values := request.Header.Values(header)
+				if (want == "" && len(values) != 0) ||
+					(want != "" && (len(values) != 1 || values[0] != want)) {
+					t.Errorf("%s = %q, want %q", header, values, want)
+				}
+			}
+		})
+	}
+}

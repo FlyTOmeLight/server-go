@@ -93,7 +93,7 @@ func (d *AIBaseDialector) DataTypeOf(field *schema.Field) string {
 func (d *AIBaseDialector) BindVarTo(writer clause.Writer, stmt *gorm.Statement, value any) {
 	if strings.EqualFold(d.dbType, "postgres") || strings.EqualFold(d.dbType, "postgresql") ||
 		strings.EqualFold(d.dbType, "gaussdb") {
-		if d.integerBoolean || indexBooleanField(stmt, len(stmt.Vars)-1) != nil {
+		if len(stmt.Vars) > 0 && (d.integerBoolean || indexBooleanField(stmt, len(stmt.Vars)-1) != nil) {
 			boolean := reflect.ValueOf(value)
 			for boolean.IsValid() && boolean.Kind() == reflect.Ptr && !boolean.IsNil() {
 				boolean = boolean.Elem()
@@ -268,6 +268,9 @@ func swapMigratorDialector(v reflect.Value, d *AIBaseDialector) bool {
 		fv := v.Field(i)
 		switch fv.Kind() {
 		case reflect.Interface:
+			if !fv.CanSet() {
+				continue
+			}
 			if inner, ok := fv.Interface().(gorm.Dialector); ok && inner != nil {
 				if _, isWrapper := inner.(*AIBaseDialector); !isWrapper {
 					fv.Set(reflect.ValueOf(d))

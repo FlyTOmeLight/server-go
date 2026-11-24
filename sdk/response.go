@@ -3,11 +3,13 @@ package sdk
 import (
 	"bytes"
 	"encoding/json"
+	stderrors "errors"
 	"io"
 	"net/http"
 
 	"resty.dev/v3"
 
+	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/errors"
 )
 
@@ -17,8 +19,15 @@ func Complete(response *resty.Response, err error) error {
 	if err != nil {
 		return err
 	}
+	if response == nil {
+		return stderrors.New("empty HTTP response")
+	}
 	if response.IsStatusFailure() {
-		return DecodeError(response.StatusCode(), bytes.NewReader(response.Bytes()))
+		detail := DecodeError(response.StatusCode(), bytes.NewReader(response.Bytes()))
+		if detail.RequestID == "" {
+			detail.RequestID = response.Header().Get(constants.HeaderRequestID)
+		}
+		return detail
 	}
 	return nil
 }

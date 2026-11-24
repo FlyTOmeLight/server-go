@@ -1,8 +1,19 @@
 package redis
 
 import (
+	"errors"
+	"fmt"
 	"testing"
+
+	"github.com/redis/go-redis/v9"
 )
+
+func TestNilMatchesDriverSentinel(t *testing.T) {
+	const sentinel = Nil
+	if !errors.Is(fmt.Errorf("get: %w", redis.Nil), sentinel) {
+		t.Fatal("Nil no longer matches the driver's no-result error")
+	}
+}
 
 func TestNewRedisLazyStartsWhileServerUnreachable(t *testing.T) {
 	client, err := NewRedisLazy(&Config{Addrs: []string{"127.0.0.1:1"}})

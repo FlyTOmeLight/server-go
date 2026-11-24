@@ -3,6 +3,7 @@ package logger
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,5 +67,57 @@ func TestParseConfigFile(t *testing.T) {
 	}
 	if config.Level != "Warn" || len(config.Outputs) != 1 || !strings.EqualFold(config.Outputs[0].Type, "Console") {
 		t.Fatalf("unexpected config: %#v", config)
+	}
+}
+
+type logStringer func() string
+
+func (f logStringer) String() string { return f() }
+
+func TestDisabledLevelDoesNotFormatArguments(t *testing.T) {
+	l, err := NewLogger(&Config{
+		Level:   "warn",
+		Outputs: []Output{{Type: "file", Path: filepath.Join(t.TempDir(), "app.log")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(l.Close)
+	calls := 0
+	argument := logStringer(func() string {
+		calls++
+		return "formatted"
+	})
+	l.Infof(context.Background(), "%s", argument)
+	if calls != 0 {
+		t.Fatal("disabled level formatted the argument")
+	}
+	l.Warnf(context.Background(), "%s", argument)
+	if calls != 1 {
+		t.Fatalf("enabled level formatted the argument %d times", calls)
+	}
+}
+
+type countingCloser struct{ closes int }
+
+func (c *countingCloser) Close() error { c.closes++; return nil }
+
+func TestCloseIsIdempotent(t *testing.T) {
+	file := &countingCloser{}
+	l := &Logger{files: []io.Closer{file}}
+	l.Close()
+	l.Close()
+	if file.closes != 1 {
+		t.Fatalf("closed log file %d times", file.closes)
+	}
+}
+
+func TestNilAndZeroValueLogger(t *testing.T) {
+	for _, l := range []*Logger{nil, {}} {
+		if err := l.Sync(); err != nil {
+			t.Fatal(err)
+		}
+		l.Close()
+		l.Infof(context.Background(), "discarded")
 	}
 }

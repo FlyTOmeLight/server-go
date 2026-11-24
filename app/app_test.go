@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
@@ -218,5 +220,39 @@ func TestRunDecodesTypedConfigBeforeAssembly(t *testing.T) {
 				t.Fatalf("assembly was not called: built=%v, err=%v", built, err)
 			}
 		})
+	}
+}
+
+func TestRunServiceStartUsesConfiguredLogger(t *testing.T) {
+	options := testOptions(t)
+	path := filepath.Join(t.TempDir(), "app.log")
+	options.LogConfig = &logger.Config{
+		Level:   "warn",
+		Outputs: []logger.Output{{Type: "file", Path: path}},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := Run(ctx, options, func(_ context.Context, runtime *Runtime, _ *struct{}) error {
+		return runtime.AddService(&lifecycleService{
+			start: func(ctx context.Context) error {
+				log := logger.FromContext(ctx)
+				log.Infof(ctx, "filtered worker message")
+				log.Warnf(ctx, "worker started")
+				cancel()
+				return nil
+			},
+			stop: func(context.Context) error { return nil },
+		})
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected startup cancellation, got %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := string(data)
+	if !strings.Contains(logs, "worker started") || strings.Contains(logs, "filtered worker message") {
+		t.Fatalf("unexpected worker logs: %s", logs)
 	}
 }

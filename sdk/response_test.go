@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/FlyTOmeLight/server-go/constants"
 	serrors "github.com/FlyTOmeLight/server-go/errors"
 )
 
@@ -30,21 +31,29 @@ func TestDecodeError(t *testing.T) {
 	}
 }
 
+func TestCompleteEmptyResponse(t *testing.T) {
+	if err := Complete(nil, nil); err == nil || err.Error() != "empty HTTP response" {
+		t.Fatalf("Complete(nil, nil) = %v", err)
+	}
+}
+
 func TestCompleteJSONRequest(t *testing.T) {
 	for _, test := range []struct {
-		name, body, code string
-		status           int
-		decodeFailure    bool
+		name, body, code, requestID string
+		status                      int
+		decodeFailure               bool
 	}{
 		{name: "success", status: 200, body: `{"value":"received"}`},
 		{name: "empty success", status: 204},
 		{name: "malformed success", status: 200, body: `{`, decodeFailure: true},
-		{name: "framework failure", status: 403, body: `{"code":"Denied","statusCode":100403,"requestId":"r"}`, code: "Denied"},
-		{name: "non JSON failure", status: 502, body: "upstream failed", code: "HTTPError"},
+		{name: "framework failure", status: 403, body: `{"code":"Denied","statusCode":100403,"requestId":"r"}`, code: "Denied", requestID: "r"},
+		{name: "framework failure without body request ID", status: 403, body: `{"code":"Denied","statusCode":100403}`, code: "Denied", requestID: "header-id"},
+		{name: "non JSON failure", status: 502, body: "upstream failed", code: "HTTPError", requestID: "header-id"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set(constants.HeaderRequestID, "header-id")
 				w.WriteHeader(test.status)
 				_, _ = w.Write([]byte(test.body))
 			}))
@@ -68,7 +77,8 @@ func TestCompleteJSONRequest(t *testing.T) {
 					detail.Code != test.code {
 					t.Fatalf("HTTP error lost: %+v", err)
 				}
-				if test.code == "Denied" && (detail.StatusCode != 100403 || detail.RequestID != "r") {
+				if detail.RequestID != test.requestID ||
+					(test.code == "Denied" && detail.StatusCode != 100403) {
 					t.Fatalf("metadata lost: %+v", detail)
 				}
 			default:

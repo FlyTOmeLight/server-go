@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/fsnotify/fsnotify"
@@ -20,6 +21,7 @@ const (
 	EnvServerConfigPath = "SERVER_CONFIG_PATH"
 	DefaultConfigPath   = "conf/server/config.toml"
 	defaultDeployMode   = DeployModeCloud
+	reloadDebounce      = 50 * time.Millisecond
 )
 
 // Load reads a complete file with an independent parser. No process globals are changed.
@@ -143,20 +145,44 @@ func cloneMap(input map[string]any) map[string]any {
 }
 
 func cloneValue(value any) any {
-	switch v := value.(type) {
-	case map[string]any:
-		return cloneMap(v)
-	case []any:
-		out := make([]any, len(v))
-		for i, value := range v {
-			out[i] = cloneValue(value)
+	if value == nil {
+		return nil
+	}
+	return cloneCollection(reflect.ValueOf(value)).Interface()
+}
+
+func cloneCollection(value reflect.Value) reflect.Value {
+	switch value.Kind() {
+	case reflect.Interface:
+		if !value.IsNil() {
+			out := reflect.New(value.Type()).Elem()
+			out.Set(cloneCollection(value.Elem()))
+			return out
+		}
+	case reflect.Map:
+		if !value.IsNil() {
+			out := reflect.MakeMapWithSize(value.Type(), value.Len())
+			for entries := value.MapRange(); entries.Next(); {
+				out.SetMapIndex(entries.Key(), cloneCollection(entries.Value()))
+			}
+			return out
+		}
+	case reflect.Slice:
+		if !value.IsNil() {
+			out := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+			for i := range value.Len() {
+				out.Index(i).Set(cloneCollection(value.Index(i)))
+			}
+			return out
+		}
+	case reflect.Array:
+		out := reflect.New(value.Type()).Elem()
+		for i := range value.Len() {
+			out.Index(i).Set(cloneCollection(value.Index(i)))
 		}
 		return out
-	case []string:
-		return append([]string(nil), v...)
-	default:
-		return value
 	}
+	return value
 }
 
 // Prepare validates a replacement and returns a non-failing commit action.
@@ -233,6 +259,9 @@ func (m *Manager) Snapshot() *Config {
 
 // Subscribe installs a staged replacement hook. Call the returned function to unsubscribe.
 func (m *Manager) Subscribe(handler Prepare) func() {
+	if handler == nil {
+		return func() {}
+	}
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
 	return m.subscribe(handler)
@@ -241,6 +270,9 @@ func (m *Manager) Subscribe(handler Prepare) func() {
 // Bind initializes a subscriber from the current snapshot and then subscribes it
 // under the same reload lock. A replacement cannot be missed during construction.
 func (m *Manager) Bind(handler Prepare) (func(), error) {
+	if handler == nil {
+		return nil, errors.New("configuration subscriber is nil")
+	}
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
 	current := m.Snapshot()
@@ -351,10 +383,13 @@ func (m *Manager) Watch(ctx context.Context, onError func(error)) error {
 	}
 	watchCtx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
-	m.done = make(chan struct{})
+	done := make(chan struct{})
+	m.done = done
 	go func() {
-		defer close(m.done)
+		defer close(done)
 		defer watcher.Close()
+		var timer *time.Timer
+		var reload <-chan time.Time
 		for {
 			select {
 			case <-watchCtx.Done():
@@ -363,10 +398,22 @@ func (m *Manager) Watch(ctx context.Context, onError func(error)) error {
 				if !ok {
 					return
 				}
-				if filepath.Clean(event.Name) != m.path ||
-					event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
+				if (filepath.Clean(event.Name) != m.path && filepath.Base(event.Name) != "..data") ||
+					event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
 					continue
 				}
+				if timer == nil {
+					timer = time.NewTimer(reloadDebounce)
+					defer timer.Stop()
+				} else {
+					timer.Reset(reloadDebounce)
+				}
+				reload = timer.C
+			case <-reload:
+				if watchCtx.Err() != nil {
+					return
+				}
+				reload = nil
 				if err := m.Reload(); err != nil && onError != nil {
 					onError(err)
 				}

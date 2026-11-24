@@ -51,7 +51,7 @@ type HTTPHost struct {
 	router      atomic.Pointer[core.Engine]
 	unsubscribe func()
 	closeOnce   sync.Once
-	requestMu   sync.Mutex
+	requestMu   sync.RWMutex
 	requests    sync.WaitGroup
 	draining    bool
 }
@@ -109,14 +109,14 @@ func (h *HTTPHost) buildRouter(config *conf.Config) (*core.Engine, error) {
 // Handler exposes the current immutable router to HTTP servers and integration tests.
 func (h *HTTPHost) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.requestMu.Lock()
+		h.requestMu.RLock()
 		if h.draining {
-			h.requestMu.Unlock()
+			h.requestMu.RUnlock()
 			http.Error(w, "service is stopping", http.StatusServiceUnavailable)
 			return
 		}
 		h.requests.Add(1)
-		h.requestMu.Unlock()
+		h.requestMu.RUnlock()
 		defer h.requests.Done()
 		h.router.Load().ServeHTTP(w, r)
 	})
@@ -127,16 +127,23 @@ func (h *HTTPHost) Address() string { h.mu.Lock(); defer h.mu.Unlock(); return h
 // prepareReload never restarts a process lifecycle or its background workers.
 func (h *HTTPHost) prepareReload(previous, next *conf.Config, keys []string) (func(), error) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.closed {
+	closed := h.closed
+	h.mu.Unlock()
+	if closed {
 		return nil, errors.New("host is closed")
 	}
+	// Bind uses an empty key list for the initial router build.
+	rebuild := len(keys) == 0
 	for _, key := range keys {
 		switch key {
 		case "httpserver", "feature", "fakeauth", "runmode":
-		default:
+			rebuild = true
+		case "appname", "appcode", "deploymode", "services":
 			return nil, fmt.Errorf("%w: %s", ErrRestartRequired, key)
 		}
+	}
+	if !rebuild {
+		return nil, nil
 	}
 	old, new := previous.HTTPServer, next.HTTPServer
 	if old.Listen != new.Listen || old.ReadTimeout != new.ReadTimeout || old.WriteTimeout != new.WriteTimeout ||
@@ -202,7 +209,18 @@ func (h *HTTPHost) Run(ctx context.Context) (result error) {
 
 // RunWithStartupTimeout limits all service starts to one shared budget. Startup
 // responds to ctx cancellation; once ready, workers remain alive until HTTP drains.
-func (h *HTTPHost) RunWithStartupTimeout(ctx context.Context, startupTimeout time.Duration) (result error) {
+func (h *HTTPHost) RunWithStartupTimeout(ctx context.Context, startupTimeout time.Duration) error {
+	return h.RunWithShutdownHook(ctx, startupTimeout, nil)
+}
+
+// RunWithShutdownHook runs the host and calls beforeShutdown before draining HTTP
+// and stopping services, including after a failed service start. The caller
+// remains responsible for cleanup if the host exits before binding a listener.
+func (h *HTTPHost) RunWithShutdownHook(
+	ctx context.Context,
+	startupTimeout time.Duration,
+	beforeShutdown func() error,
+) (result error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -232,12 +250,15 @@ func (h *HTTPHost) RunWithStartupTimeout(ctx context.Context, startupTimeout tim
 	h.server = server
 	h.address = listener.Addr().String()
 	h.mu.Unlock()
-	workerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	workerCtx, cancel := context.WithCancel(logger.WithContext(context.WithoutCancel(ctx), h.log))
 	stopStartupCancellation := context.AfterFunc(startupCtx, cancel)
 	defer stopStartupCancellation()
 	started := make([]Service, 0, len(h.services))
 	defer func() {
 		h.ready.Store(false)
+		if beforeShutdown != nil {
+			result = errors.Join(result, beforeShutdown())
+		}
 		h.requestMu.Lock()
 		h.draining = true
 		h.requestMu.Unlock()

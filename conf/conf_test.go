@@ -99,6 +99,49 @@ func TestLoadAndIsolation(t *testing.T) {
 	}
 }
 
+func TestNilSubscribers(t *testing.T) {
+	manager, err := NewManager(configFile(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unsubscribe, err := manager.Bind(nil); err == nil || unsubscribe != nil {
+		t.Fatal("Bind accepted a nil subscriber")
+	}
+	unsubscribe := manager.Subscribe(nil)
+	next := manager.Snapshot()
+	next.AppName = "updated"
+	if err := manager.Update(next); err != nil {
+		t.Fatal(err)
+	}
+	unsubscribe()
+	unsubscribe()
+}
+
+func TestCloneCopiesTypedCollections(t *testing.T) {
+	type names map[string]string
+	feature := map[string]any{
+		"labels": names{"env": "test"},
+		"ports":  []int{80},
+		"items":  []map[string]any{{"paths": []string{"/ping"}, "empty": nil}},
+		"nested": map[int][1][]int{1: {{2}}},
+		"nil":    []int(nil),
+	}
+	snapshot := (&Config{Feature: feature, settings: feature}).Clone()
+	cloned := snapshot.Feature.(map[string]any)
+	if !reflect.DeepEqual(cloned, feature) || !reflect.DeepEqual(snapshot.settings, feature) {
+		t.Fatalf("clone changed collection values or types: %#v", cloned)
+	}
+	cloned["labels"].(names)["env"] = "production"
+	cloned["ports"].([]int)[0] = 443
+	cloned["items"].([]map[string]any)[0]["paths"].([]string)[0] = "/other"
+	snapshot.settings["nested"].(map[int][1][]int)[1][0][0] = 3
+	if feature["labels"].(names)["env"] != "test" || feature["ports"].([]int)[0] != 80 ||
+		feature["items"].([]map[string]any)[0]["paths"].([]string)[0] != "/ping" ||
+		feature["nested"].(map[int][1][]int)[1][0][0] != 2 {
+		t.Fatalf("clone shares storage with the original: %#v", feature)
+	}
+}
+
 func TestInvalidReplacementPreservesSnapshot(t *testing.T) {
 	path := configFile(t, "")
 	manager, err := NewManager(path)
@@ -195,6 +238,58 @@ func TestWatchAndClose(t *testing.T) {
 	}
 	if err := manager.Close(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWatchConfigMapSymlinkReload(t *testing.T) {
+	dir := t.TempDir()
+	writeVersion := func(version, appName string) {
+		t.Helper()
+		versionDir := filepath.Join(dir, version)
+		if err := os.Mkdir(versionDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		contents := fmt.Sprintf("AppName=%q\nAppCode=100\nRunMode='release'\n", appName)
+		if err := os.WriteFile(filepath.Join(versionDir, "config.toml"), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := func(target, name string) {
+		t.Helper()
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeVersion("..old", "old")
+	link("..old", "..data")
+	link(filepath.Join("..data", "config.toml"), "config.toml")
+	manager, err := NewManager(filepath.Join(dir, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := make(chan string, 1)
+	manager.Subscribe(func(_, next *Config, _ []string) (func(), error) {
+		return func() { updated <- next.AppName }, nil
+	})
+	if err := manager.Watch(context.Background(), func(err error) { t.Error(err) }); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close(context.Background()) })
+	writeVersion("..new", "new")
+	link("..new", "..data_tmp")
+	if err := os.Rename(filepath.Join(dir, "..data_tmp"), filepath.Join(dir, "..data")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "..old")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-updated:
+		if got != "new" {
+			t.Fatalf("reloaded AppName = %q, want new", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("watcher did not reload the new ConfigMap version")
 	}
 }
 

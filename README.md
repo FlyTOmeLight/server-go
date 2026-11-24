@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.14.0
+go get github.com/FlyTOmeLight/server-go@v0.15.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.14.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.15.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -210,6 +210,13 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.15.0
+
+- 配置、Host、应用与日志：`conf.Watch` 支持 Kubernetes ConfigMap `..data` 原子切换并加入 50ms 防抖；`conf.Bind(nil)` 返回错误、`Subscribe(nil)` 返回空操作；快照深拷贝覆盖任意切片与 map 类型。`HTTPHost` 不再否决业务自定义配置段热更新，修复 `prepareReload` 持锁调用外部回调死锁，请求路径改用 `RWMutex` 读锁，并向 `service.Start(workerCtx)` 注入应用配置 Logger；新增 `RunWithShutdownHook` 供 `app.Run` 在排空和停服前同步关闭配置监听，停服失败时仍刷新日志。`logger` 在执行 `fmt.Sprintf` 前检查启用级别，`Close()` 幂等且对零值安全。
+- 身份传播与 SDK：新增 `auth.Identity` 及 `WithIdentity`/`IdentityFromContext`/`SyncIdentityToRequestContext`，所有框架鉴权中间件与 `middleware.HTTPAuthorization` 同步将身份写入 `c.Request.Context()`；`HTTPAuthorization` 保留外层包装的 `http.ResponseWriter`。`sdk.Client` 自动从 `context.Context` 透传 `Request-ID`、构造校验 `ProxyURL`、自动重试仅限幂等方法或携带幂等键的请求；`sdk.Complete` 处理 nil 响应并在缺失时从响应头补全 `RequestID`；`internalsdk.InternalClient.R` 支持 nil 上下文、透传 `Request-ID` 且不再发送空代理身份头。
+- 数据层：`db` 六个 SQL 驱动默认开启 `ParameterizedQueries: true` 防止日志泄露明文参数；`db.Transaction` 防护 nil 入参、支持 GaussDB 死锁/序列化重试并改为抖动指数退避；修复 `db.UTCTime` 与 `AIBaseDialector` 边界缺陷；`db/mongodb` 与 `redis` 的 `Module.Close` 仅在关闭成功后清空句柄，MongoDB 初始化失败改用独立 5 秒清理超时、加锁保护默认集合、保证多字段排序有序；`redis.Module` 新增 `Lazy` 选项，`redis.Nil` 改为常量。
+- 调度与选主：`cron` 修复运行窗口时区与未启动任务误调 `Stop`、单任务同步失败不再阻断其他健康任务、新增 `SetErrorHandler` 与 worker panic 捕获；`pkg/election` 增加失主指数退避、默认租约升级为 `15s/10s/2s` 并新增 `WithRenewDeadline`/`WithRetryPeriod`/`LookupLocalIP`、`DummyAppElection` 与 K8s 选举对齐回调顺序及预取消返回 `context.Canceled`（迁移提示：若测试或调用方对 `DummyAppElection.Run` 传入已取消的 `ctx`，现在与 `K8sLeaderElection` 一致返回 `context.Canceled`）。
 
 ## v0.14.0
 

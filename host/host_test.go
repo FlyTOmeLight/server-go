@@ -144,6 +144,86 @@ func TestReloadDoesNotRestartLifecycle(t *testing.T) {
 	}
 }
 
+func TestReloadBusinessSectionKeepsRouter(t *testing.T) {
+	svc := &testService{handle: func(c *core.Context) { c.String(http.StatusOK, "business") }}
+	_, manager := newTestHost(t, svc)
+	var committed bool
+	manager.Subscribe(func(_, next *conf.Config, _ []string) (func(), error) {
+		var business struct{ Enabled bool }
+		if err := next.UnmarshalKey("Business", &business); err != nil {
+			return nil, err
+		}
+		return func() { committed = business.Enabled }, nil
+	})
+	next, err := conf.FromSettings(map[string]any{
+		"appname": "test", "appcode": 100, "runmode": conf.RunModeRelease,
+		"business": map[string]any{"enabled": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Update(next); err != nil {
+		t.Fatal(err)
+	}
+	if !committed || svc.registered.Load() != 1 {
+		t.Fatalf("business reload: committed=%v route registrations=%d", committed, svc.registered.Load())
+	}
+}
+
+func TestReloadSetupCanReadHostAddress(t *testing.T) {
+	manager, err := conf.NewManagerFromConfig(
+		&conf.Config{AppName: "test", AppCode: 100, RunMode: conf.RunModeRelease},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := logger.NewLogger(&logger.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(log.Close)
+	var h *HTTPHost
+	h, err = NewHTTPHost(manager, log, func(*core.Engine, *conf.Config) error {
+		if h != nil {
+			_ = h.Address()
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := manager.Snapshot()
+	next.Feature = map[string]any{"enabled": true}
+	done := make(chan error, 1)
+	go func() { done <- manager.Update(next) }()
+	select {
+	case err := <-done:
+		defer h.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("reload deadlocked when setup read the host address")
+	}
+}
+
+func TestServiceStartReceivesHostLogger(t *testing.T) {
+	observed := make(chan *logger.Logger, 1)
+	svc := &testService{
+		handle: func(c *core.Context) { c.Status(http.StatusOK) },
+		start: func(ctx context.Context) error {
+			observed <- logger.FromContext(ctx)
+			return nil
+		},
+	}
+	h, _ := newTestHost(t, svc)
+	cancel, done := startTestHost(t, h)
+	defer func() { cancel(); waitStopped(t, done) }()
+	if got := <-observed; got != h.log {
+		t.Fatal("Start did not receive the host logger")
+	}
+}
+
 func TestDrainBeforeStoppingServices(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})

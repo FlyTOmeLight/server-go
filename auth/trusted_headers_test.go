@@ -62,6 +62,9 @@ func TestTrustedIdentityHeaders(t *testing.T) {
 					c.GetString(constants.KeyUserRole) != "" {
 					t.Fatal("trusted identity inherited stale user metadata")
 				}
+				requireRequestIdentity(t, c, Identity{
+					TenantID: test.tenant, UserID: test.user, ProjectID: test.project,
+				})
 				c.Status(http.StatusOK)
 			})
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -136,6 +139,7 @@ func TestImpersonateRequiresAuthorizedServiceAccount(t *testing.T) {
 					c.Set(constants.KeyProjectID, "origin-project")
 					c.Set(constants.KeyUserName, "caller name")
 					c.Set(constants.KeyUserRole, "caller role")
+					c.Set(constants.KeyTenantID, "origin-tenant")
 				})
 			}
 			engine.Use(handler)
@@ -155,6 +159,17 @@ func TestImpersonateRequiresAuthorizedServiceAccount(t *testing.T) {
 				if test.user != "" &&
 					(c.GetString(constants.KeyUserName) != "" || c.GetString(constants.KeyUserRole) != "") {
 					t.Fatal("impersonated identity inherited caller metadata")
+				}
+				if test.user != "" {
+					requireRequestIdentity(t, c, Identity{
+						TenantID:        test.tenant,
+						UserID:          test.user,
+						ProjectID:       test.expectedProject,
+						AuthMode:        "Impersonate",
+						OriginTenantID:  "origin-tenant",
+						OriginUserID:    test.caller,
+						OriginProjectID: "origin-project",
+					})
 				}
 				c.Status(http.StatusOK)
 			})

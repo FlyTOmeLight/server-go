@@ -2,7 +2,7 @@ module github.com/FlyTOmeLight/server-go/examples/example-service2
 
 go 1.27.0
 
-require github.com/FlyTOmeLight/server-go v0.14.0
+require github.com/FlyTOmeLight/server-go v0.15.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0 // indirect

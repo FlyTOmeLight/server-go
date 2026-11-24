@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +45,10 @@ func TestDefaultFakeAuthIsSafeForConcurrentRequests(t *testing.T) {
 				t.Errorf("identity %s = %q, want %q", key, got, want)
 			}
 		}
+		requireRequestIdentity(t, c, Identity{
+			TenantID: "test-tenant-id", UserID: "test-user-id",
+			UserName: "test-user-name", UserRole: "test-user-role",
+		})
 		c.Status(http.StatusNoContent)
 	})
 	var wg sync.WaitGroup
@@ -59,4 +64,33 @@ func TestDefaultFakeAuthIsSafeForConcurrentRequests(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestWithIdentityPreservesParentContext(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	id := Identity{UserID: "user"}
+	ctx := WithIdentity(parent, id)
+	id.UserID = "changed"
+	if got, ok := IdentityFromContext(ctx); !ok || got.UserID != "user" {
+		t.Fatalf("identity = %+v, found = %v", got, ok)
+	}
+	if _, ok := IdentityFromContext(parent); ok {
+		t.Fatal("identity leaked into the parent context")
+	}
+	cancel()
+	if ctx.Err() != context.Canceled {
+		t.Fatalf("context error = %v, want cancellation", ctx.Err())
+	}
+}
+
+func requireRequestIdentity(t *testing.T, c *core.Context, want Identity) {
+	t.Helper()
+	got, ok := IdentityFromContext(c.Request.Context())
+	if !ok || got != want {
+		t.Errorf("request identity = %+v, found = %v, want %+v", got, ok, want)
+	}
+	if got := IdentityFromGin(c); got != want {
+		t.Errorf("Gin identity = %+v, want %+v", got, want)
+	}
 }
