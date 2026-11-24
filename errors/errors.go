@@ -300,7 +300,13 @@ func completeError(c *core.Context, err error) {
 	}
 	logger.Errorf(c, "API Error: %+v", err)
 	wrong := normalize(err, c.GetBool("server.Debug"))
-	wrong.RequestID = c.GetHeader(constants.HeaderRequestID)
+	wrong.RequestID = c.GetString(constants.KeyRequestID)
+	if wrong.RequestID == "" {
+		wrong.RequestID = c.GetHeader(constants.HeaderRequestID)
+	}
+	if wrong.Status == 0 {
+		wrong.Status = http.StatusInternalServerError
+	}
 	wrong.SetStatusCode(c.GetInt("server.AppCode"))
 	c.JSON(wrong.Status, wrong)
 }

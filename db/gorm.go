@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/gaussdb"
 	"gorm.io/driver/mysql"
@@ -102,25 +105,43 @@ func NewDB(ctx context.Context, config *Config) (*DB, error) {
 	if err := connection.PingContext(ctx); err != nil {
 		return nil, errors.Join(err, connection.Close())
 	}
-	connection.SetMaxIdleConns(config.MaxIdleConns)
-	connection.SetMaxOpenConns(config.MaxOpenConns)
-	connection.SetConnMaxIdleTime(time.Duration(config.ConnMaxIdleTime) * time.Second)
-	connection.SetConnMaxLifetime(time.Duration(config.ConnMaxLifeTime) * time.Second)
+	if config.MaxIdleConns > 0 {
+		connection.SetMaxIdleConns(config.MaxIdleConns)
+	}
+	if config.MaxOpenConns > 0 {
+		connection.SetMaxOpenConns(config.MaxOpenConns)
+	}
+	if config.ConnMaxIdleTime > 0 {
+		connection.SetConnMaxIdleTime(time.Duration(config.ConnMaxIdleTime) * time.Second)
+	}
+	if config.ConnMaxLifeTime > 0 {
+		connection.SetConnMaxLifetime(time.Duration(config.ConnMaxLifeTime) * time.Second)
+	}
 
 	return db, err
 }
 
-func newMySQL(config *Config) (*DB, error) {
-	formatter := "%s:%s@(%s:%d)/%s?"
-	if config.DSNParams != "" {
-		formatter += config.DSNParams
-	} else {
-		formatter += "charset=utf8&parseTime=True&loc=Local&interpolateParams=true"
+func mysqlDSN(config *Config) string {
+	dsn := mysqldriver.NewConfig()
+	dsn.User = config.User
+	dsn.Passwd = config.Password
+	dsn.Net = "tcp"
+	dsn.Addr = fmt.Sprintf("%s:%d", config.Host, config.Port)
+	dsn.DBName = config.DB
+	dsn.ParseTime = true
+	dsn.Loc = time.Local
+	dsn.InterpolateParams = true
+	if config.DSNParams == "" {
+		dsn.Params = map[string]string{"charset": "utf8mb4"}
+		return dsn.FormatDSN()
 	}
 
-	args := fmt.Sprintf(formatter, config.User, config.Password, config.Host, config.Port, config.DB)
+	// FormatDSN already writes a query string because ParseTime is set.
+	return dsn.FormatDSN() + "&" + config.DSNParams
+}
 
-	db, err := gorm.Open(NewAIBaseDialector("mysql", mysql.Open(args)), &gorm.Config{
+func newMySQL(config *Config) (*DB, error) {
+	db, err := gorm.Open(NewAIBaseDialector("mysql", mysql.Open(mysqlDSN(config))), &gorm.Config{
 		Logger:                                   gormLogger{level: gormlogger.Info},
 		DisableAutomaticPing:                     true,
 		DisableForeignKeyConstraintWhenMigrating: true,
@@ -137,43 +158,69 @@ func newSQLite(config *Config) (*DB, error) {
 	return db, err
 }
 
-func newPostgreSQL(config *Config) (*DB, error) {
-	formatter := "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai"
-	args := config.DSN
-	if args == "" {
-		args = fmt.Sprintf(formatter, config.Host, config.User, config.Password, config.DB, config.Port)
-	}
+func quoteLibpqValue(value string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, "'", `\'`).Replace(value) + "'"
+}
 
+func libpqDSN(config *Config) string {
+	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable",
+		quoteLibpqValue(config.Host), quoteLibpqValue(config.User),
+		quoteLibpqValue(config.Password), quoteLibpqValue(config.DB), config.Port)
+}
+
+func postgresDSN(config *Config) string {
+	if config.DSN != "" {
+		return config.DSN
+	}
+	dsn := libpqDSN(config) + " TimeZone=Asia/Shanghai"
+	if config.DSNParams != "" {
+		dsn += " " + config.DSNParams
+	}
+	return dsn
+}
+
+func newPostgreSQL(config *Config) (*DB, error) {
 	db, err := gorm.Open(NewAIBaseDialector("postgres", postgres.New(postgres.Config{
-		DSN:                  args,
+		DSN:                  postgresDSN(config),
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	})), &gorm.Config{DisableAutomaticPing: true, Logger: gormLogger{level: gormlogger.Info}})
 	return db, err
 }
 
-func newClickHouse(config *Config) (*DB, error) {
-	formatter := "tcp://%s:%d?database=%s&username=%s&password=%s"
-	args := fmt.Sprintf(formatter, config.Host, config.Port, config.DB, config.User, config.Password)
+func clickhouseDSN(config *Config) string {
+	query := url.Values{
+		"database": {config.DB},
+		"username": {config.User},
+		"password": {config.Password},
+	}
+	dsn := url.URL{
+		Scheme:   "tcp",
+		Host:     fmt.Sprintf("%s:%d", config.Host, config.Port),
+		RawQuery: query.Encode(),
+	}
+	return dsn.String()
+}
 
+func newClickHouse(config *Config) (*DB, error) {
 	db, err := gorm.Open(
-		clickhouse.Open(args),
+		clickhouse.Open(clickhouseDSN(config)),
 		&gorm.Config{DisableAutomaticPing: true, Logger: gormLogger{level: gormlogger.Info}},
 	)
 	return db, err
 }
 
-func newGaussDB(config *Config) (*DB, error) {
-	formatter := "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai"
+func gaussdbDSN(config *Config) string {
+	dsn := libpqDSN(config) + " TimeZone=Asia/Shanghai"
 	if config.DSNParams != "" {
-		formatter += " " + config.DSNParams
-	} else {
-		formatter += " TimeZone=Asia/Shanghai application_name=server-go client_encoding=utf8"
+		return dsn + " " + config.DSNParams
 	}
-	dsn := fmt.Sprintf(formatter, config.Host, config.User, config.Password, config.DB, config.Port)
+	return dsn + " application_name=server-go client_encoding=utf8"
+}
 
+func newGaussDB(config *Config) (*DB, error) {
 	// GaussDB 为 PostgreSQL 兼容协议，直接使用 gaussdb 方言
 	db, err := gorm.Open(NewAIBaseDialectorWithIntegerBoolean("gaussdb", gaussdb.New(gaussdb.Config{
-		DSN:                  dsn,
+		DSN:                  gaussdbDSN(config),
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
 	})), &gorm.Config{
 		Logger:                                   gormLogger{level: gormlogger.Info},
@@ -183,18 +230,17 @@ func newGaussDB(config *Config) (*DB, error) {
 	return db, err
 }
 
-func newKingbase(config *Config) (*gorm.DB, error) {
-	formatter := "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
+func kingbaseDSN(config *Config) string {
+	dsn := libpqDSN(config)
 	if config.DSNParams != "" {
-		formatter += " " + config.DSNParams
-	} else {
-		formatter += " TimeZone=Asia/Shanghai application_name=server-go client_encoding=utf8"
+		return dsn + " " + config.DSNParams
 	}
-	// 构建金仓连接串（PG 兼容模式）
-	dsn := fmt.Sprintf(formatter, config.Host, config.User, config.Password, config.DB, config.Port)
+	return dsn + " TimeZone=Asia/Shanghai application_name=server-go client_encoding=utf8"
+}
 
+func newKingbase(config *Config) (*gorm.DB, error) {
 	pgDialector := postgres.New(postgres.Config{
-		DSN:                  dsn,
+		DSN:                  kingbaseDSN(config),
 		PreferSimpleProtocol: true,
 	})
 

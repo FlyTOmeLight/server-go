@@ -17,8 +17,12 @@ func RequestLog() core.HandlerFunc {
 	return func(c *core.Context) {
 		start := time.Now()
 		c.Next()
+		route := c.FullPath()
+		if route == "" {
+			route = c.Request.URL.Path
+		}
 		logger.FromContext(c.Request.Context()).
-			Infof(c.Request.Context(), "http request method=%s route=%s status=%d duration=%s", c.Request.Method, c.FullPath(), c.Writer.Status(), time.Since(start))
+			Infof(c.Request.Context(), "http request method=%s route=%s status=%d duration=%s", c.Request.Method, route, c.Writer.Status(), time.Since(start))
 	}
 }
 
@@ -27,7 +31,7 @@ func RequestLog() core.HandlerFunc {
 func Recovery() core.HandlerFunc {
 	return gin.CustomRecoveryWithWriter(io.Discard, func(c *core.Context, recovered any) {
 		logger.FromContext(c.Request.Context()).
-			Errorf(c.Request.Context(), "http handler panic route=%s stack=%s", c.FullPath(), debug.Stack())
+			Errorf(c.Request.Context(), "http handler panic route=%s panic=%v stack=%s", c.FullPath(), recovered, debug.Stack())
 		errors.AbortWithError(c, errors.ErrorInternalError)
 	})
 }

@@ -2,12 +2,17 @@ package sdk
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"strings"
 )
 
-var re = regexp.MustCompile("[^a-zA-Z0-9_-]")
+var (
+	re            = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+	matchFirstCap = regexp.MustCompile(`(.)([A-Z][a-z]+)`)
+	matchAllCap   = regexp.MustCompile(`([a-z0-9])([A-Z])`)
+)
 
 const (
 	OrderASC  = "asc"
@@ -18,6 +23,7 @@ const (
 	minPageNo       = 1
 	maxPageSize     = 200
 	defaultPageSize = 20
+	defaultOrderBy  = "created_at"
 )
 
 // swagger:model PagingResponse
@@ -104,42 +110,63 @@ func (r PagingRequest) GetOrder() string {
 
 // DBOrder 数据库排序语句
 func (r PagingRequest) DBOrder() string {
-	if !r.IsOrder() {
-		return fmt.Sprintf("created_at %s", r.GetOrder())
+	column := re.ReplaceAllString(r.OrderBy, "")
+	if column == "" {
+		return defaultOrderBy + " " + r.GetOrder()
 	}
-	r.OrderBy = re.ReplaceAllString(r.OrderBy, "")
-	r.OrderBy = camelToSnake(r.OrderBy)
-	return fmt.Sprintf("%s %s", r.OrderBy, r.GetOrder())
+	return camelToSnake(column) + " " + r.GetOrder()
 }
 
-// Paging 对数组做分页处理
+// DBOrderWithAllowlist maps OrderBy to a database column. The caller supplies
+// trusted SQL column names in allowed and defaultColumn.
+func (r PagingRequest) DBOrderWithAllowlist(allowed map[string]string, defaultColumn string) (string, error) {
+	if r.OrderBy == "" {
+		if defaultColumn == "" {
+			defaultColumn = defaultOrderBy
+		}
+		return defaultColumn + " " + r.GetOrder(), nil
+	}
+
+	column := allowed[r.OrderBy]
+	if column == "" {
+		return "", fmt.Errorf("unknown order column %q", r.OrderBy)
+	}
+	return column + " " + r.GetOrder(), nil
+}
+
+// Paging 对切片、数组或字符串做分页处理。
 func Paging(arr any, pageNo int, pageSize int) []any {
-	offset := (pageNo - 1) * pageSize
-	if offset < 0 {
-		offset = 0
+	if pageSize <= 0 {
+		return []any{}
 	}
 
-	limit := offset + pageSize
-	if limit < 0 {
-		limit = 0
-	}
-	if limit > reflect.ValueOf(arr).Len() {
-		limit = reflect.ValueOf(arr).Len()
+	value := reflect.ValueOf(arr)
+	switch value.Kind() {
+	case reflect.Slice, reflect.Array, reflect.String:
+	default:
+		return []any{}
 	}
 
-	paged := make([]any, 0)
-	for i := offset; i < limit; i++ {
-		paged = append(paged, reflect.ValueOf(arr).Index(i).Interface())
+	pageIndex := max(pageNo, minPageNo) - 1
+	if pageIndex > math.MaxInt/pageSize {
+		return []any{}
+	}
+	offset := pageIndex * pageSize
+	length := value.Len()
+	if offset >= length {
+		return []any{}
+	}
+
+	count := min(pageSize, length-offset)
+	paged := make([]any, count)
+	for i := range paged {
+		paged[i] = value.Index(offset + i).Interface()
 	}
 	return paged
 }
 
 // 将 api 中的驼峰字段转化为 db 下划线字段形式
 func camelToSnake(s string) string {
-	// 匹配所有大写字母前插入下划线
-	matchFirstCap := regexp.MustCompile("(.)([A-Z][a-z]+)")
-	matchAllCap := regexp.MustCompile("([a-z0-9])([A-Z])")
-
 	snake := matchFirstCap.ReplaceAllString(s, "${1}_${2}")
 	snake = matchAllCap.ReplaceAllString(snake, "${1}_${2}")
 	return strings.ToLower(snake)

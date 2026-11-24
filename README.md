@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.12.0
+go get github.com/FlyTOmeLight/server-go@v0.14.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.12.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.14.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -210,6 +210,13 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.14.0
+
+- 鉴权生产保护（迁移提示）：`RunMode = "release"` 下未提供显式鉴权 handler 时，`auth.Use` 与 `httpintegration.Install` / `InstallWithAuth` 会在注册任何路由前拒绝 `FakeAuth` 和空 `AuthType`；生产环境必须传入显式鉴权 handler（如 `auth.TrustedIdentityHeaders` 或 `auth.BearerTokens`），本地调试/测试请使用 `test` 或 `debug` 模式。`TrustedIdentityHeaders`、`Impersonate` 与 `InternalPropagatedIdentity` 现在拒绝同名多值身份头及仅传 `x-impersonate-target-project-id` 的请求，并在切换身份时清空旧 `KeyUserName` 和 `KeyUserRole`；`BearerTokens` 改用 SHA-256 摘要进行全量常量时间比对。
+- HTTP 链路与错误：`middleware.RequestID` 校验入站 `Request-ID`、改用 `Header.Set` 避免空头导致后续读取为空，并将 `Request-ID` 写入响应头；`middleware.Recovery` 在日志中记录 panic 值并保持通用错误响应；`middleware.RequestLog` 在未匹配路由时回退记录 `URL.Path`；`errors` 优先读取上下文中的 `KeyRequestID` 并将缺失 HTTP 状态码兜底为 `500`。
+- 数据库与基础工具：`db.Config` 拒绝负数连接池和超时参数，省略 `MaxIdleConns` 时不再调用 `SetMaxIdleConns(0)` 关闭连接池；DSN 改为使用 `mysql.Config`、libpq 引号转义与 `net/url` 安全构造，MySQL 默认字符集改为 `utf8mb4`；`db.NewError` 新增 PostgreSQL `23505`/`22P02` 错误映射并保留兜底错误链；`db.Module.Close` 在关闭失败时保留 `DB` 引用以支持重试；`gormLogger` 不再将 `gorm.ErrRecordNotFound` 按 Error 级别刷屏。`orderby` 校验收紧为严格标识符白名单，新增 `sdk.PagingRequest.DBOrderWithAllowlist` 并加固 `sdk.Paging`；修复 `pkg/id.go` 随机数碰撞（改用 `crypto/rand`）及 `pkg/file.go`、`pkg/path.go`、`pkg/datatypes/string_map.go` 缺陷。
+- 开源协议与工程卫生：根目录新增 `Apache-2.0` `LICENSE`，清理 0 字节遗留 `ci.yml`，扩充 `make check` 的 `-race` 覆盖范围。
 
 ## v0.13.0
 

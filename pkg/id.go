@@ -1,12 +1,11 @@
 package core
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"strings"
-	"time"
-	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
@@ -15,30 +14,39 @@ import (
 const defaultLetters = "abcdefghijkmnpqrstuvwxyz0123456789"
 
 func NewID(prefix string) string {
-	// prefix最多16位
-	if len(prefix) > 16 {
-		prefix = prefix[0:16]
+	const maxPrefixRunes = 16
+	runeCount := 0
+	for i := range prefix {
+		if runeCount == maxPrefixRunes {
+			prefix = prefix[:i]
+			break
+		}
+		runeCount++
 	}
 	return fmt.Sprintf("%s-%s", prefix, RandomString(8))
 }
 
 // RandomString returns a random string with a fixed length
 func RandomString(n int, allowedChars ...string) string {
-	var letters string
-
-	if len(allowedChars) == 0 {
-		letters = defaultLetters
-	} else {
+	letters := defaultLetters
+	if len(allowedChars) > 0 {
 		letters = allowedChars[0]
 	}
-
-	b := make([]byte, n)
-	for i := range b {
-		rand.Seed(time.Now().UnixNano())
-		b[i] = letters[rand.Intn(len(letters))]
+	if n <= 0 || len(letters) == 0 {
+		return ""
 	}
 
-	return *(*string)(unsafe.Pointer(&b))
+	alphabetSize := big.NewInt(int64(len(letters)))
+	b := make([]byte, n)
+	for i := range b {
+		index, err := rand.Int(rand.Reader, alphabetSize)
+		if err != nil {
+			panic(err)
+		}
+		b[i] = letters[index.Int64()]
+	}
+
+	return string(b)
 }
 
 func NewHashID(raw []byte) string {

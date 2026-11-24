@@ -27,55 +27,41 @@ const (
 	tagTags                  = "tags"
 )
 
+var (
+	nameRE                  = regexp.MustCompile(`^[0-9a-zA-Z_]{1,20}$`)
+	lowercaseAlphanumericRE = regexp.MustCompile(LowercaseAlphanumericPattern)
+	alphanumericRE          = regexp.MustCompile(AlphanumericPattern)
+	localnameRE             = regexp.MustCompile(LocalnamePattern)
+	orderbyRE               = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+	idRE                    = regexp.MustCompile(`^[a-z0-9-]{9,12}$`)
+	categoryRE              = regexp.MustCompile(CategoryPattern)
+	tagKeyRE                = regexp.MustCompile(TagKeyPattern)
+	tagValueRE              = regexp.MustCompile(TagValuePattern)
+)
+
 func name(fl validator.FieldLevel) bool {
 	v, ok := fl.Field().Interface().(string)
-	if !ok {
-		// name字段必须为string类型
-		return false
-	}
-
-	if v == "" {
-		// name字段可为空
-		return true
-	}
-
-	success, _ := regexp.MatchString("^[0-9a-zA-Z_]{1,20}$", v)
-	return success
+	return ok && (v == "" || nameRE.MatchString(v))
 }
 
 func lowercaseAlphanumeric(fl validator.FieldLevel) bool {
 	v, ok := fl.Field().Interface().(string)
-	if !ok {
-		return false
-	}
-
-	success, err := regexp.MatchString(LowercaseAlphanumericPattern, v)
-	return err == nil && success
+	return ok && lowercaseAlphanumericRE.MatchString(v)
 }
 
 func alphanumeric(fl validator.FieldLevel) bool {
 	v, ok := fl.Field().Interface().(string)
-	if !ok {
-		return false
-	}
-
-	success, err := regexp.MatchString(AlphanumericPattern, v)
-	return err == nil && success
+	return ok && alphanumericRE.MatchString(v)
 }
 
 func localname(fl validator.FieldLevel) bool {
 	v, ok := fl.Field().Interface().(string)
-	if !ok {
-		return false
-	}
-
-	success, err := regexp.MatchString(LocalnamePattern, v)
-	return err == nil && success
+	return ok && localnameRE.MatchString(v)
 }
 
 func orderby(fl validator.FieldLevel) bool {
 	v, ok := fl.Field().Interface().(string)
-	return ok && !strings.Contains(v, " ")
+	return ok && (v == "" || orderbyRE.MatchString(v))
 }
 
 func id(fl validator.FieldLevel) bool {
@@ -96,18 +82,12 @@ func id(fl validator.FieldLevel) bool {
 		return false
 	}
 
-	success, _ := regexp.MatchString("^[a-z0-9-]{9,12}$", v)
-	return success
+	return idRE.MatchString(v)
 }
 
 func category(fl validator.FieldLevel) bool {
 	v, ok := fl.Field().Interface().(string)
-	if !ok {
-		return false
-	}
-
-	success, err := regexp.MatchString(CategoryPattern, v)
-	return err == nil && success
+	return ok && categoryRE.MatchString(v)
 }
 
 func categories(fl validator.FieldLevel) bool {
@@ -117,8 +97,7 @@ func categories(fl validator.FieldLevel) bool {
 	}
 
 	for _, s := range v {
-		success, err := regexp.MatchString(CategoryPattern, s)
-		if err != nil || !success {
+		if !categoryRE.MatchString(s) {
 			return false
 		}
 	}
@@ -142,13 +121,11 @@ func tag(fl validator.FieldLevel) bool {
 	}
 
 	for k, vs := range tags {
-		success, err := regexp.MatchString(TagKeyPattern, k)
-		if err != nil || !success {
+		if !tagKeyRE.MatchString(k) {
 			return false
 		}
 		for _, v := range vs {
-			success, err = regexp.MatchString(TagValuePattern, v)
-			if err != nil || !success {
+			if !tagValueRE.MatchString(v) {
 				return false
 			}
 		}

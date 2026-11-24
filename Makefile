@@ -29,7 +29,6 @@ check:
 prepare: check-var
 
 check-var:
-	$(info GO_1_21_HOME: $(GO_1_21_HOME))
 	$(info GOROOT: $(GOROOT))
 	$(info GOPATH: $(GOPATH))
 

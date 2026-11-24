@@ -20,15 +20,30 @@ func (m StringMap) Value() (driver.Value, error) {
 
 // Scan scan value into map
 func (m *StringMap) Scan(value any) error {
-	if value == nil {
-		return nil
-	}
-	b, ok := value.([]byte)
-	if !ok {
-		return fmt.Errorf("value: %v is not []byte", value)
+	var b []byte
+	switch value := value.(type) {
+	case nil:
+	case []byte:
+		b = value
+	case string:
+		b = []byte(value)
+	default:
+		return fmt.Errorf("cannot scan %T into StringMap", value)
 	}
 	if len(b) == 0 {
+		*m = nil
 		return nil
 	}
-	return json.Unmarshal(b, &m)
+
+	var parsed StringMap
+	if err := json.Unmarshal(b, &parsed); err != nil {
+		return err
+	}
+	*m = parsed
+	return nil
+}
+
+// GormDataType declares the default database type for StringMap.
+func (StringMap) GormDataType() string {
+	return "text"
 }

@@ -26,14 +26,24 @@ func InternalPropagatedIdentity(authorize func(c *core.Context) error) (core.Han
 		return nil, errors.New("internal propagated identity requires a service authorizer")
 	}
 	return func(c *core.Context) {
+		if hasMultipleImpersonationHeaderValues(c) {
+			serrors.Abort(
+				c,
+				http.StatusForbidden,
+				"AccessDenied",
+				"multiple values for impersonation headers",
+			)
+			return
+		}
 		tenantID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateTenantID))
 		userID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateUserID))
 		projectID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateProjectID))
 		if tenantID == "" && userID == "" {
-			c.Next()
-			return
-		}
-		if c.GetString(constants.KeyUserID) == "" {
+			if len(c.Request.Header.Values(constants.HeaderImpersonateProjectID)) == 0 {
+				c.Next()
+				return
+			}
+		} else if c.GetString(constants.KeyUserID) == "" {
 			serrors.Abort(
 				c,
 				http.StatusUnauthorized,
@@ -57,6 +67,8 @@ func InternalPropagatedIdentity(authorize func(c *core.Context) error) (core.Han
 		}
 		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
+		c.Set(constants.KeyUserName, "")
+		c.Set(constants.KeyUserRole, "")
 		c.Set(constants.KeyProjectID, projectID)
 		c.Set(constants.KeyImpersonateOriginTenantID, tenantID)
 		c.Set(constants.KeyImpersonateOriginUserID, userID)

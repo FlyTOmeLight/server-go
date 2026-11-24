@@ -3,14 +3,34 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
+
+func TestUseRejectsFakeAuthenticationInReleaseMode(t *testing.T) {
+	for _, authType := range []conf.AuthType{"", conf.AuthTypeFake} {
+		engine := gin.New()
+		config := &conf.Config{
+			RunMode: conf.RunModeRelease, HTTPServer: conf.HTTPServerConfig{AuthType: authType},
+		}
+		if err := Use(engine, config); err == nil || !strings.Contains(err.Error(), "release mode") {
+			t.Fatalf("AuthType %q: expected release authentication error, got %v", authType, err)
+		}
+		engine.GET("/", func(c *core.Context) {
+			if UserID(c) != "" {
+				t.Error("fake identity installed after rejection")
+			}
+		})
+		engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	}
+}
 
 func TestDefaultFakeAuthIsSafeForConcurrentRequests(t *testing.T) {
 	engine := gin.New()

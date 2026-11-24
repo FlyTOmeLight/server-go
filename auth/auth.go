@@ -17,6 +17,9 @@ func Use(engine *core.Engine, config *conf.Config) error {
 	}
 	switch config.HTTPServer.AuthType {
 	case "", conf.AuthTypeFake:
+		if config.RunMode == conf.RunModeRelease {
+			return errors.New("fake or implicit authentication is not allowed in release mode")
+		}
 		engine.Use(FakeAuthWithID(
 			config.FakeAuth.TenantID,
 			config.FakeAuth.UserID,
@@ -29,6 +32,15 @@ func Use(engine *core.Engine, config *conf.Config) error {
 		)
 	}
 	return nil
+}
+
+func hasMultipleHeaderValues(c *core.Context, names ...string) bool {
+	for _, name := range names {
+		if len(c.Request.Header.Values(name)) > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func FakeAuth() core.HandlerFunc {

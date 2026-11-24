@@ -1,12 +1,13 @@
 package db
 
 import (
-	"net/http"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/pkg/errors"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gorm.io/gorm"
 
@@ -44,6 +45,16 @@ func NewError(err error) error {
 		}
 	}
 
+	var postgresErr *pgconn.PgError
+	if errors.As(err, &postgresErr) {
+		switch postgresErr.Code {
+		case "23505": // unique_violation
+			return serrors.ErrorResourceIsExists
+		case "22P02": // invalid_text_representation
+			return serrors.NewInvalidParameter("invalid input syntax")
+		}
+	}
+
 	// mongodb error
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return serrors.ErrorResourceNotFound
@@ -52,5 +63,5 @@ func NewError(err error) error {
 		return serrors.ErrorResourceIsExists
 	}
 
-	return serrors.NewError(http.StatusInternalServerError, "InternalError", err.Error())
+	return fmt.Errorf("%w: %w", serrors.ErrorInternalError, err)
 }

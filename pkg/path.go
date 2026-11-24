@@ -19,7 +19,7 @@ func GetExecPath() (string, error) {
 func GetExecDir() (string, error) {
 	p, err := os.Executable()
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	return filepath.Dir(p), nil
 }

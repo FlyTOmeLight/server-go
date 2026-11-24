@@ -19,7 +19,7 @@ HTTP 配置默认从当前目录的 `conf/server/config.toml` 读取，也可以
 
 普通 HTTP 接口在 Controller 用 `serrors.AbortWithError(ctx, err)` 完成错误响应并返回，业务 Service 只返回错误。静态默认值在绑定前设置，请求校验复用 `pkg/binder`。SDK 的普通 JSON 请求用 `sdk.Complete` 处理完成结果；CLI 通过执行 context 获取客户端和传递取消。这些写法在 HelloWorld、Dataset 和 PostgreSQL 示例中保持一致，生成器沿用 HelloWorld 模板。SSE 已开始输出后的错误使用流式事件，独立 worker 按任务生命周期退出；具体请求协议和业务职责按各示例保留。
 
-独立模块用本地 `replace` 引用当前框架源码；根模块示例无需额外的 `go.mod`。`app` 入口从 v0.5.0 开始提供；复制为独立项目时同步修改 import 与 module path，并引用当前发布版 `github.com/FlyTOmeLight/server-go@v0.9.0`。本地替换用于联合开发验证。
+独立模块用本地 `replace` 引用当前框架源码；根模块示例无需额外的 `go.mod`。`app` 入口从 v0.5.0 开始提供；复制为独立项目时同步修改 import 与 module path，并引用当前发布版 `github.com/FlyTOmeLight/server-go@v0.14.0`。本地替换用于联合开发验证。
 
 每次修改框架后，在根目录运行 `make check`。它使用 Docker 启动隔离的 PostgreSQL，并实际运行全部 HTTP 示例、CLI、worker 与生成项目；所有容器和临时项目在检查结束后清理。Docker 不可用会明确失败。PostgreSQL 示例的单独启动方式见其 README。
 

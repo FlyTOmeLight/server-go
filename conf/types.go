@@ -34,7 +34,7 @@ func (dm DeployMode) IsEdge() bool {
 
 const (
 	AuthTypeFake       AuthType = "Fake"
-	AuthTypeAuthCenter          = "AuthCenter"
+	AuthTypeAuthCenter AuthType = "AuthCenter"
 )
 
 type AuthType string
@@ -73,7 +73,7 @@ func (c *Config) setDefaults() {
 	if c.DeployMode == "" {
 		c.DeployMode = defaultDeployMode
 	}
-	if c.HTTPServer.AuthType == "" {
+	if c.HTTPServer.AuthType == "" && c.RunMode != RunModeRelease {
 		c.HTTPServer.AuthType = AuthTypeFake
 	}
 }

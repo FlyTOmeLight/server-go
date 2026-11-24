@@ -2,8 +2,10 @@ package db
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/FlyTOmeLight/server-go/logger"
@@ -46,11 +48,12 @@ func (l gormLogger) Trace(ctx context.Context, begin time.Time, query func() (st
 	}
 	elapsed := time.Since(begin)
 	log := logger.FromContext(ctx)
+	recordNotFound := errors.Is(err, gorm.ErrRecordNotFound)
 	switch {
-	case err != nil && l.level >= gormlogger.Error:
+	case err != nil && !recordNotFound && l.level >= gormlogger.Error:
 		sql, rows := query()
 		log.Errorf(ctx, "sql=%s rows=%d duration=%s error=%v", sql, rows, elapsed, err)
-	case elapsed > 200*time.Millisecond && l.level >= gormlogger.Warn:
+	case !recordNotFound && elapsed > 200*time.Millisecond && l.level >= gormlogger.Warn:
 		sql, rows := query()
 		log.Warnf(ctx, "slow sql=%s rows=%d duration=%s", sql, rows, elapsed)
 	case l.level >= gormlogger.Info:

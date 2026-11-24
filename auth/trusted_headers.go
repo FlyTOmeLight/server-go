@@ -23,6 +23,20 @@ func TrustedIdentityHeaders(verify func(*http.Request) error) (core.HandlerFunc,
 			serrors.Abort(c, http.StatusUnauthorized, "Unauthorized", "untrusted identity source")
 			return
 		}
+		if hasMultipleHeaderValues(
+			c,
+			constants.HeaderTenantID,
+			constants.HeaderUserID,
+			constants.HeaderProjectID,
+		) {
+			serrors.Abort(
+				c,
+				http.StatusUnauthorized,
+				"Unauthorized",
+				"multiple values for identity headers",
+			)
+			return
+		}
 		if c.GetString(constants.KeyUserID) != "" || c.GetString(constants.KeyTenantID) != "" {
 			serrors.Abort(
 				c,
@@ -41,6 +55,8 @@ func TrustedIdentityHeaders(verify func(*http.Request) error) (core.HandlerFunc,
 		}
 		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
+		c.Set(constants.KeyUserName, "")
+		c.Set(constants.KeyUserRole, "")
 		c.Set(constants.KeyProjectID, projectID)
 		c.Next()
 	}, nil

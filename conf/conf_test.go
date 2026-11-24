@@ -25,6 +25,38 @@ func configFile(t *testing.T, content string) string {
 	return path
 }
 
+func TestLoadAuthenticationDefaults(t *testing.T) {
+	for _, test := range []struct {
+		mode, configured string
+		want             AuthType
+	}{
+		{mode: RunModeDebug, want: AuthTypeFake},
+		{mode: RunModeTest, want: AuthTypeFake},
+		{mode: RunModeRelease, want: ""},
+		{mode: RunModeRelease, configured: "[HTTPServer]\nAuthType='Fake'\n", want: AuthTypeFake},
+		{mode: RunModeRelease, configured: "[HTTPServer]\nAuthType='AuthCenter'\n", want: AuthTypeAuthCenter},
+	} {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		content := fmt.Sprintf("AppName='test'\nAppCode=100\nRunMode='%s'\n%s", test.mode, test.configured)
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		config, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := config.HTTPServer.AuthType; got != test.want {
+			t.Errorf(
+				"mode=%s config=%q: AuthType = %q, want %q",
+				test.mode,
+				test.configured,
+				got,
+				test.want,
+			)
+		}
+	}
+}
+
 func TestLoadAndIsolation(t *testing.T) {
 	path := configFile(t, "[Feature]\nOld=true\n[DB]\nDriver='SQLite'\nDB='one.db'\n")
 	manager, err := NewManager(path)

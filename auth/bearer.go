@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	stderrors "errors"
@@ -15,10 +16,14 @@ import (
 // BearerTokens authenticates static service credentials as framework user IDs.
 // The handler owns an immutable copy, so request handling never reads caller mutations.
 func BearerTokens(tokens map[string]string) core.HandlerFunc {
-	credentials := make(map[string]string, len(tokens))
+	type credential struct {
+		digest [sha256.Size]byte
+		user   string
+	}
+	credentials := make([]credential, 0, len(tokens))
 	for token, user := range tokens {
 		if token != "" && user != "" {
-			credentials[token] = user
+			credentials = append(credentials, credential{digest: sha256.Sum256([]byte(token)), user: user})
 		}
 	}
 	return func(c *core.Context) {
@@ -27,15 +32,18 @@ func BearerTokens(tokens map[string]string) core.HandlerFunc {
 			errors.Abort(c, http.StatusUnauthorized, "Unauthorized", "bearer token required")
 			return
 		}
-		token := strings.TrimPrefix(value, "Bearer ")
-		for candidate, user := range credentials {
-			if subtle.ConstantTimeCompare([]byte(candidate), []byte(token)) == 1 {
-				c.Set(constants.KeyUserID, user)
-				c.Next()
-				return
-			}
+		digest := sha256.Sum256([]byte(strings.TrimPrefix(value, "Bearer ")))
+		matched := -1
+		for i := range credentials {
+			equal := subtle.ConstantTimeCompare(credentials[i].digest[:], digest[:])
+			matched = subtle.ConstantTimeSelect(equal, i, matched)
 		}
-		errors.Abort(c, http.StatusUnauthorized, "Unauthorized", "invalid bearer token")
+		if matched < 0 {
+			errors.Abort(c, http.StatusUnauthorized, "Unauthorized", "invalid bearer token")
+			return
+		}
+		c.Set(constants.KeyUserID, credentials[matched].user)
+		c.Next()
 	}
 }
 

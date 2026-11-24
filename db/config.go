@@ -34,6 +34,17 @@ type Config struct {
 }
 
 func (c *Config) check() error {
+	switch {
+	case c.MaxIdleConns < 0:
+		return errors.New("DBConfig.MaxIdleConns must be non-negative")
+	case c.MaxOpenConns < 0:
+		return errors.New("DBConfig.MaxOpenConns must be non-negative")
+	case c.ConnMaxIdleTime < 0:
+		return errors.New("DBConfig.ConnMaxIdleTime must be non-negative")
+	case c.ConnMaxLifeTime < 0:
+		return errors.New("DBConfig.ConnMaxLifeTime must be non-negative")
+	}
+
 	switch c.Driver {
 	case DriverMySQL:
 		return c.checkWithMySQL()

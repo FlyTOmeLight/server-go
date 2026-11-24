@@ -26,12 +26,14 @@ func (m *Module) Close(ctx context.Context) error {
 	if m.DB == nil {
 		return nil
 	}
-	client := m.DB
-	m.DB = nil
-	connection, err := client.DB()
+	connection, err := m.DB.DB()
 	if err != nil {
 		return err
 	}
 	// database/sql.Close drains its owned connections and has no context variant.
-	return connection.Close()
+	if err := connection.Close(); err != nil {
+		return err
+	}
+	m.DB = nil
+	return nil
 }

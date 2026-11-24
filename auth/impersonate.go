@@ -22,15 +22,24 @@ func Impersonate(authorize func(c *core.Context, tenantID, userID string) error)
 		return nil, errors.New("impersonation requires a service account authorizer")
 	}
 	return func(c *core.Context) {
+		if hasMultipleImpersonationHeaderValues(c) {
+			serrors.Abort(
+				c,
+				http.StatusForbidden,
+				"AccessDenied",
+				"multiple values for impersonation headers",
+			)
+			return
+		}
 		tenantID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateTenantID))
 		userID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateUserID))
 		projectID := strings.TrimSpace(c.GetHeader(constants.HeaderImpersonateProjectID))
 		if tenantID == "" && userID == "" {
-			c.Next()
-			return
-		}
-
-		if c.GetString(constants.KeyUserID) == "" {
+			if len(c.Request.Header.Values(constants.HeaderImpersonateProjectID)) == 0 {
+				c.Next()
+				return
+			}
+		} else if c.GetString(constants.KeyUserID) == "" {
 			serrors.Abort(
 				c,
 				http.StatusUnauthorized,
@@ -57,10 +66,21 @@ func Impersonate(authorize func(c *core.Context, tenantID, userID string) error)
 		c.Set(constants.KeyImpersonateOriginProjectID, c.GetString(constants.KeyProjectID))
 		c.Set(constants.KeyTenantID, tenantID)
 		c.Set(constants.KeyUserID, userID)
+		c.Set(constants.KeyUserName, "")
+		c.Set(constants.KeyUserRole, "")
 		if projectID != "" {
 			c.Set(constants.KeyProjectID, projectID)
 		}
 		c.Set(constants.KeyAuthMode, "Impersonate")
 		c.Next()
 	}, nil
+}
+
+func hasMultipleImpersonationHeaderValues(c *core.Context) bool {
+	return hasMultipleHeaderValues(
+		c,
+		constants.HeaderImpersonateTenantID,
+		constants.HeaderImpersonateUserID,
+		constants.HeaderImpersonateProjectID,
+	)
 }

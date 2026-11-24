@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -42,7 +43,7 @@ func TestInstallEnablesConfiguredRoutesAndProtectsAssets(t *testing.T) {
 		identities[c.Request.URL.Path] = c.GetString(constants.KeyUserID)
 	})
 	config := &conf.Config{
-		AppName: "example", AppCode: 1, RunMode: conf.RunModeRelease,
+		AppName: "example", AppCode: 1, RunMode: conf.RunModeTest,
 		HTTPServer: conf.HTTPServerConfig{
 			PprofEnable: true, MetricsEnable: true, SwaggerEnable: true, ConsoleEnable: true,
 			ConsoleProxyNames: []string{"other"}, AuthType: conf.AuthTypeFake,
@@ -103,7 +104,9 @@ func TestInstallRejectsInvalidInputs(t *testing.T) {
 }
 
 func TestInstallWithVerifiedAuthentication(t *testing.T) {
-	config := &conf.Config{HTTPServer: conf.HTTPServerConfig{AuthType: conf.AuthTypeAuthCenter}}
+	config := &conf.Config{
+		RunMode: conf.RunModeRelease, HTTPServer: conf.HTTPServerConfig{AuthType: conf.AuthTypeAuthCenter},
+	}
 	engine := gin.New()
 	if err := Install(engine, config); err == nil || len(engine.Routes()) != 0 {
 		t.Fatal("unverified AuthCenter must fail before registering routes")
@@ -133,6 +136,36 @@ func TestInstallWithVerifiedAuthentication(t *testing.T) {
 		}
 		if token != "" && (writer.Code != http.StatusOK || writer.Body.String() != "user") {
 			t.Fatal("trusted identity not installed on business routes")
+		}
+	}
+}
+
+func TestInstallInReleaseModeRequiresExplicitAuthentication(t *testing.T) {
+	for _, authType := range []conf.AuthType{"", conf.AuthTypeFake} {
+		engine := gin.New()
+		config := &conf.Config{
+			RunMode: conf.RunModeRelease,
+			HTTPServer: conf.HTTPServerConfig{
+				AuthType: authType, PprofEnable: true, MetricsEnable: true, SwaggerEnable: true,
+			},
+		}
+		if err := Install(engine, config); err == nil || !strings.Contains(err.Error(), "release mode") {
+			t.Fatalf("AuthType %q: expected release authentication error, got %v", authType, err)
+		}
+		if len(engine.Routes()) != 0 {
+			t.Fatalf("AuthType %q: failed install registered %v", authType, engine.Routes())
+		}
+		handler := auth.BearerTokens(map[string]string{"custom-credential": "custom-user"})
+		if err := InstallWithAuth(engine, config, handler); err != nil {
+			t.Fatalf("AuthType %q: explicit authentication rejected: %v", authType, err)
+		}
+		engine.GET("/business", func(c *core.Context) { c.String(http.StatusOK, auth.UserID(c)) })
+		request := httptest.NewRequest(http.MethodGet, "/business", nil)
+		request.Header.Set("Authorization", "Bearer custom-credential")
+		writer := httptest.NewRecorder()
+		engine.ServeHTTP(writer, request)
+		if writer.Code != http.StatusOK || writer.Body.String() != "custom-user" {
+			t.Errorf("AuthType %q: status=%d body=%s", authType, writer.Code, writer.Body.String())
 		}
 	}
 }

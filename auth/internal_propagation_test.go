@@ -18,16 +18,27 @@ func TestInternalPropagatedIdentity(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name, caller, tenant, user, project string
+		duplicateHeader                     string
+		emptyProject                        bool
 		status                              int
 	}{
 		{name: "no headers", caller: "service", status: 200},
 		{name: "anonymous with headers", tenant: "t", user: "u", status: 401},
 		{name: "ordinary user", caller: "person", tenant: "t", user: "u", status: 403},
 		{name: "partial headers", caller: "service", tenant: "t", status: 403},
+		{name: "project only", caller: "service", project: "project-1", status: 403},
+		{name: "anonymous with empty project header", emptyProject: true, status: 403},
+		{name: "duplicate tenant", caller: "service", tenant: "t", user: "u", duplicateHeader: constants.HeaderImpersonateTenantID, status: 403},
+		{name: "duplicate user", caller: "service", tenant: "t", user: "u", duplicateHeader: constants.HeaderImpersonateUserID, status: 403},
+		{name: "duplicate project", caller: "service", tenant: "t", user: "u", project: "p", duplicateHeader: constants.HeaderImpersonateProjectID, status: 403},
+		{name: "authorized service without project", caller: "service", tenant: "tenant-1", user: "alice", status: 200},
 		{name: "authorized service", caller: "service", tenant: "tenant-1", user: "alice", project: "project-1", status: 200},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			handler, err := InternalPropagatedIdentity(func(c *core.Context) error {
+				if test.duplicateHeader != "" || test.user == "" {
+					t.Error("invalid propagated identity reached the authorizer")
+				}
 				if UserID(c) != "service" {
 					return errors.New("not a service account")
 				}
@@ -39,11 +50,18 @@ func TestInternalPropagatedIdentity(t *testing.T) {
 			engine := gin.New()
 			if test.caller != "" {
 				engine.Use(BearerTokens(map[string]string{"caller-token": test.caller}))
+				engine.Use(func(c *core.Context) {
+					c.Set(constants.KeyProjectID, "caller project")
+					c.Set(constants.KeyUserName, "caller name")
+					c.Set(constants.KeyUserRole, "caller role")
+				})
 			}
 			engine.Use(handler)
 			engine.GET("/", func(c *core.Context) {
 				if test.tenant == "" {
-					if UserID(c) != test.caller {
+					if UserID(c) != test.caller ||
+						c.GetString(constants.KeyUserName) != "caller name" ||
+						c.GetString(constants.KeyUserRole) != "caller role" {
 						t.Fatal("caller identity changed without propagation headers")
 					}
 					c.Status(http.StatusOK)
@@ -51,6 +69,9 @@ func TestInternalPropagatedIdentity(t *testing.T) {
 				}
 				if UserID(c) != test.user || c.GetString(constants.KeyTenantID) != test.tenant ||
 					c.GetString(constants.KeyProjectID) != test.project ||
+					c.GetString(
+						constants.KeyUserName,
+					) != "" || c.GetString(constants.KeyUserRole) != "" ||
 					c.GetString(constants.KeyImpersonateOriginUserID) != test.user ||
 					c.GetString(constants.KeyImpersonateOriginTenantID) != test.tenant ||
 					c.GetString(constants.KeyImpersonateOriginProjectID) != test.project ||
@@ -65,7 +86,12 @@ func TestInternalPropagatedIdentity(t *testing.T) {
 			}
 			req.Header.Set(constants.HeaderImpersonateTenantID, test.tenant)
 			req.Header.Set(constants.HeaderImpersonateUserID, test.user)
-			req.Header.Set(constants.HeaderImpersonateProjectID, test.project)
+			if test.project != "" || test.emptyProject {
+				req.Header.Set(constants.HeaderImpersonateProjectID, test.project)
+			}
+			if test.duplicateHeader != "" {
+				req.Header.Add(test.duplicateHeader, "another-value")
+			}
 			writer := httptest.NewRecorder()
 			engine.ServeHTTP(writer, req)
 			if writer.Code != test.status {

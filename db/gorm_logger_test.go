@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,27 +35,44 @@ func TestSQLLogsUseRequestContextAndRespectLogMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close(context.Background())
+	if err := database.DB.Exec("CREATE TABLE empty_records (id INTEGER PRIMARY KEY)").Error; err != nil {
+		t.Fatal(err)
+	}
 	engine := gin.New()
 	engine.Use(func(c *core.Context) {
 		c.Request = c.Request.WithContext(logger.WithContext(c.Request.Context(), log))
 		c.Next()
 	}, middleware.RequestID())
 	for _, tc := range []struct {
-		path   string
-		sql    string
-		level  gormlogger.LogLevel
-		status int
+		path     string
+		sql      string
+		level    gormlogger.LogLevel
+		status   int
+		notFound bool
 	}{
 		{path: "/first", sql: "SELECT 1", level: gormlogger.Info, status: http.StatusOK},
 		{path: "/second", sql: "SELECT 2", level: gormlogger.Info, status: http.StatusOK},
 		{path: "/failure", sql: "SELECT * FROM missing_table", level: gormlogger.Error, status: http.StatusInternalServerError},
+		{path: "/not-found", level: gormlogger.Info, status: http.StatusNotFound, notFound: true},
+		{path: "/not-found-error-mode", level: gormlogger.Error, status: http.StatusNotFound, notFound: true},
 		{path: "/quiet", sql: "SELECT 3", level: gormlogger.Silent, status: http.StatusOK},
 		{path: "/warn", sql: "SELECT 4", level: gormlogger.Warn, status: http.StatusOK},
 	} {
 		engine.GET(tc.path, func(c *core.Context) {
-			tx := database.DB.Session(&gorm.Session{Logger: database.DB.Logger.LogMode(tc.level)})
-			err := tx.WithContext(c.Request.Context()).Exec(tc.sql).Error
-			if (err != nil) != (tc.status == http.StatusInternalServerError) {
+			tx := database.DB.WithContext(c.Request.Context()).Session(&gorm.Session{
+				Logger: database.DB.Logger.LogMode(tc.level),
+			})
+			if tc.notFound {
+				var record struct{ ID int }
+				if err := tx.Table("empty_records").
+					First(&record).
+					Error; !errors.Is(
+					err,
+					gorm.ErrRecordNotFound,
+				) {
+					t.Errorf("query %s: got %v, want record not found", tc.path, err)
+				}
+			} else if err := tx.Exec(tc.sql).Error; (err != nil) != (tc.status == http.StatusInternalServerError) {
 				t.Errorf("query %s: %v", tc.sql, err)
 			}
 			c.Status(tc.status)
@@ -99,6 +117,7 @@ func TestSQLLogsUseRequestContextAndRespectLogMode(t *testing.T) {
 		{id: "/first", sql: "SELECT 1", level: "info"},
 		{id: "/second", sql: "SELECT 2", level: "info"},
 		{id: "/failure", sql: "missing_table", level: "error"},
+		{id: "/not-found", sql: "empty_records", level: "info"},
 	} {
 		entry := entries[tc.id]
 		message, _ := entry["msg"].(string)
@@ -106,7 +125,7 @@ func TestSQLLogsUseRequestContextAndRespectLogMode(t *testing.T) {
 			t.Fatalf("%s SQL log = %v", tc.id, entry)
 		}
 	}
-	if len(entries) != 3 {
-		t.Fatalf("silent or warn mode emitted successful queries: %v", entries)
+	if len(entries) != 4 {
+		t.Fatalf("unexpected SQL log entries: %v", entries)
 	}
 }

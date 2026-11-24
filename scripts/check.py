@@ -139,8 +139,11 @@ def running_server(binary, directory, app_name, database=False, postgres=False):
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
     config = directory / 'config.toml'
-    content = (f'AppName = "{app_name}"\nAppCode = 100\nRunMode = "release"\n'
-               f'[HTTPServer]\nListen = "127.0.0.1:{port}"\nAuthType = "Fake"\n')
+    run_mode = 'release' if postgres else 'test'
+    content = (f'AppName = "{app_name}"\nAppCode = 100\nRunMode = "{run_mode}"\n'
+               f'[HTTPServer]\nListen = "127.0.0.1:{port}"\n')
+    if not postgres:
+        content += 'AuthType = "Fake"\n'
     if database:
         content += f'[DB]\nDriver = "SQLite"\nDB = "{directory / "smoke.db"}"\nAutoMigrate = true\n'
     if postgres:
@@ -344,9 +347,11 @@ def main():
         ENV.update(SERVER_GO_TEST_POSTGRES_DSN=dsn, SERVER_GO_TEST_MYSQL_DSN=mysql_dsn, DATABASE_URL=dsn)
         for module in [ROOT, *EXAMPLES]:
             check_module(module)
-        run('go', 'test', '-count=1', '-race', './app', '.', './host', './middleware', './console', './errors', './pkg',
-            './cli', './sdk', './internalsdk',
-            './db', './stream', './cron', './pkg/binder', './pkg/election', './examples/streaming-service/...', './examples/postgresql-service/...')
+        run('go', 'test', '-count=1', '-race', '.', './app', './host', './middleware', './console', './errors',
+            './cli', './sdk', './internalsdk', './db', './stream', './cron',
+            './pkg', './pkg/binder', './pkg/election', './pkg/modbus',
+            './conf', './idempotence', './auth', './logger', './httpintegration', './redis', './pubsub',
+            './examples/streaming-service/...', './examples/postgresql-service/...')
         run('go', 'test', '-count=1', '-race', './service', './sdk/go/...', cwd=EXAMPLES[0])
         run(sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts', '-p', 'test_*.py')
         with tempfile.TemporaryDirectory(prefix='server-go-check-') as temporary:

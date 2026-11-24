@@ -2,40 +2,31 @@ package datatypes
 
 import (
 	"database/sql/driver"
-	"log"
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-var DB *gorm.DB
-
 type UserWithStringMap struct {
 	gorm.Model
 	Name       string
-	Attributes StringMap `gorm:"type:text"`
-}
-
-func TestMain(m *testing.M) {
-	dbName := "sm.db"
-	_ = os.Remove(dbName)
-	var err error
-	if DB, err = gorm.Open(sqlite.Open(dbName), &gorm.Config{}); err != nil {
-		log.Fatalf("connect database failed %v", err)
-	}
-	if err := DB.Migrator().AutoMigrate(&UserWithStringMap{}); err != nil {
-		log.Fatalf("failed to migrate, got error: %v", err)
-	}
-
-	os.Exit(m.Run())
+	Attributes StringMap
 }
 
 var _ driver.Valuer = &StringMap{}
 
 func TestStringMap(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "sm.db")), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, sqlDB.Close()) })
+	require.NoError(t, db.AutoMigrate(&UserWithStringMap{}))
+
 	testCases := []struct {
 		desc string
 		user UserWithStringMap
@@ -58,16 +49,46 @@ func TestStringMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if err := DB.Create(&tc.user).Error; err != nil {
+			if err := db.Create(&tc.user).Error; err != nil {
 				t.Fatalf("Failed to create users %v", err)
 			}
 
 			var result UserWithStringMap
-			if err := DB.Where("name = ?", tc.user.Name).First(&result).Error; err != nil {
+			if err := db.Where("name = ?", tc.user.Name).First(&result).Error; err != nil {
 				t.Fatalf("failed to find user, got error %v", err)
 			}
 
 			assert.Equal(t, tc.user.Attributes, result.Attributes)
+		})
+	}
+}
+
+func TestStringMapScan(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		input   any
+		want    StringMap
+		wantErr bool
+	}{
+		{name: "string replaces contents", input: `{"new":"value"}`, want: StringMap{"new": "value"}},
+		{name: "bytes replace contents", input: []byte(`{"new":"value"}`), want: StringMap{"new": "value"}},
+		{name: "empty object", input: `{}`, want: StringMap{}},
+		{name: "nil"},
+		{name: "empty bytes", input: []byte{}},
+		{name: "empty string", input: ""},
+		{name: "JSON null", input: "null"},
+		{name: "unsupported type", input: true, want: StringMap{"old": "value"}, wantErr: true},
+		{name: "invalid map value", input: `{"new":"value","number":1}`, want: StringMap{"old": "value"}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := StringMap{"old": "value"}
+			err := got.Scan(tc.input)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

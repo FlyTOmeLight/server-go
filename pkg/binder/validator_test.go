@@ -325,30 +325,34 @@ func TestValidatorOrderBy(t *testing.T) {
 	RegisterValidator()
 
 	testCases := []struct {
-		desc        string
-		validation  structOrderByValidation
-		shouldError bool
+		name    string
+		orderBy string
+		valid   bool
 	}{
-		{
-			desc:       "empty",
-			validation: structOrderByValidation{OrderBy: ""},
-		},
-		{
-			desc:       "valid",
-			validation: structOrderByValidation{OrderBy: "abcd"},
-		},
-		{
-			desc:        "with space",
-			validation:  structOrderByValidation{OrderBy: "abc d"},
-			shouldError: true,
-		},
+		{name: "empty", valid: true},
+		{name: "letters", orderBy: "abcd", valid: true},
+		{name: "snake case", orderBy: "created_at", valid: true},
+		{name: "camel case", orderBy: "createdAt", valid: true},
+		{name: "underscore and digit", orderBy: "_name2", valid: true},
+		{name: "leading digit", orderBy: "2name"},
+		{name: "space", orderBy: "abc d"},
+		{name: "tab", orderBy: "abc\td"},
+		{name: "trailing newline", orderBy: "abc\n"},
+		{name: "block comment", orderBy: "abc/**/d"},
+		{name: "statement separator", orderBy: "abc; DROP TABLE"},
+		{name: "line comment", orderBy: "abc--"},
+		{name: "dash", orderBy: "abc-d"},
+		{name: "single quote", orderBy: "'abc'"},
+		{name: "double quote", orderBy: `"abc"`},
+		{name: "parentheses", orderBy: "(abc)"},
+		{name: "exclamation mark", orderBy: "abc!"},
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			err := validate(tc.validation)
-			if err == nil == tc.shouldError {
-				t.Errorf("got error: %v, shouldError: %v", err, tc.shouldError)
+		t.Run(tc.name, func(t *testing.T) {
+			err := validate(structOrderByValidation{OrderBy: tc.orderBy})
+			if (err == nil) != tc.valid {
+				t.Errorf("validate(%q) = %v, want valid = %v", tc.orderBy, err, tc.valid)
 			}
 		})
 	}

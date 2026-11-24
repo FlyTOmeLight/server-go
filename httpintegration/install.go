@@ -31,12 +31,16 @@ func InstallWithAuth(engine *core.Engine, config *conf.Config, authenticate core
 		return errors.New("HTTP integrations require an engine and config")
 	}
 	switch config.HTTPServer.AuthType {
-	case "", conf.AuthTypeFake, conf.AuthTypeAuthCenter:
+	case "", conf.AuthTypeFake:
+		if authenticate == nil && config.RunMode == conf.RunModeRelease {
+			return errors.New("fake or implicit authentication is not allowed in release mode")
+		}
+	case conf.AuthTypeAuthCenter:
+		if authenticate == nil {
+			return errors.New("AuthCenter requires an explicit verified authentication handler")
+		}
 	default:
 		return fmt.Errorf("unsupported HTTP authentication mode: %q", config.HTTPServer.AuthType)
-	}
-	if config.HTTPServer.AuthType == conf.AuthTypeAuthCenter && authenticate == nil {
-		return errors.New("AuthCenter requires an explicit verified authentication handler")
 	}
 
 	switch config.RunMode {

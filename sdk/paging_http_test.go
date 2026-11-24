@@ -28,6 +28,8 @@ func TestPagingHTTPBinding(t *testing.T) {
 		{name: "negative JSON page", body: `{"pageNo":-1}`, status: 400},
 		{name: "negative JSON size", body: `{"pageSize":-1}`, status: 400},
 		{name: "oversized", query: "?pageSize=201", status: 400},
+		{name: "invalid order column in query", query: "?orderBy=created--at", status: 400},
+		{name: "invalid order column in JSON", body: `{"orderBy":"created\tat"}`, status: 400},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			engine := gin.New()

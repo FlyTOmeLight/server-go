@@ -231,3 +231,27 @@ func TestErrorCompletionPolicies(t *testing.T) {
 		})
 	}
 }
+
+func TestErrorCompletionUsesContextRequestIDAndDefaultsStatus(t *testing.T) {
+	engine := gin.New()
+	engine.Use(ErrorHandler(&conf.Config{AppCode: 731}))
+	engine.GET("/", func(c *gin.Context) {
+		c.Set(constants.KeyRequestID, "context-request-id")
+		AbortWithError(c, &Error{Code: "UnspecifiedStatus", Message: "missing status"})
+	})
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set(constants.HeaderRequestID, "header-request-id")
+	writer := httptest.NewRecorder()
+	engine.ServeHTTP(writer, request)
+	if writer.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", writer.Code, writer.Body)
+	}
+	var result Error
+	if err := json.Unmarshal(writer.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Code != "UnspecifiedStatus" || result.StatusCode != 731500 ||
+		result.RequestID != "context-request-id" {
+		t.Errorf("error contract: %#v", result)
+	}
+}

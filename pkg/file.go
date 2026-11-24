@@ -3,10 +3,10 @@ package core
 import (
 	"encoding/json"
 	"errors"
-	"io/fs"
+	"fmt"
 	"os"
-	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
@@ -26,35 +26,40 @@ func ParseFile(filePath string, obj any) error {
 		return err
 	}
 
-	ext := path.Ext(filePath)
+	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case fileExtJSON:
-		err = json.Unmarshal(buf, obj)
+		return json.Unmarshal(buf, obj)
 	case fileExtTOML:
-		err = toml.Unmarshal(buf, obj)
+		return toml.Unmarshal(buf, obj)
 	case fileExtYAML, fileExtYML:
-		err = yaml.Unmarshal(buf, obj)
+		return yaml.Unmarshal(buf, obj)
+	default:
+		return fmt.Errorf("unsupported file extension %q", ext)
 	}
-
-	return err
 }
 
+// CreateFileIfNotExist creates an empty file and any missing parent directories.
 func CreateFileIfNotExist(dir string, fileName string) error {
-	_, err := os.Stat(dir)
+	target := filepath.Join(dir, fileName)
+	_, err := os.Stat(target)
 	if err == nil {
-		// exist
 		return nil
 	}
-
-	if errors.Is(err, fs.ErrExist) {
+	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 
-	err = os.MkdirAll(dir, os.ModePerm)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-
-	_, err = os.Create(filepath.Join(dir, fileName))
-	return err
+	return file.Close()
 }
