@@ -1,14 +1,14 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"maps"
 	"os"
-	"sort"
+	"slices"
+	"strings"
 
-	"github.com/gookit/goutil/arrutil"
-	"github.com/gookit/goutil/strutil"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"gopkg.in/yaml.v3"
 )
@@ -25,111 +25,119 @@ const (
 type RenderType = string
 
 func FormattedPrint(obj any, renderType RenderType) {
+	if err := WriteFormatted(os.Stdout, obj, renderType); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+}
+
+func PrintJSON(obj any) { FormattedPrint(obj, RenderTypeJSON) }
+
+func PrintYAML(obj any) { FormattedPrint(obj, RenderTypeYAML) }
+
+func PrintTable(obj any) { FormattedPrint(obj, RenderTypeTable) }
+
+func PrintCSV(obj any) { FormattedPrint(obj, RenderTypeCSV) }
+
+func PrintHTML(obj any) { FormattedPrint(obj, RenderTypeHTML) }
+
+func PrintMarkdown(obj any) { FormattedPrint(obj, RenderTypeMarkdown) }
+
+// WriteFormatted reports encoding and output errors to the caller.
+func WriteFormatted(writer io.Writer, obj any, renderType RenderType) error {
+	var output string
 	switch renderType {
-	case RenderTypeJSON:
-		PrintJSON(obj)
 	case RenderTypeYAML:
-		PrintYAML(obj)
-	case RenderTypeTable:
-		PrintTable(obj)
-	case RenderTypeCSV:
-		PrintCSV(obj)
-	case RenderTypeHTML:
-		PrintHTML(obj)
-	case RenderTypeMarkdown:
-		PrintMarkdown(obj)
-	default:
-		PrintJSON(obj)
-	}
-}
-
-func PrintJSON(obj any) {
-	out := formattedToJSON(obj)
-	fmt.Println(out)
-}
-
-func PrintYAML(obj any) {
-	out := formattedToYAML(obj)
-	fmt.Println(out)
-}
-
-func PrintTable(obj any) {
-	t := formattedToTable(obj)
-	t.Render()
-	fmt.Println()
-}
-
-func PrintCSV(obj any) {
-	t := formattedToTable(obj)
-	t.RenderCSV()
-	fmt.Println()
-}
-
-func PrintHTML(obj any) {
-	t := formattedToTable(obj)
-	t.RenderHTML()
-	fmt.Println()
-}
-
-func PrintMarkdown(obj any) {
-	t := formattedToTable(obj)
-	t.RenderMarkdown()
-	fmt.Println()
-}
-
-func formattedToJSON(obj any) string {
-	bs, _ := json.Marshal(obj)
-	var out bytes.Buffer
-	_ = json.Indent(&out, bs, "", "\t")
-	return out.String()
-}
-
-func formattedToYAML(obj any) string {
-	out, _ := yaml.Marshal(obj)
-	return string(out)
-}
-
-func formattedToTable(obj any) table.Writer {
-	t := table.NewWriter()
-	t.SetStyle(table.StyleRounded)
-	t.SetOutputMirror(os.Stdout)
-
-	buf, _ := json.Marshal(obj)
-
-	var objList []map[string]any
-	err := json.Unmarshal(buf, &objList)
-	if err != nil {
-		var objMap map[string]any
-		_ = json.Unmarshal(buf, &objMap)
-		objList = append(objList, objMap)
-	}
-
-	for i, item := range objList {
-		keys, values := row(item)
-		if i == 0 {
-			t.AppendHeader(keys)
+		data, err := marshalYAML(obj)
+		if err != nil {
+			return err
 		}
-		t.AppendRow(values)
+		output = string(data)
+	case RenderTypeTable, RenderTypeCSV, RenderTypeHTML, RenderTypeMarkdown:
+		formatted, err := formattedToTable(obj)
+		if err != nil {
+			return err
+		}
+		switch renderType {
+		case RenderTypeTable:
+			output = formatted.Render()
+		case RenderTypeCSV:
+			output = formatted.RenderCSV()
+		case RenderTypeHTML:
+			output = formatted.RenderHTML()
+		case RenderTypeMarkdown:
+			output = formatted.RenderMarkdown()
+		}
+		if output != "" {
+			output += "\n"
+		}
+	default:
+		data, err := json.MarshalIndent(obj, "", "\t")
+		if err != nil {
+			return err
+		}
+		output = string(data)
 	}
-	t.AppendSeparator()
-
-	return t
+	_, err := fmt.Fprintln(writer, output)
+	return err
 }
 
-func row(m map[string]any) ([]any, []any) {
-	var keys []string
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+func marshalYAML(obj any) (_ []byte, err error) {
+	defer func() {
+		if failure := recover(); failure != nil {
+			message := fmt.Sprint(failure)
+			switch {
+			case strings.HasPrefix(message, "cannot marshal type:"),
+				strings.HasPrefix(message, "cannot have key "),
+				strings.HasPrefix(message, "duplicated key "):
+				err = fmt.Errorf("yaml: %s", message)
+			default:
+				panic(failure)
+			}
+		}
+	}()
+	return yaml.Marshal(obj)
+}
 
-	var values []string
-	for _, k := range keys {
-		v, _ := strutil.ToString(m[k])
-		values = append(values, v)
+func formattedToTable(obj any) (table.Writer, error) {
+	buf, err := json.Marshal(obj)
+	if err != nil {
+		return nil, err
+	}
+	var rows []map[string]any
+	if len(buf) > 0 && buf[0] == '{' {
+		var row map[string]any
+		if err := json.Unmarshal(buf, &row); err != nil {
+			return nil, err
+		}
+		rows = []map[string]any{row}
+	} else if err := json.Unmarshal(buf, &rows); err != nil {
+		return nil, err
 	}
 
-	k, _ := arrutil.AnyToSlice(keys)
-	v, _ := arrutil.AnyToSlice(values)
-	return k, v
+	keySet := make(map[string]struct{})
+	for _, row := range rows {
+		for key := range row {
+			keySet[key] = struct{}{}
+		}
+	}
+	keys := slices.Sorted(maps.Keys(keySet))
+	formatted := table.NewWriter()
+	formatted.SetStyle(table.StyleRounded)
+	header := make(table.Row, len(keys))
+	for index, key := range keys {
+		header[index] = key
+	}
+	formatted.AppendHeader(header)
+	for _, row := range rows {
+		values := make(table.Row, len(keys))
+		for index, key := range keys {
+			if value := row[key]; value != nil {
+				values[index] = value
+			} else {
+				values[index] = ""
+			}
+		}
+		formatted.AppendRow(values)
+	}
+	return formatted, nil
 }

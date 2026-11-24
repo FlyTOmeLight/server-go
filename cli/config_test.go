@@ -7,9 +7,27 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
+
+func TestLogHandlerDefaultsAndCase(t *testing.T) {
+	config := viper.New()
+	require.Empty(t, logConfig(config).Outputs)
+	for handler, output := range map[string]string{
+		"nOnE": "", "stDOut": "Console", "stderr": "Console", "Console": "Console", "FiLe": "File",
+	} {
+		config.Set("log.handler", handler)
+		got := logConfig(config).Outputs
+		if output == "" {
+			require.Empty(t, got)
+		} else {
+			require.Len(t, got, 1)
+			require.Equal(t, output, got[0].Type)
+		}
+	}
+}
 
 func TestSetConfigRejectsUnsupportedAKSK(t *testing.T) {
 	for _, filename := range []string{"full_config.yaml", "default_config.yaml"} {

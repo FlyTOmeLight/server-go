@@ -4,16 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
 	"github.com/FlyTOmeLight/server-go/errors"
 )
 
-var handlers map[string]*ApplyHandler
+var (
+	handlers   map[string]*ApplyHandler
+	handlersMu sync.RWMutex
+)
 
 type CommandSpec struct {
 	Kind     string `yaml:"kind" json:"kind"`
@@ -79,7 +84,17 @@ func (h *ApplyHandler) HandleContext(ctx context.Context, kind string, meta any)
 }
 
 func GetApplyHandler(kind string) (*ApplyHandler, error) {
+	handlersMu.RLock()
+	defer handlersMu.RUnlock()
 	return getApplyHandler(handlers, kind)
+}
+
+func applyHandlersSnapshot() map[string]*ApplyHandler {
+	handlersMu.RLock()
+	defer handlersMu.RUnlock()
+	snapshot := make(map[string]*ApplyHandler, len(handlers))
+	maps.Copy(snapshot, handlers)
+	return snapshot
 }
 
 func getApplyHandler(registered map[string]*ApplyHandler, kind string) (*ApplyHandler, error) {
@@ -96,6 +111,8 @@ func getApplyHandler(registered map[string]*ApplyHandler, kind string) (*ApplyHa
 }
 
 func RegisterApplyHandler(kind string, input any, handler HandlerFunc) {
+	handlersMu.Lock()
+	defer handlersMu.Unlock()
 	if handlers == nil {
 		handlers = make(map[string]*ApplyHandler)
 	}

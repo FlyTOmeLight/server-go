@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
@@ -61,8 +63,62 @@ func TestRequestLogRecordsRouteWithoutQuery(t *testing.T) {
 	}
 	output := string(logs)
 	if !strings.Contains(output, "route=/items/:id status=204") ||
-		!strings.Contains(output, "route=/unmatched status=404") || strings.Contains(output, "credential") {
+		!strings.Contains(output, "route=/unmatched status=404") || strings.Contains(output, "credential") ||
+		strings.Count(output, `"level":"info"`) != 2 {
 		t.Errorf("unexpected request log: %s", output)
+	}
+}
+
+func TestRequestLogOptions(t *testing.T) {
+	log, path := newHTTPTestLogger(t)
+	engine := gin.New()
+	skips := []string{"/healthz"}
+	engine.Use(RequestLogWithOptions(RequestLogOptions{SkipPaths: skips, IncludeIdentity: true}))
+	skips[0] = "/items"
+	engine.GET("/healthz", func(c *core.Context) { c.Status(http.StatusOK) })
+	engine.GET("/items/:id", func(c *core.Context) {
+		c.Set(constants.KeyTenantID, "tenant-1")
+		c.Set(constants.KeyUserID, "user-1")
+		switch c.Param("id") {
+		case "missing":
+			c.String(http.StatusNotFound, "missing")
+		case "fail":
+			c.String(http.StatusBadGateway, "bad gateway")
+		default:
+			c.String(http.StatusOK, "ok")
+		}
+	})
+	for _, target := range []string{"/healthz?probe=1", "/items/ok", "/items/missing", "/items/fail"} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.RemoteAddr = "192.0.2.10:1234"
+		engine.ServeHTTP(httptest.NewRecorder(), req.WithContext(logger.WithContext(req.Context(), log)))
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	for _, test := range []struct {
+		level, message string
+		bytes          int
+	}{
+		{level: "info", message: "route=/items/:id status=200", bytes: len("ok")},
+		{level: "warn", message: "route=/items/missing status=404", bytes: len("missing")},
+		{level: "error", message: "route=/items/:id status=502", bytes: len("bad gateway")},
+	} {
+		var entry map[string]any
+		if err := decoder.Decode(&entry); err != nil {
+			t.Fatal(err)
+		}
+		message, _ := entry["msg"].(string)
+		if entry["level"] != test.level || !strings.Contains(message, test.message) ||
+			entry["clientIP"] != "192.0.2.10" || entry["bytes"] != float64(test.bytes) ||
+			entry["tenantId"] != "tenant-1" || entry["userId"] != "user-1" {
+			t.Fatalf("unexpected access log: %v", entry)
+		}
+	}
+	if decoder.More() {
+		t.Fatalf("unexpected additional access log: %s", data)
 	}
 }
 

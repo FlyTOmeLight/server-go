@@ -60,11 +60,33 @@ func TestSSEEncodingAndFailures(t *testing.T) {
 }
 
 func TestSSERequiresDeadlineSupport(t *testing.T) {
+	if _, err := NewSSE(nil, time.Second); err == nil {
+		t.Fatal("nil writer accepted")
+	}
 	if _, err := NewSSE(httptest.NewRecorder(), time.Second); err == nil {
 		t.Fatal("unsupported deadline accepted")
 	}
 	if _, err := NewSSE(&eventWriter{ResponseRecorder: httptest.NewRecorder()}, 0); err == nil {
 		t.Fatal("unbounded write accepted")
+	}
+}
+
+func TestSSEFlushHeaders(t *testing.T) {
+	w := &eventWriter{ResponseRecorder: httptest.NewRecorder()}
+	events, err := NewSSE(w, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := events.FlushHeaders(); err != nil {
+		t.Fatal(err)
+	}
+	if !w.Flushed || w.Body.Len() != 0 ||
+		!strings.HasPrefix(w.Result().Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("expected SSE headers without an event, got %v and %q", w.Result().Header, w.Body)
+	}
+	w.flushErr = errors.New("flush failed")
+	if err := events.FlushHeaders(); !errors.Is(err, w.flushErr) {
+		t.Fatalf("flush error lost: %v", err)
 	}
 }
 

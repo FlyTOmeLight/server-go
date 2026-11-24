@@ -53,16 +53,45 @@ func NewConfigCommand() *cobra.Command {
 }
 
 func getCommand() *cobra.Command {
+	var showSecrets bool
+	var revealSecrets bool
 	cmd := &cobra.Command{
 		Use:   "get",
 		Short: "Get all config.",
-		Args:  cobra.MaximumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			get(commandConfig(cmd), args)
+		Args: func(cmd *cobra.Command, args []string) error {
+			revealSecrets, showSecrets = showSecrets, false
+			return cobra.MaximumNArgs(1)(cmd, args)
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			config := commandConfig(cmd)
+			var value any
+			if len(args) == 0 {
+				value = config.AllSettings()
+			} else {
+				key, _ := parseConfigParameter(args[0])
+				if key == "" {
+					return fmt.Errorf("invalid config key %q", args[0])
+				}
+				value = config.Get(args[0])
+				if !revealSecrets && sensitiveConfigKey(args[0]) && value != nil {
+					value = "[REDACTED]"
+				}
+			}
+			if !revealSecrets {
+				value = redactConfig(value)
+			}
+			return WriteFormatted(cmd.OutOrStdout(), value, RenderTypeJSON)
 		},
 		Example: DefaultName() + " config get",
 	}
-
+	cmd.Flags().BoolVar(&showSecrets, "show-secrets", false, "Show sensitive configuration values")
+	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		showSecrets = false
+		if parent := cmd.Parent(); parent != nil {
+			return parent.FlagErrorFunc()(cmd, err)
+		}
+		return err
+	})
 	return cmd
 }
 
@@ -75,8 +104,7 @@ func setCommand() *cobra.Command {
 			return set(commandConfig(cmd), args[0])
 		},
 		Example: DefaultName() + " config set core.endpoint=http://localhost:8080\n" +
-			DefaultName() + " config set core.access_key=test-ak\n" +
-			DefaultName() + " config set core.secret_key=test-sk\n",
+			DefaultName() + " config set core.api_key=test-key\n",
 	}
 
 	return cmd
@@ -96,67 +124,171 @@ func unsetCommand() *cobra.Command {
 	return cmd
 }
 
-func get(config *viper.Viper, args []string) {
-	if len(args) == 0 {
-		// get all
-		PrintJSON(config.AllSettings())
-		return
+func sensitiveConfigKey(key string) bool {
+	for segment := range strings.SplitSeq(strings.ToLower(key), parameterSplitSet) {
+		switch segment {
+		case "api_key", "secret_key", "password", "token":
+			return true
+		}
 	}
+	return false
+}
 
-	arg := args[0]
-	groupFlag, paramFlag := parseConfigParameter(arg)
-
-	if paramFlag == "" {
-		group := config.Get(groupFlag)
-		PrintJSON(&group)
-		return
+func redactConfig(value any) any {
+	switch items := value.(type) {
+	case map[string]any:
+		clean := make(map[string]any, len(items))
+		for key, item := range items {
+			if sensitiveConfigKey(key) {
+				clean[key] = "[REDACTED]"
+			} else {
+				clean[key] = redactConfig(item)
+			}
+		}
+		return clean
+	case []any:
+		clean := make([]any, len(items))
+		for index, item := range items {
+			clean[index] = redactConfig(item)
+		}
+		return clean
 	}
-
-	param := config.Get(arg)
-	PrintJSON(&param)
+	return value
 }
 
 func set(config *viper.Viper, arg string) error {
-	pair := strings.Split(arg, "=")
-	if len(pair) != 2 {
-		return fmt.Errorf("%s is not valid, please set parameter like core.endpoint=http://localhost:80", arg)
+	key, value, found := strings.Cut(arg, "=")
+	top, _ := parseConfigParameter(key)
+	if !found || top == "" {
+		return errors.New("expected a config assignment like core.endpoint=http://localhost:80")
 	}
-
-	key := pair[0]
-	value := pair[1]
-
-	groupFlag, paramFlag := parseConfigParameter(key)
-	if groupFlag == "" && paramFlag == "" {
-		return fmt.Errorf("%s is not valid, please set parameter like core.endpoint=http://localhost:80", arg)
-	}
-
-	if paramFlag == "" {
-		config.Set(groupFlag, value)
-		return config.WriteConfig()
-	}
-
-	config.Set(key, value)
-	return config.WriteConfig()
+	return editConfig(config, func(mapping *yaml.Node) bool {
+		setConfigKey(mapping, strings.Split(strings.ToLower(key), parameterSplitSet), value)
+		return true
+	})
 }
 
 func unset(config *viper.Viper, arg string) error {
-	groupFlag, paramFlag := parseConfigParameter(arg)
-
-	if paramFlag == "" {
-		config.Set(groupFlag, "")
-		return config.WriteConfig()
+	top, _ := parseConfigParameter(arg)
+	if top == "" {
+		return fmt.Errorf("invalid config key %q", arg)
 	}
+	return editConfig(config, func(mapping *yaml.Node) bool {
+		return deleteConfigKey(mapping, strings.Split(arg, parameterSplitSet))
+	})
+}
 
-	config.Set(arg, "")
-	return config.WriteConfig()
+func editConfig(config *viper.Viper, edit func(*yaml.Node) bool) error {
+	filename, err := filepath.EvalSymlinks(config.ConfigFileUsed())
+	if err != nil {
+		return err
+	}
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return err
+	}
+	if len(document.Content) == 0 || document.Content[0].Tag == "!!null" {
+		document = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
+	}
+	if document.Content[0].Kind != yaml.MappingNode {
+		return errors.New("config file must contain a YAML mapping")
+	}
+	if !edit(document.Content[0]) {
+		return nil
+	}
+	content, err = yaml.Marshal(&document)
+	if err != nil {
+		return err
+	}
+	if err := replaceConfigFile(filename, content); err != nil {
+		return err
+	}
+	return config.ReadInConfig()
+}
+
+func replaceConfigFile(filename string, content []byte) error {
+	info, err := os.Stat(filename)
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(filename), ".config-*.yaml")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if _, err := file.Write(content); err != nil {
+		return err
+	}
+	if err := file.Chmod(info.Mode().Perm()); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), filename)
+}
+
+func configKeyIndex(mapping *yaml.Node, key string) int {
+	if mapping.Kind != yaml.MappingNode {
+		return -1
+	}
+	for index := 0; index < len(mapping.Content); index += 2 {
+		if strings.EqualFold(mapping.Content[index].Value, key) {
+			return index
+		}
+	}
+	return -1
+}
+
+func setConfigKey(mapping *yaml.Node, path []string, value string) {
+	index := configKeyIndex(mapping, strings.Join(path, parameterSplitSet))
+	if index >= 0 {
+		mapping.Content[index+1].SetString(value)
+		return
+	}
+	index = configKeyIndex(mapping, path[0])
+	if index < 0 {
+		key := new(yaml.Node)
+		key.SetString(path[0])
+		index = len(mapping.Content)
+		mapping.Content = append(mapping.Content, key, new(yaml.Node))
+	}
+	node := mapping.Content[index+1]
+	if len(path) == 1 {
+		node.SetString(value)
+		return
+	}
+	if node.Kind != yaml.MappingNode {
+		*node = yaml.Node{Kind: yaml.MappingNode}
+	}
+	setConfigKey(node, path[1:], value)
+}
+
+func deleteConfigKey(mapping *yaml.Node, path []string) bool {
+	index := configKeyIndex(mapping, strings.Join(path, parameterSplitSet))
+	if index >= 0 {
+		mapping.Content = append(mapping.Content[:index], mapping.Content[index+2:]...)
+		return true
+	}
+	if index := configKeyIndex(mapping, path[0]); index >= 0 && len(path) > 1 {
+		return deleteConfigKey(mapping.Content[index+1], path[1:])
+	}
+	return false
 }
 
 func parseConfigParameter(arg string) (string, string) {
-	if strings.Contains(arg, parameterSplitSet) {
-		pair := strings.Split(arg, parameterSplitSet)
-		return pair[0], pair[1]
+	for _, segment := range strings.Split(arg, parameterSplitSet) {
+		if strings.TrimSpace(segment) == "" {
+			return "", ""
+		}
 	}
-	return arg, ""
+	top, rest, _ := strings.Cut(arg, parameterSplitSet)
+	return top, rest
 }
 
 func NewApplyCommand() *cobra.Command {
@@ -165,28 +297,28 @@ func NewApplyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "apply",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			err := setCommandConfig(cmd)
-			return err
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var err error
 			if len(filenames) != 0 && directory != "" {
 				return errors.New("can not use both --directory and --filename")
 			}
-
-			for _, f := range filenames {
-				err = apply(cmd.Context(), f)
-				if err != nil {
-					return err
+			if len(filenames) == 0 && directory == "" {
+				return errors.New("apply requires --filename (-f) or --directory (-d)")
+			}
+			return setCommandConfig(cmd)
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if directory != "" {
+				return walkDir(cmd.Context(), directory)
+			}
+			var errs []error
+			for _, filename := range filenames {
+				if err := cmd.Context().Err(); err != nil {
+					return errors.Join(append(errs, err)...)
+				}
+				if err := apply(cmd.Context(), filename); err != nil {
+					errs = append(errs, fmt.Errorf("%s: %w", filename, err))
 				}
 			}
-
-			err = walkDir(cmd.Context(), directory)
-			if err != nil {
-				return err
-			}
-
-			return nil
+			return errors.Join(errs...)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&filenames, "filename", "f", []string{}, "that contains the configuration to apply")
@@ -210,7 +342,7 @@ func apply(ctx context.Context, filename string) error {
 
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return errors.Join(append(errs, err)...)
 		}
 		var spec *CommandSpec
 		err := d.Decode(&spec)
@@ -221,11 +353,7 @@ func apply(ctx context.Context, filename string) error {
 			logger.Errorf(ctx, "decode yaml error: %v \n", err)
 			errs = append(
 				errs,
-				serrors.NewError(
-					http.StatusInternalServerError,
-					"InvalidYaml",
-					fmt.Sprintf("decode yaml error: %v", err),
-				),
+				fmt.Errorf("decode yaml: %w", err),
 			)
 			break
 		}
@@ -234,13 +362,12 @@ func apply(ctx context.Context, filename string) error {
 			continue
 		}
 
-		var registered map[string]*ApplyHandler
+		var applyHandler *ApplyHandler
 		if line := commandLine(ctx); line != nil {
-			registered = line.handlers
+			applyHandler, err = getApplyHandler(line.handlers, spec.Kind)
 		} else {
-			registered = handlers
+			applyHandler, err = GetApplyHandler(spec.Kind)
 		}
-		applyHandler, err := getApplyHandler(registered, spec.Kind)
 		if err != nil {
 			failedMap[spec.Kind]++
 			logger.Errorf(ctx, "kind: %s is invalid \n", spec.Kind)
@@ -254,14 +381,13 @@ func apply(ctx context.Context, filename string) error {
 			continue
 		}
 
-		e := serrors.New(err)
-		if e.Status == http.StatusConflict {
+		if serrors.IsStatusCode(err, http.StatusConflict) {
 			succeededMap[spec.Kind]++
 			continue
 		}
 		failedMap[spec.Kind]++
 		logger.Errorf(ctx, "apply error: %v", err)
-		errs = append(errs, e)
+		errs = append(errs, err)
 	}
 
 	failedCount := 0
@@ -285,7 +411,7 @@ func apply(ctx context.Context, filename string) error {
 			fmt.Println(err)
 		}
 
-		return errs[0]
+		return errors.Join(errs...)
 	}
 
 	fmt.Println("Apply Successful!")
@@ -296,19 +422,24 @@ func walkDir(ctx context.Context, directory string) error {
 	if directory == "" {
 		return nil
 	}
-	return filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
+	var errs []error
+	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
-			return err
+			errs = append(errs, err)
+			return nil
 		}
 		if !info.IsDir() &&
 			(strings.HasSuffix(info.Name(), ".yaml") || strings.HasSuffix(info.Name(), ".yml")) {
-			err = apply(ctx, path)
-			if err != nil {
-				return err
+			if err := apply(ctx, path); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", path, err))
 			}
 		}
 		return nil
 	})
+	return errors.Join(append(errs, err)...)
 }
 
 func NewVersionCommand() *cobra.Command {
@@ -353,6 +484,5 @@ func getVersion(cmd *cobra.Command, outputFormat string) error {
 	if err := sdk.Complete(result, err); err != nil {
 		return err
 	}
-	FormattedPrint(info, outputFormat)
-	return nil
+	return WriteFormatted(cmd.OutOrStdout(), info, outputFormat)
 }

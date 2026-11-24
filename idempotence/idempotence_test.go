@@ -186,3 +186,120 @@ func TestPanickingOperationDoesNotStrandOrRepeat(t *testing.T) {
 		t.Fatalf("expected execution failure, got %v", err)
 	}
 }
+
+func TestControllerEvictsOldestCompletion(t *testing.T) {
+	controller := NewWithOptions(Options{MaxEntries: 2})
+	defer controller.Close()
+	executions := 0
+	execute := func() (Response, error) {
+		executions++
+		return Response{Status: http.StatusCreated}, nil
+	}
+	for _, tc := range []struct {
+		token string
+		want  int
+	}{
+		{token: "first", want: 1},
+		{token: "second", want: 2},
+		{token: "first", want: 2},
+		{token: "third", want: 3},
+		{token: "second", want: 3},
+		{token: "first", want: 4},
+	} {
+		_, err := controller.Do(t.Context(), Key{Token: tc.token}, [32]byte{}, execute)
+		if err != nil || executions != tc.want {
+			t.Fatalf("token %q: executions=%d, want %d, error=%v", tc.token, executions, tc.want, err)
+		}
+	}
+}
+
+func TestControllerSharesOversizedResponseWithoutCaching(t *testing.T) {
+	controller := NewWithOptions(Options{MaxEntries: 1, MaxBodyBytes: 3})
+	defer controller.Close()
+	key := Key{Token: "token"}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	owner := make(chan string, 1)
+	waiter := make(chan string, 1)
+	waiting := make(chan struct{})
+	execute := func() (Response, error) {
+		close(entered)
+		<-release
+		return Response{Status: http.StatusOK, Body: []byte("large")}, nil
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	go func() {
+		response, err := controller.Do(ctx, key, [32]byte{}, execute)
+		if err != nil {
+			t.Error(err)
+		}
+		owner <- string(response.Body)
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("operation did not start")
+	}
+	go func() {
+		response, err := controller.Do(
+			observedWaitContext{Context: ctx, waiting: waiting},
+			key,
+			[32]byte{},
+			func() (Response, error) {
+				t.Error("duplicate executed")
+				return Response{}, nil
+			},
+		)
+		if err != nil {
+			t.Error(err)
+		}
+		waiter <- string(response.Body)
+	}()
+	select {
+	case <-waiting:
+	case <-ctx.Done():
+		t.Fatal("duplicate did not wait")
+	}
+	_, err := controller.Do(ctx, Key{Token: "other"}, [32]byte{}, func() (Response, error) {
+		t.Error("operation ran at capacity")
+		return Response{}, nil
+	})
+	if !errors.Is(err, ErrCapacity) {
+		t.Fatalf("expected capacity error, got %v", err)
+	}
+	close(release)
+	for _, result := range []chan string{owner, waiter} {
+		select {
+		case body := <-result:
+			if body != "large" {
+				t.Fatalf("unexpected body %q", body)
+			}
+		case <-ctx.Done():
+			t.Fatal("operation did not return")
+		}
+	}
+	response, err := controller.Do(ctx, key, [32]byte{}, func() (Response, error) {
+		return Response{Status: http.StatusCreated, Body: []byte("new")}, nil
+	})
+	if err != nil || response.Status != http.StatusCreated {
+		t.Fatalf("oversized response blocked retry: %+v, %v", response, err)
+	}
+}
+
+type observedWaitContext struct {
+	context.Context
+	waiting chan struct{}
+}
+
+func (c observedWaitContext) Done() <-chan struct{} {
+	close(c.waiting)
+	return c.Context.Done()
+}

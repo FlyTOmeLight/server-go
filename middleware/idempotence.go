@@ -7,6 +7,8 @@ import (
 	stderr "errors"
 	"mime"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -17,28 +19,36 @@ import (
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
-// Idempotence caches JSON POST responses with a nonempty clientToken. Install
+// Idempotence caches JSON POST responses carrying an idempotency token. Install
 // after all authentication and authorization middleware, before business handlers.
 // Only successful responses are retained; outer error rendering remains in charge.
 // Identities must come from verified Gin context keys; requests without a verified
 // identity do not use the cache.
 func Idempotence(controller *idempotence.Controller) core.HandlerFunc {
-	return idempotenceHandler(controller, func(c *core.Context) { c.Next() })
+	return Idempotent(controller, func(c *core.Context) { c.Next() })
 }
 
-func idempotenceHandler(controller *idempotence.Controller, next core.HandlerFunc) core.HandlerFunc {
+// IdempotenceWithStore applies idempotence using the supplied store.
+func IdempotenceWithStore(store idempotence.Store) core.HandlerFunc {
+	return IdempotentWithStore(store, func(c *core.Context) { c.Next() })
+}
+
+// IdempotentWithStore wraps the final endpoint handler using the supplied store.
+func IdempotentWithStore(store idempotence.Store, next core.HandlerFunc) core.HandlerFunc {
 	return func(c *core.Context) {
 		clientToken := c.Query(constants.QueryClientToken)
+		if clientToken == "" {
+			clientToken = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+		}
 		mediaType, _, _ := mime.ParseMediaType(c.GetHeader(constants.HeaderContentType))
 		tenantID := c.GetString(constants.KeyTenantID)
 		userID := c.GetString(constants.KeyUserID)
 		if clientToken == "" || c.Request.Method != http.MethodPost || mediaType != constants.ContentTypeJSON ||
-			tenantID == "" ||
 			userID == "" {
 			next(c)
 			return
 		}
-		if controller == nil {
+		if store == nil {
 			errors.AbortWithError(
 				c,
 				errors.NewError(
@@ -62,11 +72,12 @@ func idempotenceHandler(controller *idempotence.Controller, next core.HandlerFun
 		key := idempotence.Key{
 			TenantID:  tenantID,
 			UserID:    userID,
+			ProjectID: c.GetString(constants.KeyProjectID),
 			Operation: c.Request.Method + " " + c.Request.URL.Path,
 			Token:     clientToken,
 		}
 		executed := false
-		response, err := controller.Do(
+		response, err := store.Do(
 			c.Request.Context(),
 			key,
 			fingerprint,
@@ -112,7 +123,8 @@ func idempotenceHandler(controller *idempotence.Controller, next core.HandlerFun
 						err.Error(),
 					),
 				)
-			case stderr.Is(err, idempotence.ErrClosed), stderr.Is(err, idempotence.ErrExecutionFailed):
+			case stderr.Is(err, idempotence.ErrClosed), stderr.Is(err, idempotence.ErrCapacity),
+				stderr.Is(err, idempotence.ErrExecutionFailed):
 				errors.AbortWithError(
 					c,
 					errors.NewError(
@@ -129,15 +141,28 @@ func idempotenceHandler(controller *idempotence.Controller, next core.HandlerFun
 		if executed {
 			return
 		}
-		// Replace headers as well as status and body. Requests still pass the
-		// current authorization checks before reaching this replay branch.
-		clear(c.Writer.Header())
-		for key, values := range response.Header {
-			c.Writer.Header()[key] = append([]string(nil), values...)
-		}
+		copyIdempotenceHeaders(c.Writer.Header(), response.Header)
 		c.Status(response.Status)
 		_, _ = c.Writer.Write(response.Body)
 		c.Abort()
+	}
+}
+
+func copyIdempotenceHeaders(destination, source http.Header) {
+	for name, values := range source {
+		name = http.CanonicalHeaderKey(name)
+		switch {
+		case name == http.CanonicalHeaderKey(constants.HeaderRequestID), name == "Date", name == "Set-Cookie",
+			strings.HasPrefix(name, "Access-Control-"):
+		case name == "Vary":
+			for _, value := range values {
+				if !slices.Contains(destination.Values(name), value) {
+					destination.Add(name, value)
+				}
+			}
+		default:
+			destination[name] = slices.Clone(values)
+		}
 	}
 }
 
@@ -147,9 +172,12 @@ type idempotenceWriter struct {
 	header http.Header
 }
 
+func (w *idempotenceWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *idempotenceWriter) WriteHeaderNow() {
 	if w.header == nil {
-		w.header = w.Header().Clone()
+		w.header = make(http.Header)
+		copyIdempotenceHeaders(w.header, w.Header())
 	}
 	w.ResponseWriter.WriteHeaderNow()
 }
@@ -168,5 +196,8 @@ func (w *idempotenceWriter) WriteString(data string) (int, error) {
 // Idempotent wraps the final endpoint handler so preceding route-level
 // authentication and authorization always execute, including on cache hits.
 func Idempotent(controller *idempotence.Controller, handler core.HandlerFunc) core.HandlerFunc {
-	return idempotenceHandler(controller, handler)
+	if controller == nil {
+		return IdempotentWithStore(nil, handler)
+	}
+	return IdempotentWithStore(controller, handler)
 }

@@ -12,19 +12,23 @@ import (
 	"sync"
 
 	"github.com/BurntSushi/toml"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 type Config struct {
-	Level   string
-	Outputs []Output
+	Level         string
+	Outputs       []Output
+	AddCaller     bool
+	AddStacktrace string
 }
 
 type Output struct {
 	Type       string
 	Level      string
+	Format     string
 	Path       string
 	Rotation   bool
 	MaxSize    int
@@ -34,9 +38,12 @@ type Output struct {
 }
 
 type Logger struct {
-	log       *zap.Logger
-	files     []io.Closer
-	closeOnce sync.Once
+	log         *zap.Logger
+	atomicLevel *zap.AtomicLevel
+	addCaller   bool
+	files       []io.Closer
+	borrowed    bool
+	closeOnce   sync.Once
 }
 
 // ParseConfigFile reads an explicit TOML path.
@@ -58,27 +65,58 @@ func NewLogger(config *Config) (*Logger, error) {
 			return nil, err
 		}
 	}
-	l := &Logger{}
+	atomicLevel := zap.NewAtomicLevelAt(level)
+	l := &Logger{atomicLevel: &atomicLevel, addCaller: config.AddCaller}
+	options := []zap.Option{zap.WithCaller(config.AddCaller), zap.AddCallerSkip(2)}
+	if config.AddStacktrace != "" {
+		var stacktraceLevel zapcore.Level
+		if err := stacktraceLevel.UnmarshalText([]byte(config.AddStacktrace)); err != nil {
+			return nil, err
+		}
+		options = append(options, zap.AddStacktrace(stacktraceLevel))
+	}
 	var cores []zapcore.Core
 	for _, output := range config.Outputs {
-		outputLevel := level
+		var enabled zapcore.LevelEnabler = atomicLevel
 		if output.Level != "" {
+			var outputLevel zapcore.Level
 			if err := outputLevel.UnmarshalText([]byte(output.Level)); err != nil {
 				l.Close()
 				return nil, err
 			}
+			enabled = outputLevel
+			if config.Level != "" {
+				enabled = zap.LevelEnablerFunc(func(candidate zapcore.Level) bool {
+					return outputLevel.Enabled(candidate) && atomicLevel.Enabled(candidate)
+				})
+			}
 		}
-		if outputLevel < level && config.Level != "" {
-			outputLevel = level
+		outputType := strings.ToLower(output.Type)
+		format := strings.ToLower(output.Format)
+		if format == "" {
+			format = "console"
+			if outputType == "file" {
+				format = "json"
+			}
 		}
-		var writer zapcore.WriteSyncer
 		encoderConfig := zap.NewProductionEncoderConfig()
 		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		encoder := zapcore.NewJSONEncoder(encoderConfig)
-		switch strings.ToLower(output.Type) {
+		var encoder zapcore.Encoder
+		switch format {
+		case "json":
+			encoder = zapcore.NewJSONEncoder(encoderConfig)
 		case "console":
-			writer = zapcore.Lock(zapcore.AddSync(os.Stderr))
 			encoder = zapcore.NewConsoleEncoder(encoderConfig)
+		default:
+			l.Close()
+			return nil, fmt.Errorf("unsupported log format: %s", output.Format)
+		}
+		var writer zapcore.WriteSyncer
+		switch outputType {
+		case "console", "stderr":
+			writer = zapcore.Lock(zapcore.AddSync(os.Stderr))
+		case "stdout":
+			writer = zapcore.Lock(zapcore.AddSync(os.Stdout))
 		case "file":
 			if output.Path == "" {
 				l.Close()
@@ -111,15 +149,39 @@ func NewLogger(config *Config) (*Logger, error) {
 			l.Close()
 			return nil, fmt.Errorf("unsupported log output: %s", output.Type)
 		}
-		cores = append(cores, zapcore.NewCore(encoder, writer, outputLevel))
+		cores = append(cores, zapcore.NewCore(encoder, writer, enabled))
 	}
-	l.log = zap.New(zapcore.NewTee(cores...))
+	l.log = zap.New(zapcore.NewTee(cores...), options...)
 	return l, nil
+}
+
+// SetLevel changes the base level shared by the logger and its children.
+func (l *Logger) SetLevel(level string) error {
+	if l == nil || l.atomicLevel == nil {
+		return errors.New("logger has no configurable level")
+	}
+	var parsed zapcore.Level
+	if err := parsed.UnmarshalText([]byte(level)); err != nil {
+		return err
+	}
+	l.atomicLevel.SetLevel(parsed)
+	return nil
+}
+
+// Level returns the base level or the fixed level of an unconfigured logger.
+func (l *Logger) Level() string {
+	if l == nil || l.log == nil {
+		return zapcore.InfoLevel.String()
+	}
+	if l.atomicLevel == nil {
+		return zapcore.LevelOf(l.log.Core()).String()
+	}
+	return l.atomicLevel.Level().String()
 }
 
 // Close flushes logs and releases files. Call after all log writers have stopped.
 func (l *Logger) Close() {
-	if l == nil {
+	if l == nil || l.borrowed {
 		return
 	}
 	l.closeOnce.Do(func() {
@@ -137,39 +199,55 @@ func (l *Logger) Sync() error {
 	return l.log.Sync()
 }
 
-func (l *Logger) write(ctx context.Context, level zapcore.Level, format string, args ...any) {
+func (l *Logger) write(ctx context.Context, level zapcore.Level, callerSkip int, format string, args ...any) {
 	if l == nil || l.log == nil || !l.log.Core().Enabled(level) {
 		return
 	}
-	if entry := l.log.Check(level, fmt.Sprintf(format, args...)); entry != nil {
-		var fields []zap.Field
-		if ctx != nil {
-			if id, ok := ctx.Value("RequestID").(string); ok && id != "" {
-				fields = append(fields, zap.String("requestId", id))
-			}
-		}
-		entry.Write(fields...)
+	log := l.log
+	if callerSkip != 0 {
+		log = log.WithOptions(zap.AddCallerSkip(callerSkip))
+	}
+	if entry := log.Check(level, fmt.Sprintf(format, args...)); entry != nil {
+		entry.Write(contextFields(ctx)...)
 	}
 }
 
+func contextFields(ctx context.Context) []zap.Field {
+	if ctx == nil {
+		return nil
+	}
+	var fields []zap.Field
+	if id, ok := ctx.Value("RequestID").(string); ok && id != "" {
+		fields = append(fields, zap.String("requestId", id))
+	}
+	if span := trace.SpanContextFromContext(ctx); span.IsValid() {
+		fields = append(
+			fields,
+			zap.String("traceId", span.TraceID().String()),
+			zap.String("spanId", span.SpanID().String()),
+		)
+	}
+	return fields
+}
+
 func (l *Logger) Debugf(ctx context.Context, format string, args ...any) {
-	l.write(ctx, zapcore.DebugLevel, format, args...)
+	l.write(ctx, zapcore.DebugLevel, 0, format, args...)
 }
 
 func (l *Logger) Infof(ctx context.Context, format string, args ...any) {
-	l.write(ctx, zapcore.InfoLevel, format, args...)
+	l.write(ctx, zapcore.InfoLevel, 0, format, args...)
 }
 
 func (l *Logger) Warnf(ctx context.Context, format string, args ...any) {
-	l.write(ctx, zapcore.WarnLevel, format, args...)
+	l.write(ctx, zapcore.WarnLevel, 0, format, args...)
 }
 
 func (l *Logger) Errorf(ctx context.Context, format string, args ...any) {
-	l.write(ctx, zapcore.ErrorLevel, format, args...)
+	l.write(ctx, zapcore.ErrorLevel, 0, format, args...)
 }
 
 func (l *Logger) Fatalf(ctx context.Context, format string, args ...any) {
-	l.write(ctx, zapcore.FatalLevel, format, args...)
+	l.write(ctx, zapcore.FatalLevel, 0, format, args...)
 }
 
 var (
@@ -203,12 +281,12 @@ func SetDefaultConfigWithFile(path string) error {
 
 func write(ctx context.Context, level zapcore.Level, format string, args ...any) {
 	if l := contextualLogger(ctx); l != nil {
-		l.write(ctx, level, format, args...)
+		l.write(ctx, level, 1, format, args...)
 		return
 	}
 	defaultMu.RLock()
 	defer defaultMu.RUnlock()
-	defaultLogger.write(ctx, level, format, args...)
+	defaultLogger.write(ctx, level, 1, format, args...)
 }
 
 func Debugf(ctx context.Context, format string, args ...any) {

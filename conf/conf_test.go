@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -54,6 +55,73 @@ func TestLoadAuthenticationDefaults(t *testing.T) {
 				test.want,
 			)
 		}
+	}
+}
+
+func TestHTTPServerConfigValidation(t *testing.T) {
+	for _, test := range []struct {
+		name, settings, errorField string
+	}{
+		{name: "negative read timeout", settings: "ReadTimeout=-1", errorField: "ReadTimeout"},
+		{name: "negative write timeout", settings: "WriteTimeout=-1", errorField: "WriteTimeout"},
+		{name: "negative idle timeout", settings: "IdleTimeout=-1", errorField: "IdleTimeout"},
+		{name: "negative header timeout", settings: "ReadHeaderTimeout=-1", errorField: "ReadHeaderTimeout"},
+		{name: "negative prestop delay", settings: "PreStopDelay=-1", errorField: "PreStopDelay"},
+		{name: "negative header size", settings: "MaxHeaderBytes=-1", errorField: "MaxHeaderBytes"},
+		{name: "missing certificate", settings: "[HTTPServer.TLS]\nEnable=true\nKeyFile='key.pem'", errorField: "TLS.CertFile"},
+		{name: "missing key", settings: "[HTTPServer.TLS]\nEnable=true\nCertFile='cert.pem'", errorField: "TLS.KeyFile"},
+		{name: "TLS disabled", settings: "[HTTPServer.TLS]\nEnable=false"},
+		{name: "same address", settings: "Listen='127.0.0.1:9090'\nAdminListen='127.0.0.1:9090'", errorField: "AdminListen"},
+		{name: "same ephemeral port", settings: "Listen='127.0.0.1:0'\nAdminListen='127.0.0.1:0'"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Load(configFile(t, "[HTTPServer]\n"+test.settings+"\n"))
+			if test.errorField == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "HTTPServer."+test.errorField) {
+				t.Fatalf("expected validation error for %s, got %v", test.errorField, err)
+			}
+		})
+	}
+}
+
+func TestHTTPServerConfigSnapshotOwnsTrustedProxies(t *testing.T) {
+	manager, err := NewManager(configFile(t, `[HTTPServer]
+Listen="127.0.0.1:8080"
+AdminListen="127.0.0.1:9090"
+ReadHeaderTimeout=2500
+PreStopDelay=3000
+TrustedProxies=["192.0.2.0/24", "2001:db8::1"]
+[HTTPServer.TLS]
+Enable=true
+CertFile="cert.pem"
+KeyFile="key.pem"
+ClientCAFile="client-ca.pem"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := manager.Snapshot()
+	want := HTTPServerConfig{
+		Listen: "127.0.0.1:8080", AdminListen: "127.0.0.1:9090",
+		ReadHeaderTimeout: 2500, PreStopDelay: 3000,
+		TrustedProxies: []string{"192.0.2.0/24", "2001:db8::1"},
+		TLS: HTTPServerTLSConfig{
+			Enable: true, CertFile: "cert.pem", KeyFile: "key.pem", ClientCAFile: "client-ca.pem",
+		},
+	}
+	if !reflect.DeepEqual(snapshot.HTTPServer, want) {
+		t.Fatalf("HTTPServer = %#v, want %#v", snapshot.HTTPServer, want)
+	}
+	snapshot.HTTPServer.TrustedProxies[0] = "198.51.100.0/24"
+	var decoded HTTPServerConfig
+	if err := manager.Snapshot().UnmarshalKey("HTTPServer", &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(manager.Snapshot().HTTPServer, want) || !reflect.DeepEqual(decoded, want) {
+		t.Fatal("editing the snapshot changed the manager's proxy list")
 	}
 }
 

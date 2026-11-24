@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/spf13/viper"
 
@@ -48,59 +49,21 @@ func SetConfig() error {
 }
 
 func logConfig(config *viper.Viper) *logger.Config {
-	defaultConfig := &logger.Config{
-		Outputs: []logger.Output{
-			{
-				Type:  "Console",
-				Level: "Debug",
-			},
-			{
-				Type:       "File",
-				Level:      "Info",
-				Path:       "./logs/service/info.log",
-				Rotation:   true,
-				MaxAge:     7,
-				MaxBackups: 5,
-			},
-			{
-				Type:       "File",
-				Level:      "Warn",
-				Path:       "./logs/service/error.log",
-				Rotation:   true,
-				MaxAge:     30,
-				MaxBackups: 10,
-			},
-		},
+	result := &logger.Config{}
+	switch strings.ToLower(strings.TrimSpace(config.GetString("log.handler"))) {
+	case "stdout", "stderr", "console":
+		result.Outputs = []logger.Output{{Type: "Console", Level: "Debug"}}
+	case "file":
+		result.Outputs = []logger.Output{{
+			Type:       "File",
+			Level:      "Info",
+			Path:       "./logs/service/info.log",
+			Rotation:   true,
+			MaxAge:     7,
+			MaxBackups: 5,
+		}}
 	}
-	if config.IsSet("log.handler") {
-		str := config.GetString("log.handler")
-		outputs := []logger.Output{}
-		switch str {
-		case "NONE":
-			outputs = []logger.Output{}
-		case "STDOUT":
-			outputs = []logger.Output{
-				{
-					Type:  "Console",
-					Level: "Debug",
-				},
-			}
-		case "FILE":
-			outputs = []logger.Output{
-				{
-					Type:       "File",
-					Level:      "Info",
-					Path:       "./logs/service/info.log",
-					Rotation:   true,
-					MaxAge:     7,
-					MaxBackups: 5,
-				},
-			}
-		}
-		defaultConfig.Outputs = outputs
-	}
-
-	return defaultConfig
+	return result
 }
 
 func setLog(config *viper.Viper) {

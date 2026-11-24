@@ -21,6 +21,7 @@ import (
 func identityMiddleware(c *core.Context) {
 	c.Set(constants.KeyTenantID, c.GetHeader("Test-Tenant"))
 	c.Set(constants.KeyUserID, c.GetHeader("Test-User"))
+	c.Set(constants.KeyProjectID, c.GetHeader("Test-Project"))
 	c.Next()
 }
 
@@ -133,19 +134,16 @@ func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 					t.Fatalf("unexpected response: %d %s", w.Code, w.Body.String())
 				}
 				if original == nil {
+					if tc.status < 400 && len(w.Header().Values("Set-Cookie")) != 2 {
+						t.Fatalf("original response lost cookies: %v", w.Header())
+					}
 					original = w
 					continue
 				}
 				if w.Body.String() != original.Body.String() ||
 					w.Header().Get("Content-Type") != original.Header().Get("Content-Type") ||
 					w.Header().Get("Location") != original.Header().Get("Location") ||
-					strings.Join(
-						w.Header().Values("Set-Cookie"),
-						";",
-					) != strings.Join(
-						original.Header().Values("Set-Cookie"),
-						";",
-					) {
+					len(w.Header().Values("Set-Cookie")) != 0 {
 					t.Fatalf("incomplete replay: headers=%v body=%s", w.Header(), w.Body.String())
 				}
 			}
@@ -157,6 +155,91 @@ func TestIdempotenceReplayCompleteResponseAndErrors(t *testing.T) {
 				t.Fatalf("executed %d times, want %d", executions, wantExecutions)
 			}
 		})
+	}
+}
+
+func TestIdempotenceWithStoreProjectAndHeaderScopes(t *testing.T) {
+	controller := idempotence.New(time.Minute)
+	defer controller.Close()
+	engine := gin.New()
+	engine.Use(identityMiddleware, IdempotenceWithStore(controller))
+	executions := 0
+	engine.POST("/create", func(c *core.Context) {
+		executions++
+		c.String(http.StatusCreated, "execution %d", executions)
+	})
+	for _, tc := range []struct {
+		path, token, user, project string
+		wantBody                   string
+	}{
+		{path: "/create", token: " token ", user: "bearer", project: "project-a", wantBody: "execution 1"},
+		{path: "/create", token: "token", user: "bearer", project: "project-a", wantBody: "execution 1"},
+		{path: "/create", token: "token", user: "bearer", project: "project-b", wantBody: "execution 2"},
+		{path: "/create", token: "token", user: "", project: "project-a", wantBody: "execution 3"},
+		{path: "/create", token: "token", user: "", project: "project-a", wantBody: "execution 4"},
+		{path: "/create?clientToken=query", token: "first", user: "bearer", project: "", wantBody: "execution 5"},
+		{path: "/create?clientToken=query", token: "second", user: "bearer", project: "", wantBody: "execution 5"},
+	} {
+		request := idempotentRequest(tc.path, "", tc.user, `{}`)
+		request.Header.Set("Idempotency-Key", tc.token)
+		request.Header.Set("Test-Project", tc.project)
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusCreated || recorder.Body.String() != tc.wantBody {
+			t.Errorf("unexpected result for %+v: %d %s", tc, recorder.Code, recorder.Body)
+		}
+	}
+}
+
+func TestIdempotenceReplayKeepsCurrentRequestHeaders(t *testing.T) {
+	controller := idempotence.New(time.Minute)
+	defer controller.Close()
+	engine := gin.New()
+	engine.Use(identityMiddleware, RequestID(), CORS(CORSConfig{
+		AllowOrigins: []string{"https://first.example", "https://second.example"},
+	}))
+	var outerWriter http.ResponseWriter
+	var executions int
+	engine.POST("/create", func(c *core.Context) {
+		outerWriter = c.Writer
+		c.Next()
+	}, IdempotentWithStore(controller, func(c *core.Context) {
+		executions++
+		if c.Writer.(interface{ Unwrap() http.ResponseWriter }).Unwrap() != outerWriter {
+			t.Error("writer did not unwrap to the original response writer")
+		}
+		c.Header("Date", "Mon, 01 Jan 2024 00:00:00 GMT")
+		c.Header("Set-Cookie", "session=first")
+		c.Writer.Header().Add("Vary", "Accept-Encoding")
+		c.String(http.StatusCreated, "created")
+	}))
+	for _, tc := range []struct {
+		id, origin string
+		replay     bool
+	}{
+		{id: "first", origin: "https://first.example", replay: false},
+		{id: "second", origin: "https://second.example", replay: true},
+		{id: "third", origin: "", replay: true},
+	} {
+		request := idempotentRequest("/create?clientToken=token", "tenant", "alice", `{}`)
+		request.Header.Set(constants.HeaderRequestID, tc.id)
+		request.Header.Set("Origin", tc.origin)
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+		header := recorder.Result().Header
+		if recorder.Code != http.StatusCreated || recorder.Body.String() != "created" ||
+			header.Get(
+				constants.HeaderRequestID,
+			) != tc.id || header.Get("Access-Control-Allow-Origin") != tc.origin ||
+			strings.Join(header.Values("Vary"), ", ") != "Origin, Accept-Encoding" {
+			t.Fatalf("unexpected result for %s: %d %s %v", tc.id, recorder.Code, recorder.Body, header)
+		}
+		if tc.replay && (header.Get("Date") != "" || header.Get("Set-Cookie") != "") {
+			t.Fatalf("replay included stale headers: %v", header)
+		}
+	}
+	if executions != 1 {
+		t.Fatalf("handler executed %d times, want one", executions)
 	}
 }
 

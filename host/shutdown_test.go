@@ -19,6 +19,60 @@ import (
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
+func TestPreStopDelayMakesBothListenersUnreadyBeforeDraining(t *testing.T) {
+	const delay = 500 * time.Millisecond
+	svc := &testService{handle: func(c *core.Context) { c.String(http.StatusOK, "business") }}
+	h, _ := newTestHostWithHTTPConfig(t, svc, conf.HTTPServerConfig{
+		PreStopDelay: int(delay / time.Millisecond), AdminListen: "127.0.0.1:0",
+	})
+	cancel, done := startTestHost(t, h)
+	defer func() {
+		cancel()
+		if done != nil {
+			waitStopped(t, done)
+		}
+	}()
+	client := &http.Client{Timeout: time.Second}
+	defer client.CloseIdleConnections()
+	main, admin := "http://"+h.Address(), "http://"+h.AdminAddress()
+	assertHTTPResponse(t, client, main+"/readyz", http.StatusOK, "")
+	assertHTTPResponse(t, client, admin+"/readyz", http.StatusOK, "")
+	canceled := time.Now()
+	cancel()
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for h.ready.Load() {
+		select {
+		case <-deadline.C:
+			t.Fatal("host did not become unready")
+		case <-ticker.C:
+		}
+	}
+	for _, url := range []string{main, admin} {
+		assertHTTPResponse(
+			t,
+			client,
+			url+"/readyz",
+			http.StatusServiceUnavailable,
+			`{"status":"unavailable","checks":{}}`,
+		)
+		assertHTTPResponse(t, client, url+"/healthz", http.StatusServiceUnavailable, "")
+		assertHTTPResponse(t, client, url+"/livez", http.StatusOK, `{"status":"ok"}`)
+	}
+	assertHTTPResponse(t, client, main+"/business", http.StatusOK, "business")
+	waitDraining(t, h)
+	if elapsed := time.Since(canceled); elapsed < delay {
+		t.Fatalf("draining started after %s, want at least %s", elapsed, delay)
+	}
+	waitStopped(t, done)
+	done = nil
+	if svc.stops.Load() != 1 {
+		t.Fatal("service did not stop after both listeners drained")
+	}
+}
+
 func TestShutdownTimeoutJoinsHandlersAndGivesStopItsOwnBudget(t *testing.T) {
 	for _, h2c := range []bool{false, true} {
 		name := "HTTP1"

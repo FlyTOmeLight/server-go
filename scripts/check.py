@@ -348,10 +348,10 @@ def main():
         for module in [ROOT, *EXAMPLES]:
             check_module(module)
         run('go', 'test', '-count=1', '-race', '.', './app', './host', './middleware', './console', './errors',
-            './cli', './sdk', './internalsdk', './db', './stream', './cron',
+            './cli', './sdk', './internalsdk', './db', './db/migrate', './stream', './cron',
             './pkg', './pkg/binder', './pkg/election', './pkg/modbus',
-            './conf', './idempotence', './auth', './logger', './httpintegration', './redis', './pubsub',
-            './examples/streaming-service/...', './examples/postgresql-service/...')
+            './conf', './idempotence', './auth', './logger', './metrics', './proxy', './httpintegration',
+            './redis', './pubsub', './examples/streaming-service/...', './examples/postgresql-service/...')
         run('go', 'test', '-count=1', '-race', './service', './sdk/go/...', cwd=EXAMPLES[0])
         run(sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts', '-p', 'test_*.py')
         with tempfile.TemporaryDirectory(prefix='server-go-check-') as temporary:

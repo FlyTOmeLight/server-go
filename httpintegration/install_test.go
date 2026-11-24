@@ -87,6 +87,30 @@ func TestInstallEnablesConfiguredRoutesAndProtectsAssets(t *testing.T) {
 	}
 }
 
+func TestInstallWithAdminListenerKeepsDiagnosticsOffBusinessRouter(t *testing.T) {
+	engine := gin.New()
+	config := &conf.Config{
+		RunMode: conf.RunModeTest,
+		HTTPServer: conf.HTTPServerConfig{
+			AdminListen: "127.0.0.1:9090", PprofEnable: true, MetricsEnable: true, SwaggerEnable: true,
+		},
+	}
+	if err := InstallWithAuth(engine, config, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/pprof/", "/metrics", "/swagger/index.html", "/feature"} {
+		writer := httptest.NewRecorder()
+		engine.ServeHTTP(writer, httptest.NewRequest(http.MethodGet, path, nil))
+		want := http.StatusNotFound
+		if path == "/feature" {
+			want = http.StatusOK
+		}
+		if writer.Code != want {
+			t.Errorf("GET %s = %d, want %d", path, writer.Code, want)
+		}
+	}
+}
+
 func TestInstallRejectsInvalidInputs(t *testing.T) {
 	for _, test := range []struct {
 		engine *core.Engine

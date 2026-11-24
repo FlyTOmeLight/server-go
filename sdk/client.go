@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"resty.dev/v3"
 
 	"github.com/FlyTOmeLight/server-go/constants"
@@ -99,11 +101,17 @@ func NewClientWithConfig(config *Config) (*Client, error) {
 	config = copyConfig(config)
 	client := resty.New().SetBaseURL(config.Endpoint)
 	client.AddRequestMiddleware(func(_ *resty.Client, request *resty.Request) error {
-		if id, ok := request.Context().Value(constants.KeyRequestID).(string); ok && id != "" {
+		ctx := request.Context()
+		if id, ok := ctx.Value(constants.KeyRequestID).(string); ok && id != "" {
 			if _, explicit := requestHeader(request.Header, constants.HeaderRequestID); !explicit {
 				request.SetHeader(constants.HeaderRequestID, id)
 			}
 		}
+		propagator := otel.GetTextMapPropagator()
+		if len(propagator.Fields()) == 0 {
+			propagator = propagation.TraceContext{}
+		}
+		propagator.Inject(ctx, propagation.HeaderCarrier(request.Header))
 		return nil
 	})
 

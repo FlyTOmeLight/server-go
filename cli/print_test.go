@@ -1,9 +1,33 @@
 package cli
 
 import (
+	"bytes"
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestWriteFormattedAlignsRowsAndReportsErrors(t *testing.T) {
+	rows := []map[string]any{{"c": "third", "a": "first"}, {"b": "second"}}
+	var output bytes.Buffer
+	require.NoError(t, WriteFormatted(&output, rows, RenderTypeCSV))
+	require.Equal(t, "a,b,c\nfirst,,third\n,second,\n\n", output.String())
+
+	for _, format := range []RenderType{RenderTypeJSON, RenderTypeTable, RenderTypeYAML} {
+		output.Reset()
+		require.Error(t, WriteFormatted(&output, func() {}, format))
+		require.Empty(t, output.String())
+	}
+	require.ErrorIs(t, WriteFormatted(failingOutput{}, rows, RenderTypeJSON), errTestOutput)
+}
+
+var errTestOutput = errors.New("output failed")
+
+type failingOutput struct{}
+
+func (failingOutput) Write([]byte) (int, error) { return 0, errTestOutput }
 
 func TestFormattedPrint(t *testing.T) {
 	t.Run("singlelayer", func(t *testing.T) {

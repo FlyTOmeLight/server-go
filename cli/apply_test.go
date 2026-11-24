@@ -2,10 +2,16 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
+	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	serrors "github.com/FlyTOmeLight/server-go/errors"
 )
 
 type ArtifactContent struct {
@@ -85,4 +91,36 @@ func TestApply(t *testing.T) {
 		t.Log(metadata)
 	}
 	t.Log(spec)
+}
+
+func TestApplyRequiresInputAndJoinsErrors(t *testing.T) {
+	unconfigured := NewCommandLineWithName("apply-test")
+	unconfigured.Root.SetArgs([]string{"apply"})
+	require.ErrorContains(t, unconfigured.ExecuteContext(t.Context()), "requires --filename")
+
+	firstErr, secondErr := errors.New("first failed"), errors.New("second failed")
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.yaml")
+	second := filepath.Join(dir, "second.yml")
+	require.NoError(t, os.WriteFile(first, []byte("kind: failfirst\n---\nkind: conflict\n"), 0o600))
+	require.NoError(t, os.WriteFile(second, []byte("kind: failsecond\n"), 0o600))
+	for _, args := range [][]string{{"apply", "-f", first, "-f", second}, {"apply", "-d", dir}} {
+		line := configuredLine(t, "http://localhost:1")
+		line.handlers["failfirst"] = &ApplyHandler{
+			input:   &struct{}{},
+			handler: func(any) error { return firstErr },
+		}
+		line.handlers["failsecond"] = &ApplyHandler{
+			input:   &struct{}{},
+			handler: func(any) error { return secondErr },
+		}
+		line.handlers["conflict"] = &ApplyHandler{input: &struct{}{}, handler: func(any) error {
+			return serrors.NewError(http.StatusConflict, "AlreadyExists", "already exists")
+		}}
+		line.Root.SetArgs(args)
+		err := line.ExecuteContext(t.Context())
+		require.ErrorIs(t, err, firstErr)
+		require.ErrorIs(t, err, secondErr)
+		require.NotContains(t, err.Error(), "already exists")
+	}
 }

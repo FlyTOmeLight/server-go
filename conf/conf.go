@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -124,6 +125,7 @@ func (c *Config) Clone() *Config {
 	}
 	copy := *c
 	copy.Services = append([]string(nil), c.Services...)
+	copy.HTTPServer.TrustedProxies = slices.Clone(c.HTTPServer.TrustedProxies)
 	copy.HTTPServer.Trace.PrefixFilters = append([]string(nil), c.HTTPServer.Trace.PrefixFilters...)
 	copy.HTTPServer.Trace.SuffixFilters = append([]string(nil), c.HTTPServer.Trace.SuffixFilters...)
 	copy.HTTPServer.ConsoleProxyNames = append([]string(nil), c.HTTPServer.ConsoleProxyNames...)

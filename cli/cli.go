@@ -108,7 +108,8 @@ func NewCommandLine(cmd *cobra.Command) *CommandLine {
 	}
 	path := ConfigFilePath
 	if path == "" {
-		path = filepath.Join(os.Getenv("HOME"), "."+strings.ToLower(name), "config.yaml")
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, "."+strings.ToLower(name), "config.yaml")
 	}
 	prefix := ConfigEnvPrefix
 	if prefix == "" {
@@ -117,11 +118,7 @@ func NewCommandLine(cmd *cobra.Command) *CommandLine {
 	config.SetEnvPrefix(prefix)
 	config.SetConfigFile(path)
 	config.SetConfigType("yaml")
-	registered := make(map[string]*ApplyHandler, len(handlers))
-	for kind, handler := range handlers {
-		registered[kind] = handler
-	}
-	return &CommandLine{Root: cmd, config: config, handlers: registered}
+	return &CommandLine{Root: cmd, config: config, handlers: applyHandlersSnapshot()}
 }
 
 func NewCommandLineWithName(name string) *CommandLine {
@@ -135,14 +132,11 @@ func NewCommandLineWithName(name string) *CommandLine {
 
 func (cli *CommandLine) Append(builders ...CommandBuilder) {
 	for _, builder := range builders {
-		before := make(map[string]*ApplyHandler, len(handlers))
-		for kind, handler := range handlers {
-			before[kind] = handler
-		}
+		before := applyHandlersSnapshot()
 		cmd := builder.NewCommand()
 		// Legacy builders register during NewCommand. Capture their registrations
 		// now so later registrations cannot change this command line's behavior.
-		for kind, handler := range handlers {
+		for kind, handler := range applyHandlersSnapshot() {
 			if before[kind] != handler {
 				cli.handlers[kind] = handler
 			}

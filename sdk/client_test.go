@@ -9,6 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"resty.dev/v3"
 
 	"github.com/FlyTOmeLight/server-go/constants"
@@ -201,6 +205,83 @@ func TestClientPropagatesRequestID(t *testing.T) {
 					test.want,
 					test.explicit,
 				)
+			}
+		})
+	}
+}
+
+func TestClientPropagatesTraceContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, key := range []string{"traceparent", "tracestate", "baggage", constants.HeaderRequestID} {
+			for _, value := range r.Header.Values(key) {
+				w.Header().Add(key, value)
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClientWithConfig(&Config{Endpoint: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	previous := otel.GetTextMapPropagator()
+	t.Cleanup(func() { otel.SetTextMapPropagator(previous) })
+	state, err := trace.ParseTraceState("vendor=value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{1},
+		SpanID:     trace.SpanID{2},
+		TraceFlags: trace.FlagsSampled,
+		TraceState: state,
+	})
+	ctx := trace.ContextWithSpanContext(
+		context.WithValue(context.Background(), constants.KeyRequestID, "request-1"),
+		parent,
+	)
+	values, err := baggage.Parse("team=platform")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = baggage.ContextWithBaggage(ctx, values)
+	for _, test := range []struct {
+		name       string
+		ctx        context.Context
+		propagator propagation.TextMapPropagator
+		trace      bool
+		baggage    string
+	}{
+		{name: "empty global fields", ctx: ctx, propagator: propagation.NewCompositeTextMapPropagator(), trace: true, baggage: ""},
+		{name: "configured global", ctx: ctx, propagator: propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}), trace: true, baggage: "team=platform"},
+		{name: "no active span", ctx: context.Background(), propagator: propagation.TraceContext{}, trace: false, baggage: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			otel.SetTextMapPropagator(test.propagator)
+			response, err := client.R().SetContext(test.ctx).Get("/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			headers := response.Header()
+			if headers.Get("baggage") != test.baggage {
+				t.Fatalf("unexpected baggage: %v", headers)
+			}
+			received := propagation.TraceContext{}.Extract(
+				context.Background(),
+				propagation.HeaderCarrier(headers),
+			)
+			span := trace.SpanContextFromContext(received)
+			if !test.trace {
+				if headers.Get("traceparent") != "" || headers.Get("tracestate") != "" {
+					t.Fatalf("unexpected trace headers: %v", headers)
+				}
+				return
+			}
+			if !span.Equal(parent.WithRemote(true)) ||
+				headers.Get(constants.HeaderRequestID) != "request-1" {
+				t.Fatalf("unexpected propagated headers: %v", headers)
 			}
 		})
 	}

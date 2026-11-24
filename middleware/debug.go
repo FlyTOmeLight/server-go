@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/FlyTOmeLight/server-go/constants"
 	"github.com/FlyTOmeLight/server-go/errors"
@@ -35,6 +37,9 @@ func shouldLogBody(c *core.Context) bool {
 	}
 
 	contentType := c.Request.Header.Get(constants.HeaderContentType)
+	if binaryMIME(contentType) {
+		return false
+	}
 	// SDK request header does not contain application/json
 	if contentType == "" {
 		return true
@@ -65,11 +70,23 @@ func noLog(c *core.Context, prefixFilters []string, suffixFilters []string) bool
 		}
 	}
 	for _, suffix := range suffixFilters {
-		if strings.HasSuffix(c.Request.RequestURI, suffix) {
+		if strings.HasSuffix(c.Request.URL.Path, suffix) {
 			return true
 		}
 	}
 	return false
+}
+
+type bodyPreview struct {
+	io.ReadCloser
+	buffer bytes.Buffer
+}
+
+func (preview *bodyPreview) Read(data []byte) (int, error) {
+	read, err := preview.ReadCloser.Read(data)
+	remaining := maxLength*utf8.UTFMax - preview.buffer.Len()
+	preview.buffer.Write(data[:min(read, remaining)])
+	return read, err
 }
 
 func Debug(prefixFilters []string, suffixFilters []string) core.HandlerFunc {
@@ -80,13 +97,18 @@ func Debug(prefixFilters []string, suffixFilters []string) core.HandlerFunc {
 		}
 
 		var rawRequest []byte
+		var preview *bodyPreview
 		if shouldLogBody(c) {
-			// 为了输出body，需要将body读取出来，然后再赋值回去
-			var err error
-			rawRequest, err = httpbody.Read(c)
-			if err != nil && httpbody.IsJSON(c) {
-				errors.AbortWithError(c, err)
-				return
+			if httpbody.IsJSON(c) {
+				var err error
+				rawRequest, err = httpbody.Read(c)
+				if err != nil {
+					errors.AbortWithError(c, err)
+					return
+				}
+			} else if c.Request.Body != nil {
+				preview = &bodyPreview{ReadCloser: c.Request.Body}
+				c.Request.Body = preview
 			}
 		}
 
@@ -117,6 +139,8 @@ func Debug(prefixFilters []string, suffixFilters []string) core.HandlerFunc {
 			if err := json.Compact(&buf, rawRequest); err == nil {
 				reqBody = buf.String()
 			}
+		} else if preview != nil {
+			reqBody = preview.buffer.String()
 		}
 
 		statusCode := c.Writer.Status()
@@ -124,7 +148,7 @@ func Debug(prefixFilters []string, suffixFilters []string) core.HandlerFunc {
 		respHeader := header("< ", &h)
 		respBody := ""
 		contentType := c.Writer.Header().Get("Content-Type")
-		if strings.ToLower(contentType) != "application/zip" {
+		if !binaryMIME(contentType) {
 			respBody = strings.Trim(writer.Buf.String(), constants.LineBreak)
 		}
 
@@ -166,15 +190,36 @@ func log(ctx context.Context, message string, statusCode int) {
 }
 
 func body(body string) string {
-	if len(body) > maxLength {
-		body = body[:(maxLength - 1)]
+	body = strings.ToValidUTF8(body, "")
+	count := 0
+	for index := range body {
+		if count == maxLength {
+			return body[:index]
+		}
+		count++
 	}
 	return body
+}
+
+func binaryMIME(contentType string) bool {
+	mediaType, _, _ := strings.Cut(contentType, ";")
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	switch mediaType {
+	case "application/octet-stream", "application/pdf", "application/zip":
+		return true
+	}
+	return strings.HasPrefix(mediaType, "image/") || strings.HasPrefix(mediaType, "video/") ||
+		strings.HasPrefix(mediaType, "audio/")
 }
 
 func header(direction string, h *http.Header) string {
 	headers := make([]string, 0, len(*h))
 	for k, vs := range *h {
+		switch strings.ToLower(k) {
+		case "authorization", "cookie", "set-cookie", "x-api-key", "proxy-authorization":
+			headers = append(headers, direction+k+"=[REDACTED]")
+			continue
+		}
 		for _, v := range vs {
 			headers = append(headers, direction+k+"="+v)
 		}

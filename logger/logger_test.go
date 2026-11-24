@@ -45,7 +45,14 @@ func TestFileLogging(t *testing.T) {
 }
 
 func TestInvalidConfig(t *testing.T) {
-	for _, config := range []*Config{nil, {Level: "invalid"}, {Outputs: []Output{{Type: "File"}}}, {Outputs: []Output{{Type: "unknown"}}}} {
+	for _, config := range []*Config{
+		nil,
+		{Level: "invalid"},
+		{AddStacktrace: "invalid"},
+		{Outputs: []Output{{Type: "File"}}},
+		{Outputs: []Output{{Type: "unknown"}}},
+		{Outputs: []Output{{Type: "console", Format: "invalid"}}},
+	} {
 		if _, err := NewLogger(config); err == nil {
 			t.Fatalf("accepted invalid config: %#v", config)
 		}
@@ -120,4 +127,126 @@ func TestNilAndZeroValueLogger(t *testing.T) {
 		l.Close()
 		l.Infof(context.Background(), "discarded")
 	}
+}
+
+func TestRuntimeLevelPreservesOutputThresholds(t *testing.T) {
+	directory := t.TempDir()
+	inheritedPath := filepath.Join(directory, "inherited.log")
+	explicitPath := filepath.Join(directory, "explicit.log")
+	log, err := NewLogger(&Config{
+		Level: "info",
+		Outputs: []Output{
+			{Type: "file", Path: inheritedPath},
+			{Type: "file", Path: explicitPath, Level: "warn"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(log.Close)
+	ctx := context.Background()
+	log.Debugf(ctx, "initial debug")
+	if err := log.SetLevel("Debug"); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.SetLevel("invalid"); err == nil || log.Level() != "debug" {
+		t.Fatalf("invalid level changed logger to %q", log.Level())
+	}
+	log.Debugf(ctx, "enabled debug")
+	log.Warnf(ctx, "enabled warning")
+	if err := log.SetLevel("error"); err != nil {
+		t.Fatal(err)
+	}
+	log.Warnf(ctx, "disabled warning")
+	log.Errorf(ctx, "enabled error")
+	log.Close()
+	for _, test := range []struct {
+		path string
+		want []string
+	}{
+		{path: inheritedPath, want: []string{"enabled debug", "enabled warning", "enabled error"}},
+		{path: explicitPath, want: []string{"enabled warning", "enabled error"}},
+	} {
+		entries := readLogEntries(t, test.path)
+		if len(entries) != len(test.want) {
+			t.Fatalf("unexpected entries in %s: %v", test.path, entries)
+		}
+		for index, message := range test.want {
+			if entries[index]["msg"] != message {
+				t.Fatalf("entry %d in %s = %v, want %q", index, test.path, entries[index], message)
+			}
+		}
+	}
+}
+
+func TestLogEncodersAndDiagnostics(t *testing.T) {
+	stdout, err := os.Create(filepath.Join(t.TempDir(), "stdout"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdout.Close() })
+	stderr, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stderr.Close() })
+	originalStdout, originalStderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = stdout, stderr
+	log, err := NewLogger(&Config{
+		AddCaller:     true,
+		AddStacktrace: "error",
+		Outputs: []Output{
+			{Type: "stdout", Format: "json"},
+			{Type: "stderr", Format: "console"},
+		},
+	})
+	os.Stdout, os.Stderr = originalStdout, originalStderr
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(log.Close)
+	ctx := WithContext(context.Background(), log)
+	Infof(ctx, "plain message")
+	log.Errorf(ctx, "error with stack")
+	log.Close()
+
+	entries := readLogEntries(t, stdout.Name())
+	if len(entries) != 2 || entries[0]["msg"] != "plain message" || entries[1]["msg"] != "error with stack" {
+		t.Fatalf("unexpected stdout entries: %v", entries)
+	}
+	for _, entry := range entries {
+		caller, _ := entry["caller"].(string)
+		if !strings.Contains(caller, "logger/logger_test.go:") {
+			t.Fatalf("caller did not resolve to the logging site: %v", entry)
+		}
+	}
+	stack, _ := entries[1]["stacktrace"].(string)
+	if entries[0]["stacktrace"] != nil || !strings.Contains(stack, "TestLogEncodersAndDiagnostics") {
+		t.Fatalf("unexpected stack traces: %v", entries)
+	}
+	text, err := os.ReadFile(stderr.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(text), "\tinfo\t") || !strings.Contains(string(text), "plain message") {
+		t.Fatalf("unexpected console output: %s", text)
+	}
+}
+
+func readLogEntries(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []map[string]any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	for decoder.More() {
+		var entry map[string]any
+		if err := decoder.Decode(&entry); err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
 }

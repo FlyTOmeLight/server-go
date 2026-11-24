@@ -23,6 +23,9 @@ type SSE struct {
 // wrapping writer must support Unwrap for ResponseController. Use a positive
 // writeTimeout to bound a blocked client. Do not cache the stream as an idempotent response.
 func NewSSE(writer http.ResponseWriter, writeTimeout time.Duration) (*SSE, error) {
+	if writer == nil {
+		return nil, errors.New("SSE response writer is nil")
+	}
 	if writeTimeout <= 0 {
 		return nil, errors.New("SSE write timeout must be positive")
 	}
@@ -56,12 +59,19 @@ func (s *SSE) Heartbeat() error {
 	return s.write([]byte(": heartbeat\n\n"))
 }
 
+// FlushHeaders starts the SSE response without sending an event.
+func (s *SSE) FlushHeaders() error {
+	return s.write(nil)
+}
+
 func (s *SSE) write(data []byte) error {
 	if err := s.control.SetWriteDeadline(time.Now().Add(s.writeTimeout)); err != nil {
 		return err
 	}
-	if _, err := s.writer.Write(data); err != nil {
-		return err
+	if len(data) != 0 {
+		if _, err := s.writer.Write(data); err != nil {
+			return err
+		}
 	}
 	if err := s.control.Flush(); err != nil {
 		return err

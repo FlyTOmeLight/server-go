@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
@@ -199,6 +201,55 @@ func TestConfigCommandsUseTheirOwnFiles(t *testing.T) {
 		if got := config.GetString("core.endpoint"); got != fmt.Sprintf("http://endpoint%d", i) {
 			t.Fatalf("config changed another file: %s", got)
 		}
+	}
+}
+
+func TestConfigCommandsSetUnsetAndRedact(t *testing.T) {
+	line := configuredLine(t, "http://localhost:1")
+	var output bytes.Buffer
+	line.Root.SetOut(&output)
+	run := func(args ...string) (string, error) {
+		t.Helper()
+		output.Reset()
+		line.Root.SetArgs(append([]string{"config"}, args...))
+		err := line.ExecuteContext(t.Context())
+		return output.String(), err
+	}
+	for _, setting := range []string{"core.api_key=dG9rZW4==", "core.endpoint=https://host/?arg=a=b", "core.timeout=12"} {
+		_, err := run("set", setting)
+		require.NoError(t, err)
+	}
+	for _, args := range [][]string{{"get"}, {"get", "core"}, {"get", "core.api_key"}} {
+		got, err := run(args...)
+		require.NoError(t, err)
+		require.Contains(t, got, "[REDACTED]")
+		require.NotContains(t, got, "dG9rZW4==")
+	}
+	got, err := run("get", "core.api_key", "--show-secrets")
+	require.NoError(t, err)
+	require.JSONEq(t, `"dG9rZW4=="`, got)
+	got, err = run("get", "core.api_key")
+	require.NoError(t, err)
+	require.JSONEq(t, `"[REDACTED]"`, got)
+	_, err = run("get", "core.api_key", "--show-secrets", "--invalid-flag")
+	require.Error(t, err)
+	got, err = run("get", "core.api_key")
+	require.NoError(t, err)
+	require.JSONEq(t, `"[REDACTED]"`, got)
+	_, err = run("unset", "core.timeout")
+	require.NoError(t, err)
+	require.False(t, line.config.IsSet("core.timeout"))
+	client, err := newClient(line.config)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	require.Equal(t, 30, client.Config.Timeout)
+	require.Equal(t, "https://host/?arg=a=b", line.config.GetString("core.endpoint"))
+	for _, key := range []string{"a.", ".b", "a..b"} {
+		_, err := run("set", key+"=sensitive-value")
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "sensitive-value")
+		_, err = run("unset", key)
+		require.Error(t, err)
 	}
 }
 

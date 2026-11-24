@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.15.0
+go get github.com/FlyTOmeLight/server-go@v0.16.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.15.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.16.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -210,6 +210,13 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.16.0
+
+- HTTP 生命周期、探针与安全监听器：新增 `/livez` 与 `/readyz` 健康探针（支持 `HTTPHost.RegisterHealthCheck` 注册自定义就绪检查）；停机时先将 `/readyz` 置为不可用、等待 `HTTPServer.PreStopDelay` 毫秒后再排空主监听器与管理监听器；新增 `HTTPServer.AdminListen` 隔离 `pprof`、`metrics` 与 `Swagger`（启用后不再暴露于业务主端口，新增 `httpintegration.InstallDiagnostics` 与 `HTTPHost.AdminAddress`）；主监听器支持 `HTTPServer.TLS`（TLS 与可选 mTLS 客户端证书校验）、`TrustedProxies`、`ReadHeaderTimeout`（默认 5 秒），并将 `http.Server.ErrorLog` 桥接到应用日志。
+- 结构化日志与可观测性：`logger.Logger` 新增 `With`、`SlogHandler()` 与 `Slog()` 桥接标准库 `log/slog`；`metrics` 新增独立注册表 `NewRegistry`、`HandlerFor` 与低基数路由模板指标 `NewHTTPMetrics`；新增 `middleware.Tracing` 接入 OpenTelemetry 服务端 span 与 `traceparent` 传播，`sdk.Client` 自动向出站请求注入追踪上下文；新增 `middleware.RequestLogWithOptions`（支持跳过路径与结构化日志输出，原 `RequestLog` 保持兼容）。
+- 多副本幂等与 HTTP 防护中间件：`idempotence` 新增 `Store` 接口、`Key.ProjectID`、`Options`（有界容量淘汰与 `MaxBodyBytes` 限制）以及基于 Redis Lua 原子脚本的 `RedisStore`；`middleware.IdempotentWithStore` 接入可插拔存储，重放响应过滤 `Date`/`Set-Cookie` 并使用当前请求 `Request-ID`；新增 `CORS`、`SecurityHeaders`、`RateLimit`、`MaxInFlight`、`RequestTimeout`、`MaxBodyBytes` 防护中间件。
+- 数据库迁移、CLI、代理与流式加固：新增 `db/migrate` 版本化 SQL/Go 迁移器（支持 `fs.FS` 加载、校验和校验、`Up`/`Down`/`Status` 与 `NewFromGorm`）；`cli` 加固配置读写权限、`apply`/`print` 健壮性，`encrypt` 支持 `--stdin` 与管道输入；`proxy` 补全反代错误透传与逐跳头清理；`stream` 加固 SSE 分段写超时与事件刷新；`middleware.Debug` 与 `middleware.Asset` 修复脱敏、目录穿越、隐藏文件与受保护静态路径冲突问题。
 
 ## v0.15.0
 

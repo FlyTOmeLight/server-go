@@ -49,14 +49,8 @@ func InstallWithAuth(engine *core.Engine, config *conf.Config, authenticate core
 			middleware.Debug(config.HTTPServer.Trace.PrefixFilters, config.HTTPServer.Trace.SuffixFilters),
 		)
 	}
-	if config.HTTPServer.PprofEnable {
-		pprof.Register(engine, "/pprof")
-	}
-	if config.HTTPServer.MetricsEnable {
-		engine.GET("/metrics", metrics.Metrics())
-	}
-	if config.HTTPServer.SwaggerEnable {
-		engine.GET("/swagger/*any", swagger.Swagger())
+	if config.HTTPServer.AdminListen == "" {
+		InstallDiagnostics(engine, config.HTTPServer)
 	}
 	engine.GET("/feature", middleware.Feature(config.Feature))
 	middleware.Asset(config.HTTPServer.Assets, false, engine)
@@ -70,4 +64,17 @@ func InstallWithAuth(engine *core.Engine, config *conf.Config, authenticate core
 	}
 	middleware.Asset(config.HTTPServer.Assets, true, engine)
 	return nil
+}
+
+// InstallDiagnostics installs the enabled profiling, metrics, and Swagger routes.
+func InstallDiagnostics(engine *core.Engine, config conf.HTTPServerConfig) {
+	if config.PprofEnable {
+		pprof.Register(engine, "/pprof")
+	}
+	if config.MetricsEnable {
+		engine.GET("/metrics", metrics.Metrics())
+	}
+	if config.SwaggerEnable {
+		engine.GET("/swagger/*any", swagger.Swagger())
+	}
 }
