@@ -1,12 +1,16 @@
 # server-go
 
-基于 Gin 的 Go 服务框架，提供 HTTP 服务生命周期、配置加载与热更新、通用中间件、数据库连接、SDK 和 CLI 能力。
+基于 Gin 的 Go 服务框架，提供统一应用生命周期、配置与占位符热更新、鉴权与身份传播、可观测性、HTTP 安全防护与幂等、多数据库/MongoDB/Redis/Dapr 集成、Go SDK 及 CLI 工具集。
 
-模块路径：`github.com/FlyTOmeLight/server-go`。当前工作树需要 Go 1.27 或更高版本。使用 SQLite 的项目需要启用 CGO，并安装 C 编译器。所有 Go 依赖均来自公开模块。
+- **模块路径**：`github.com/FlyTOmeLight/server-go`
+- **环境要求**：Go `1.27+`；使用 SQLite 的示例或测试需要启用 `CGO_ENABLED=1` 并安装 C 编译器；不启用 SQLite 的服务可直接以 `CGO_ENABLED=0` 构建运行
+- **依赖与协议**：全部依赖均为公开模块，采用 [Apache-2.0](LICENSE) 协议开源
 
-## 快速启动
+## 快速开始
 
-最小示例不需要数据库、Redis 或外部鉴权服务：
+### 运行最小示例
+
+最小示例不依赖数据库、Redis 或外部鉴权服务：
 
 ```sh
 git clone https://github.com/FlyTOmeLight/server-go.git
@@ -21,37 +25,24 @@ curl http://127.0.0.1:8080/hello
 # {"message":"hello"}
 ```
 
-按 Ctrl+C 停止服务。`/ping`、`/healthz` 和 `/version` 由框架提供。示例使用 `Fake` 鉴权；业务项目应按自身认证需求配置鉴权。
+按 `Ctrl+C` 停止服务。框架默认提供 `/ping`、`/healthz`、`/livez`、`/readyz` 与 `/version` 端点。示例配置使用 `Fake` 鉴权，仅适用于 `debug` 或 `test` 模式；`RunMode = "release"` 下未提供显式鉴权中间件将拒绝启动。
 
-## 搭建项目
+### 创建新业务服务
 
-新项目先复制 `examples/minimal-service` 中的 `cmd/`、`service/`、`internal/` 和 `conf/`，同步修改示例 import 为自己的模块路径。示例使用 v0.5.0 提供的 `app` API：
+从 `examples/minimal-service` 复制 `cmd/`、`service/`、`internal/` 和 `conf/`，把示例代码中的 import 替换为自己的模块路径，然后初始化依赖并启动：
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.17.0
+go get github.com/FlyTOmeLight/server-go@v0.17.1
 go mod tidy
 go run ./cmd/server
 ```
 
-修改配置中的 `AppName`、`AppCode` 和监听地址。业务入口放在 `cmd/<程序名>/`，公开服务构造与类型化装配放在同级 `service/`，私有业务逻辑放在 `internal/app/<领域>/`。框架默认从工作目录读取 `conf/server/config.toml`，也可设置 `SERVER_CONFIG_PATH`。
+修改配置中的 `AppName`、`AppCode` 与监听地址；配置默认读取工作目录下的 `conf/server/config.toml`，也可通过 `SERVER_CONFIG_PATH` 指定。完整的生产装配模板、中间件推荐顺序及全栈能力复用方法见 [业务项目接入与能力复用指南](docs/integration-guide.md)。
 
-按需要选择可运行示例：
+### 使用代码生成器
 
-| 示例 | 适用场景 |
-| --- | --- |
-| [minimal-service](examples/minimal-service/README.md) | 只需要 HTTP 和配置 |
-| [postgresql-service](examples/postgresql-service/README.md) | PostgreSQL CRUD、请求校验、默认值与 Go SDK |
-| [example-hello-world](examples/example-hello-world/README.md) | SQLite CRUD、Go SDK 与 CLI；生成器使用此模板 |
-| [example-service1](examples/example-service1/README.md) | REST 数据集 CRUD、SDK 与 CLI |
-| [example-service2](examples/example-service2/README.md) | 无状态 HTTP 服务与公开构造函数 |
-| [example-combine-service](examples/example-combine-service/README.md) | 组合三个服务、共享 SQLite 与组合 CLI |
-| [streaming-service](examples/streaming-service/README.md) | SSE、取消传播、流式 SDK 和分段写入期限 |
-| [example-leader-election](examples/example-leader-election/README.md) | 独立 worker 与 leader 任务 |
-
-所有示例遵循同一套目录、配置、context 和生命周期约定，详见 [示例索引](examples/README.md) 与 [Go 项目组织约定](docs/go-project-layout.md)。HTTP 示例从各自目录执行 `make run`、`make build` 和 `make check`，打包配置统一保留 `conf/server/`。
-
-也可从仓库根目录使用现有生成器：
+从仓库根目录生成标准单模块或多模块 CRUD 服务（含服务端、Go SDK、Swagger 与 CLI）：
 
 ```sh
 python3 scripts/gen_code.py \
@@ -64,23 +55,51 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.17.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.17.1。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
-## 当前工作树的依赖与 HTTP/2
+## 可运行示例
 
-Kubernetes 组件使用 v0.37.1；`kube-openapi` 固定为它们声明的 `v0.0.0-20260721132016-d427ff9ee9ad`，保持 schema v6 类型一致，不单独追逐该模块的最新提交。
+| 示例 | 独立 `go.mod` | 默认监听 | 存储 / CGO | 核心能力演示 |
+| --- | --- | --- | --- | --- |
+| [minimal-service](examples/minimal-service/README.md) | 否（根模块） | `127.0.0.1:8080` | 无 / `CGO_ENABLED=0` | `app.Run`、最小配置与优雅退出 |
+| [postgresql-service](examples/postgresql-service/README.md) | 否（根模块） | `127.0.0.1:18080` | PostgreSQL / `CGO_ENABLED=0` | `RunMode="release"`、CRUD、`defaults.Set`、`binder.All`、Go SDK |
+| [example-hello-world](examples/example-hello-world/README.md) | 是 | `127.0.0.1:8080` | SQLite / 服务端 `CGO_ENABLED=1` | 生成器模板、RPC POST CRUD、Go SDK、Cobra CLI、`apply` |
+| [example-service1](examples/example-service1/README.md) | 是 | `127.0.0.1:8080` | SQLite / 服务端 `CGO_ENABLED=1` | RESTful 数据集 CRUD、软删除、`sdk.Complete` 与 CLI |
+| [example-service2](examples/example-service2/README.md) | 是 | `127.0.0.1:8080` | 无 / `CGO_ENABLED=0` | 无状态 HTTP 服务与公开 `service` 构造函数 |
+| [example-combine-service](examples/example-combine-service/README.md) | 是 | `127.0.0.1:8080` | 共享 SQLite / 服务端 `CGO_ENABLED=1` | 单 `HTTPHost` 组合三个服务与组合 CLI |
+| [streaming-service](examples/streaming-service/README.md) | 否（根模块） | `127.0.0.1:8080` | 无 / `CGO_ENABLED=0` | `stream.NewSSE`、取消传播、流式 SDK |
+| [example-leader-election](examples/example-leader-election/README.md) | 否（根模块） | 无 HTTP | 无 / `CGO_ENABLED=0` | 独立 worker、K8s Lease 选主与 `--local` 单节点模式 |
 
-`HTTPServer.UseH2C` 通过标准库 `http.Server.Protocols` 同时启用 HTTP/1 和明文 HTTP/2，退出由同一个 Server 排空请求并关闭连接。明文 HTTP/2 客户端使用 prior knowledge 模式，旧的 HTTP/1 Upgrade 升级方式不再使用。
+更多运行命令、打包规范与接口约定见 [示例索引](examples/README.md) 与 [Go 项目组织约定](docs/go-project-layout.md)。
 
-## 应用启动（v0.5.0）
+## 包总览
 
-`app.Run(ctx, options, build)` 统一创建配置与日志、限制初始化时间、监听配置变化、运行 HTTPHost，并在退出或启动失败时清理资源。进程入口仍负责退出信号与退出码。
+| 包 | 职责与核心能力 |
+| --- | --- |
+| 根包 (`server`) | `Module` 接口、`NewBootstrap`（失败回滚、逆序关闭）、HTTP/Dapr 响应助手（`OK`、`Abort`） |
+| `app` | 泛型入口 `app.Run[T]`、`Options`、`Runtime`（单次解析类型化配置、初始化资源、配置监听、逆序关闭） |
+| `conf` | `Manager`、`Load`/`FromSettings`、`${env:}`/`${file:}`/`${secret:}` 占位符解析、AES-GCM 加解密与防抖监听 `Watch`（支持 K8s ConfigMap `..data`） |
+| `host` | `HTTPHost`（路由构建、热更新/重启边界、健康探针、`AdminListen`、TLS/mTLS、`UseH2C`、优雅停机）与 `ModbusHost` |
+| `httpintegration` | `Install`、`InstallWithAuth`、`InstallDiagnostics`（统一装配调试日志、诊断端点、`/feature`、静态资源、Console 代理与鉴权） |
+| `auth` | `Identity`（同步至 `context.Context`）、`Use`、`FakeAuth`、`BearerTokens`、`TrustedIdentityHeaders`、`InternalPropagatedIdentity`、`Impersonate` |
+| `middleware` | 请求 ID、请求日志、Recovery、健康检查、`Tracing`、`CORS`、`SecurityHeaders`、`RateLimit`/`MaxInFlight`、`RequestTimeout`、`MaxBodyBytes`、`Idempotent`、`HTTPAuthorization`、`LicenseAuth`、`Asset`、`Debug`、`Feature` |
+| `idempotence` | `Store` 接口、本地有界 `Controller`（`New`/`NewWithOptions`）与基于 Redis Lua 脚本的多副本 `RedisStore` |
+| `errors` | 统一 `Error` 契约、`Abort`/`AbortWithError`、`ErrorHandler`（含 API 错误码转换）、标准库 `%w` 兼容的 `Wrap`/`WithMessage` |
+| `logger` | 基于 Zap 与 Lumberjack 的分级分流日志、`WithContext`/`FromContext`（自动提取 `requestId`/`traceId`/`spanId`）及 `log/slog` 桥接（`With`/`SlogHandler`/`Slog`） |
+| `metrics` | 默认 Prometheus 端点 `Metrics()`，以及独立注册表 `NewRegistry`、`HandlerFor` 与低基数 HTTP 路由指标 `NewHTTPMetrics` |
+| `stream` | `NewSSE`：管理 SSE 响应头、`Send`/`SendWithID`/`Heartbeat` 逐事件刷新与分段写入超时控制 |
+| `console` | FE 与 OpenAPI 适配器反向代理 `RegisterConsoleAPI`（`GET`/`POST`/`PUT`/`PATCH`/`DELETE`、响应包装、gzip、SSE、WebSocket 重路由） |
+| `proxy` | 通用 HTTP 反向代理 `NewReverseProxy`（目标 URL 校验、`X-Forwarded-*`、连接池复用） |
+| `swagger` | `Swagger()` 与按引擎隔离的 `SwaggerWithPrefix(prefix)`，配合 `conf.HTTPServerConfig.SwaggerDocPrefix` 支持多服务实例 |
+| `version` | 构建信息注入变量、`Version()` 处理器与标准库 `GetVersionByURL`/`GetVersionByURLContext` |
+| `db` / `db/migrate` / `db/mongodb` | 六种 SQL 驱动与池校验、参数脱敏 GORM 日志、`db.Transaction`、`UTCTime`/`Time`；`db/migrate` 版本化迁移；解耦的 `db/mongodb` 客户端、`Time` 与 `NewError` |
+| `redis` / `pubsub` / `cron` | `NewRedis`/`NewRedisLazy` 与 `redis.Module`；Dapr 订阅 `Registry` 与可复用连接的 `Publisher`；`TaskManager`/`PeriodTask` 调度器 |
+| `sdk` / `internalsdk` / `cli` | 基于 Resty v3 的 HTTP 客户端（`Request-ID` 与追踪传播、幂等重试、`Complete`、`DecodeError`、`PagingRequest`）、内部身份转发及 Cobra `CommandLine` |
+| `pkg/*` / `naming` / `constants` | `core.*` Gin 类型别名、`NewID`/`NewUUID`、`ParseFile`、`StructDecode`、`pkg/binder`、`pkg/cache`、`pkg/election`、`pkg/modbus`、`pkg/safety`、`pkg/datatypes`、`pkg/compare`、`pkg/utils`、`pkg/values`、`naming`、`constants` |
 
-业务先声明配置结构体，字段名对应 TOML 节，名称不同时通过 `mapstructure` tag 指定 key；`app.Run` 从同一份配置快照一次解析全部字段，统一返回解析错误。装配函数接收初始化 context、`*app.Runtime` 和类型化配置指针，通过 `runtime.Initialize(ctx, modules...)` 初始化需要的资源，再通过 `runtime.AddService(svc)` 交付构造好的服务。资源按交付顺序逆序关闭；服务即使尚未启动，也会调用 `Stop`，成功后不重复调用，失败时允许重试。构造失败前尚未交付的部分资源仍由业务构造函数清理。
+## 应用启动与配置
 
-`app.Options` 可指定配置路径、日志配置、HTTP setup 和初始化/清理期限，装配与服务启动共享默认 15 秒预算，每次应用清理操作默认先等待 5 秒。HTTP 请求排空和运行中服务停止的首次等待预算仍由 HTTPHost 管理。停止超时后继续等待 worker 退出，再关闭依赖；其他停止错误未恢复时保留依赖并返回错误。初始化 context 不用于启动长期任务；任务通过 `host.Service.Start(ctx)` 获取运行 context，启动期间响应进程取消，启动完成后保留到 HTTP 排空结束。
-
-例如 HelloWorld 声明以下配置，装配函数直接使用 `cfg.DB`。业务配置是启动时的独立值，配置热更新不会原地修改它。
+`app.Run(ctx, options, build)` 负责创建应用日志、加载配置并启动热更新监听、解析业务配置结构体、装配并运行 `HTTPHost`，并在退出或启动失败时按交付逆序释放资源（进程入口仍负责信号监听与退出码）。
 
 ```go
 type Config struct {
@@ -100,72 +119,46 @@ func Build(ctx context.Context, runtime *app.Runtime, cfg *Config) error {
 }
 ```
 
-数据库事务使用 [`db.Transaction`](db/README.md)，支持显式隔离级别、只读事务、context 取消及有次数和时间预算的整笔事务重试。
+- **预算与清理语义**：`Options.InitTimeout` 默认 `15s`（共享于 `build` 与服务 `Start`），`Options.CloseTimeout` 默认 `5s`（单步清理超时）。退出时先通过 `RunWithShutdownHook` 关闭配置监听并取消 `runCtx`，再排空 HTTP 请求并逆序停止服务与模块；若服务停止超时会继续等待 worker 退出后再关闭依赖，若服务返回其他未恢复停止错误则保留模块依赖以便重试，并在最后执行 `log.Close()`。
+- **配置加载与占位符**：`conf.Manager` 支持 `${secret: v1:<base64>}`（AES-GCM，密钥由环境变量 `SERVER_SECRET_KEY` 指定）、`${env: NAME[:default]}` 与 `${file: /path}` 占位符，详见 [conf/README.md](conf/README.md)。
+- **动态热更新边界**：
+  - **支持热更新**（原子重建并切换路由器）：`RunMode`、`Feature`、`FakeAuth`，以及 `HTTPServer` 中除监听与传输外的字段（`APIBasePath`、`PprofEnable`、`MetricsEnable`、`SwaggerEnable`、`SwaggerDocPrefix`、`Trace`、`AuthType`、`ConsoleEnable`、`ConsoleProxyNames`、`AltoHandlerAPIError`、`Assets`、`AllowAPIPathNoHandlerAPIError`）。
+  - **需重启进程**（准备阶段返回 `host.ErrRestartRequired` 并保留原配置）：`AppName`、`AppCode`、`DeployMode`、`Services`，以及 `Listen`、`AdminListen`、`ReadTimeout`、`ReadHeaderTimeout`、`WriteTimeout`、`IdleTimeout`、`PreStopDelay`、`MaxHeaderBytes`、`UseH2C`、`TLS`、`TrustedProxies`。
 
-数据库 SQL 日志统一通过框架 logger 输出：普通查询为 Info，超过 200 毫秒的慢查询为 Warn，失败查询为 Error，并遵守日志实例的级别过滤。RequestID 中间件将请求 ID 写入标准请求 context，GORM 日志适配器从每次操作的 context 读取日志实例和 Request ID。初始化与迁移使用应用日志实例。
+## HTTP 生命周期、探针与安全中间件
 
-HTTP Controller 和对应业务 Service 使用 `*core.Context`；数据库和 SDK 操作传递 `ctx.Request.Context()`，保留取消、超时和 Request ID，避免数据库后台任务读取被 Gin 复用的对象。
+- **内置端点与优雅下线**：路由器默认启用请求 ID、请求日志、Recovery、统一 `ErrorHandler` 与标准 404/405，并安装 `/ping`、`/healthz`、`/livez`、`/readyz`（通过 `HTTPHost.RegisterHealthCheck` 注册自定义就绪检查，单轮 2 秒超时）及主路由 `/version`。停机时先将 `/readyz` 标为不可用，等待 `PreStopDelay` 毫秒后再排空连接（5 秒排空预算）并逆序停止业务服务。
+- **端口隔离与传输安全**：默认超时为 `ReadTimeout` 20s、`ReadHeaderTimeout` 5s、`WriteTimeout` 10s、`IdleTimeout` 10s、`MaxHeaderBytes` 100000。设置 `HTTPServer.AdminListen` 后，`pprof`、`metrics` 与 `Swagger` 自动迁移到独立的明文 HTTP 管理端口，不再暴露于业务主端口（可通过 `HTTPHost.AdminAddress()` 获取实际地址）；主端口支持 `HTTPServer.TLS`（TLS 1.2+ 及可选 `ClientCAFile` mTLS 客户端证书校验）、`TrustedProxies` 及基于标准库 HTTP/2 的 `UseH2C`（prior knowledge 模式）。
+- **请求绑定、默认值与错误契约**：静态默认值在绑定前调用 `defaults.Set(&req)`（保留局部更新的显式零值），参数绑定使用 `binder.Bind(c, &req).All()` 或 `.JSON()`（严格单 JSON 文档、拒绝未知字段、1 MiB 限制），错误使用 `errors.Abort` / `errors.AbortWithError` 输出平铺 JSON 响应。Controller 与业务 `core` Service 传递 `*core.Context`，数据库、SDK 与后台操作必须使用 `c.Request.Context()`。
+- **防护、幂等与代理扩展**：
+  - 防护中间件：`CORS`、`SecurityHeaders`、`RateLimit`（按 key 有界 LRU 令牌桶）、`MaxInFlight`、`RequestTimeout`、`MaxBodyBytes`。
+  - 幂等控制：作为鉴权与授权完成后的最后一个 handler 挂载（仅对 `POST` + `application/json` + 已认证请求 + `Idempotency-Key`/`clientToken` 生效）；本地使用有界 `idempotence.Controller`（默认 24h TTL / 10000 条 / 1 MiB 响应体），多副本使用 `idempotence.NewRedisStore`（Lua 原子锁与结果写回，默认 24h TTL / 1m `LockTTL` / 50ms 轮询 / 1 MiB）。
+  - 扩展能力：`stream.NewSSE` 分段写超时控制、`proxy.NewReverseProxy`、以及 `console.RegisterConsoleAPI` / `middleware.Asset` / `middleware.Debug` / `middleware.LicenseAuth`。
 
-可组合的服务放在与 `cmd` 同级的公开 `service/` 包，私有业务与 Table 保留在 `internal/`。HelloWorld 的独立入口使用 `service.Build`；组合示例通过 `service.NewHelloWorldService` 注入共享数据库，与其他服务挂载到同一个 Host。
+## 鉴权与身份传播
 
-`app.Run` 从 v0.5.0 开始提供；正式消费使用发布版本，本地联合开发可使用 `replace`。
+框架在 `RunMode = "release"` 下默认 fail-closed（未传入显式鉴权 handler 时拒绝 `FakeAuth` 或空 `AuthType`）。所有内置鉴权中间件及外部适配均将 `auth.Identity` 同步写入标准请求 `c.Request.Context()`（通过 `auth.IdentityFromContext(ctx)` 读取），入口统一收敛到 `constants.KeyUserID`、`KeyTenantID`、`KeyProjectID`：
 
-## 身份来源
+1. **可信网关入口**：`auth.TrustedIdentityHeaders(verify)` 验证网关来源后读取 `x-forge-user-id`、`x-forge-tenant-id` 与可选的 `x-forge-project-id`（拒绝同名多值头与重复鉴权覆盖，不写 `KeyImpersonateOrigin*`）。
+2. **凭据与外部中间件**：`auth.BearerTokens(tokens)` 使用预计算 SHA-256 摘要做常量时间比对（`auth.ParseBearerTokens` 强制 token ≥ 24 字符）；标准 `net/http` 鉴权中间件可通过 `middleware.HTTPAuthorization` 挂载到 Gin。
+3. **内部透传与代理**：服务间调用使用 `internalsdk.Wrap(client, c)` 自动转发 `x-impersonate-target-{user,tenant,project}-id`；下游先经 `auth.BearerTokens` 验证调用方身份，再通过 `auth.InternalPropagatedIdentity(authorize)` 同时写入 `Key*` 与 `KeyImpersonateOrigin*`（`AuthMode = "Internal"`）。真实的跨用户代理使用 `auth.Impersonate(authorize)`（`AuthMode = "Impersonate"`，origin 记录调用方本身）。
 
-身份在入口确定后，沿着请求往下传。三种入口最后落到同一组 context 键：`KeyUserID`、`KeyTenantID`、`KeyProjectID`。内部服务之间只透传这组键，不再回 tenant 服务鉴权。
+## 可观测性
 
-### 1. 前端已登录
+- **结构化日志（`logger`）**：复用 Zap 与 Lumberjack（请求 ID/级别过滤/轮转），`FromContext` 自动附加 `requestId`、`traceId`、`spanId`；通过 `With(...)`、`SlogHandler()` 与 `Slog()` 无缝桥接标准库 `log/slog`。`middleware.RequestLogWithOptions` 支持 `SkipPaths`、可选身份字段与按状态码分流日志级别（原 `RequestLog()` 保持兼容）。
+- **Prometheus 指标（`metrics`）**：默认 `/metrics` 使用 `metrics.Metrics()`；需要按服务隔离注册表时使用 `metrics.NewRegistry()`、`metrics.HandlerFor(gatherer)` 与 `metrics.NewHTTPMetrics(reg, namespace)`（基于匹配路由模板统计低基数 `http_requests_total`、`http_request_duration_seconds`、`http_requests_in_flight`）。
+- **分布式追踪（`middleware.Tracing` & `sdk`）**：`middleware.Tracing` 接入 OpenTelemetry 服务端 span 与 `traceparent` 上下文提取，支持 `WithTracerProvider`、`WithPropagator`、`WithSkipPaths`；`sdk.Client` 自动向出站请求注入 `Request-ID` 与追踪上下文。
 
-浏览器请求直接带 `x-forge-user-id`、`x-forge-tenant-id`、`x-forge-project-id`。入口服务确认请求来自可信网关后，用 `auth.TrustedIdentityHeaders(verify)` 读这三个头，写入 `KeyUserID`、`KeyTenantID`、`KeyProjectID`。不写 `KeyImpersonateOrigin*`。
+## 数据存储、消息与后台任务
 
-### 2. OpenAPI
+- **关系型数据库（`db` & `db/migrate`）**：支持 `MySQL`、`SQLite`、`PostgreSQL`、`ClickHouse`、`Kingbase`、`GaussDB`。默认通过参数脱敏 GORM 日志避免日志打印明文参数，并对慢查询（>200ms）告警；`db.Transaction` 提供显式隔离级别、只读事务与 PG/GaussDB（`40001`/`40P01`）/ MySQL（`1213`）整笔重试（详见 [db/README.md](db/README.md)）；`db/migrate` 提供 `LoadFS`、`New`、`NewFromGORM` 与校验和保护的 `Up`/`Down`/`Status`。
+- **MongoDB 与 Redis（`db/mongodb` & `redis`）**：`db/mongodb` 与根 `db` 包完全解耦，独立提供 `Module`、`NewClientWithConfig`、`Time`（BSON 纳秒序列化）及 `NewError`；`redis` 提供 `NewRedis`、`NewRedisLazy`、`Module{Lazy: true}`、`XReadArgs` 与常量 `redis.Nil`。
+- **消息、调度与选主（`pubsub`、`cron`、`pkg/election`）**：`pubsub` 提供线程安全订阅注册表 `Registry` 与可复用 Dapr gRPC 连接的 `Publisher`（`NewPublisher` / `NewPublisherWithPort` / `Close`）；`cron` 提供 `TaskManager`/`PeriodTask`、时区校验、统一 `SetErrorHandler` 与 worker panic 恢复；`pkg/election` 提供 Kubernetes `LeaseLock` 选主（默认 `15s/10s/2s` 与失主指数退避）及本地单节点 `NewDummyAppElection`。
 
-调用方只带凭据（AK/SK 或 API key），不带身份头。入口服务自己解析凭据，向 tenant 服务换出 user、tenant、project，同样写入这三个 `Key*`。不写 `KeyImpersonateOrigin*`。
+## SDK 与 CLI
 
-### 3. 内部服务互相调用
-
-上游 context 里已有身份，来自场景一或场景二。`internalsdk.Wrap(client, ctx)` 读出 `KeyUserID`、`KeyTenantID`、`KeyProjectID`，写到下游请求的 `x-impersonate-target-user-id`、`x-impersonate-target-tenant-id`、`x-impersonate-target-project-id`。下游先用 `auth.BearerTokens` 确认调用方是内部服务，再用 `auth.InternalPropagatedIdentity(authorize)` 读这三个头：把透传的身份覆盖 `Key*`，同时写入 `KeyImpersonateOrigin*`，作为“来自上游、不用再问 tenant”的标记。下游看到 origin 键有值就跳过 tenant 解析。
-
-`KeyImpersonateOrigin*` 记录的是透传的用户身份，不是调用方服务账号。服务账号只用于确认调用方是内部服务，不写入身份键。
-
-### 代理
-
-`auth.Impersonate` 保留用于真正的代理场景：调用方已经有自己的身份，且代表另一个身份去操作。代理时 origin 键记录调用方本身，被代理的身份写入 `Key*`。内部透传不要走 `Impersonate`，用 `InternalPropagatedIdentity`。
-
-## v0.6.0 接口调整
-
-本次设计修复记录在 [issues #1–#9](https://github.com/FlyTOmeLight/server-go/issues)，已发布为 [v0.6.0](https://github.com/FlyTOmeLight/server-go/releases/tag/v0.6.0)：
-
-- `HTTPHost.Run(ctx)` 默认限制服务启动为 15 秒；`RunWithStartupTimeout(ctx, timeout)` 可指定启动预算。`Start` 必须响应取消；`Stop` 返回 nil 才表示全部任务已退出，失败后允许再次等待或清理。
-- `NewLeaderElection`、`NewK8sLeaderElection` 返回实例和错误；`Run(ctx)` 返回错误，`RunAsync(ctx)` 返回完成结果 channel。Kubernetes 配置错误直接失败，本地单节点运行显式使用 `NewDummyAppElection` 或示例的 `--local`。
-- 删除 `AuthWithAuthCenter`。可信网关身份使用 `auth.TrustedIdentityHeaders(verify)`，验证网关凭据、来源和身份 Header 的控制权后才采纳身份；通过 setup 闭包调用 `httpintegration.InstallWithAuth(engine, cfg, authenticate)`。仅配置 `AuthCenter` 而未提供验证 handler 会启动失败。`auth.Use` 现在返回错误。
-- `auth.Impersonate(authorize)` 返回 handler 和错误，必须在身份认证后安装；授权函数检查调用方是服务账号并允许代理指定组织与用户。代理 Header 不再由默认集成隐式处理。
-- 原生 SQL 使用目标数据库语法；删除连接池自动改写与 `ConvertSQLIdentifiers`。整数 `tinyint` 映射 `SMALLINT`，布尔字段按实际方言模式映射和绑定。
-- 配置加载时一次解析全部占位符，快照固定有效值。外部来源变化后执行 `Reload`；文件监听仍只监听主配置文件。程序化占位符输入使用 `conf.FromSettings`，`NewManagerFromConfig` 接收已解析值。
-- 分页 query 参数与 JSON 字段一致，负页码和页大小返回 400，零值使用默认分页。框架错误支持标准 `%w` 包装；cron 多个同步来源合并后统一更新任务。
-
-## 通用 HTTP 行为（v0.3.1）
-
-HTTPHost 默认安装请求 ID、请求日志、Recovery 和标准错误处理，并统一返回 404/405。日志记录方法、路由模板、状态与耗时；Recovery 在响应提交后不追加 JSON，适用于 SSE。
-
-- `binder.Bind(c, req).JSON()` 与 `binder.BindJSON(c, req)`：只接受一个 JSON 文档，拒绝未知字段，限制请求体为 1 MiB，并运行 Gin 校验。非法参数返回 400，超限返回 413。
-- `binder.QueryLimit(c, defaultLimit, maximum)`：解析正整数分页大小；默认值和上限由业务声明。
-- `auth.ParseBearerTokens(raw)`：解析 token 到用户 ID 的 JSON 配置，要求非空、token 至少 24 字符、用户 ID 非空；`auth.BearerTokens(tokens)` 安装静态凭据鉴权，`auth.UserID(c)` 读取身份。
-- `errors.Abort` / `errors.AbortWithError`：输出现有平铺错误契约；业务只负责领域错误映射。
-- `stream.NewSSE(writer, writeTimeout)`：管理 SSE 响应头和每次写入期限；`SendWithID(id, event, data)` 发送带游标的事件，`Heartbeat()` 发送心跳。事件来源与回放规则由业务实现。
-- `sdk.DecodeError(status, body)`：读取框架错误，保留 `Code`、`Message`、`RequestID` 和 `StatusCode`，`Status` 始终保存实际 HTTP 状态。非 JSON 失败仍返回可检查的 HTTP 错误。
-
-Bearer 凭据、严格 JSON 绑定、分页解析、HTTP 中间件和 SDK 错误解码从 v0.3.1 开始提供；SSE 从 v0.3.0 开始提供。正式消费使用发布版本，本地联合开发可使用 Go workspace。
-
-## 请求约定（v0.7.0）
-
-SDK 的请求结构体用 `binding` tag 声明必填、长度、范围和枚举，用 `json`、`form`、`uri` 指定参数来源。`binder.All()` 合并正文、query 和 URI 后统一校验，路径字段使用 `json:"-"`。优先复用已有 validator；跨业务通用的校验可加入 `pkg/binder`，数据库存在性、权限等领域规则留在 Service。
-
-Controller 对声明了静态 `default` tag 的请求，在绑定前调用 `defaults.Set(&req)` 并处理错误。客户端显式传入的零值会覆盖默认值；局部更新要保留未传字段，不能直接补默认值。完整示例见 [PostgreSQL 服务](examples/postgresql-service/README.md) 和 [请求约定](docs/go-project-layout.md)。这批请求处理改动从 v0.7.0 提供；使用新增 URI 必填标签时，框架消费版本至少为 v0.7.0。
-
-## 发布约定
-
-影响调用方的修复和功能合入 main 后发布版本；纯文档和测试变更可合并到下一次发布。兼容修复使用 patch，新增能力使用 minor；v0.x 阶段的破坏性接口调整也升级 minor，并说明迁移方法。标签指向通过完整检查的 main 提交，同步示例与生成器的消费版本。正式项目引用发布版本，本地联合开发使用 `replace`。
+- **`sdk` / `internalsdk`**：`sdk.NewClientWithConfig` 支持 API Key 鉴权与 `ProxyURL` 校验，自动从 `context.Context` 透传 `Request-ID` 与 OTel 追踪上下文；仅对幂等方法（`GET`/`HEAD`/`OPTIONS`/`PUT`/`DELETE`）或显式携带 `Idempotency-Key`/`clientToken` 的请求启用失败重试；提供 `sdk.Complete`、`sdk.DecodeError` 与防注入白名单分页排序 `PagingRequest.DBOrderWithAllowlist`。`internalsdk.Wrap` 额外支持服务间身份代理头透传。
+- **`cli`**：基于 Cobra 与 Viper 的命令行框架，提供 `CommandLine`（`ExecuteContext` 自动绑定上下文与释放资源）、`cli.Client(cmd.Context())`、`RegisterCommandApplyHandler`、`apply -f/-d`、`config get/set/unset`（`0600` 文件权限与敏感配置脱敏）、`encrypt --stdin`/管道加密、`version` 与多格式输出。
 
 ## 目录约定
 
@@ -180,17 +173,13 @@ Controller 对声明了静态 `default` tag 的请求，在绑定前调用 `defa
 | `doc/openapi` | Swagger 生成文件 |
 | `deploy` | 部署文件与脚本 |
 
-按实际需求创建目录。最小服务只需要入口和配置。完整组织规则见 [Go 项目组织约定](docs/go-project-layout.md)。代理协作规则见 [AGENTS.md](AGENTS.md)。配置占位符与加密说明见 [conf/README.md](conf/README.md)。
+按实际需求创建目录。业务项目从零接入与跨模块能力复用见 [业务项目接入与能力复用指南](docs/integration-guide.md)，目录职责与 SDK 契约见 [Go 项目组织约定](docs/go-project-layout.md)，配置占位符见 [conf/README.md](conf/README.md)，代理协作规则见 [AGENTS.md](AGENTS.md)。
 
-## 开发验证
+## 开发验证与发布
 
-安装 Go、C 编译器、Python 3、make、gorgeous 和 Docker，并启动 Docker daemon 后，每次框架修改都执行：
+### 格式化工具安装
 
-```sh
-make check
-```
-
-格式工具使用 [FlyTOmeLight/go_fmt](https://github.com/FlyTOmeLight/go_fmt) v0.9.0，CI 固定到该版本的提交 `9d389e31b15509ae9cbdff326499929f715db78f`。在 server-go 仓库外安装：
+格式检查固定使用 [FlyTOmeLight/go_fmt](https://github.com/FlyTOmeLight/go_fmt) `v0.9.0`（提交 `9d389e31b15509ae9cbdff326499929f715db78f`，与 GitHub Actions CI 一致）。在仓库外安装并确保 `GOBIN`（或 `$(go env GOPATH)/bin`）在 `PATH` 中：
 
 ```sh
 git clone --depth 1 --branch v0.9.0 https://github.com/FlyTOmeLight/go_fmt.git
@@ -198,135 +187,46 @@ cd go_fmt
 go install ./cmd/gorgeous
 ```
 
-该仓库保留原模块路径，因此通过仓库源码安装。将 `GOBIN`（未设置时为 `$(go env GOPATH)/bin`）加入 `PATH`。
-
-检查覆盖根模块与四个独立示例的格式、测试和 vet、并发路径的竞态检测、所有可运行示例及生成项目的实际启动、HTTP/SDK/CLI 请求与 SIGTERM 退出。数据库检查创建独立 PostgreSQL 17 和 MySQL 8.4 临时容器，验证真实双库事务与死锁重试。PostgreSQL 示例检查验证真实数据库 CRUD、字段类型、默认值和参数错误；缺少 Docker 时检查失败。生成项目通过临时 `replace` 引用当前工作树。检查结束清理进程、容器和临时文件，不修改现有模块的依赖文件。GitHub Actions 在 push 和 PR 时执行同一条 `make check`。
-
-单独检查当前模块时仍可使用：
+### 运行测试与全仓检查
 
 ```sh
-CGO_ENABLED=1 go test ./...
-go vet ./...
+make check       # 全量校验：版本一致性 + 5 模块测试/格式/vet + -race + Python 单测 + Docker PG 17/MySQL 8.4 + 8 示例及生成项目实测
+make check-fast  # 本地快速校验：版本一致性 + 全模块测试/格式/vet + -race + Python 单测（跳过 Docker 与示例启停）
 ```
 
-`examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+也可在根目录或四个独立示例目录（`examples/example-hello-world`、`example-service1`、`example-service2`、`example-combine-service`）中单独运行 `CGO_ENABLED=1 go test ./...` 与 `go vet ./...`。
+
+### 依赖锁定与发布规范
+
+- **依赖基线**：Go `1.27.0`；Kubernetes 组件固定使用 `v0.37.1` 与配套 `kube-openapi`（`v0.0.0-20260721132016-d427ff9ee9ad`），避免 schema v6 类型不一致。
+- **发布规则**：影响调用方的修复或功能合入 `main` 后打版本标签（兼容修复升 patch，新增能力或 `v0.x` 不兼容调整升 minor 并附迁移说明）；不重写既有标签，每次发版前必须同步检查并更新 [README.md](README.md) 与 [docs/integration-guide.md](docs/integration-guide.md)（能力清单、接入示例、配置边界与发布说明），同时更新示例依赖与 `scripts/gen_code.py`（版本号一致由 `scripts/check.py` 自动校验）。
+
+## v0.17.1
+
+- 文档重写与接入指南：结合全仓源码重写 [README.md](README.md)，按当前能力体系梳理快速开始、8 个示例、全包总览、应用生命周期、HTTP/鉴权/可观测性/数据/SDK/CLI 契约与版本演进摘要。
+- 新增 [业务项目接入与能力复用指南](docs/integration-guide.md)：提供全框架能力速查表（避免业务项目重复造轮子）、新建与存量 Gin 服务迁移路径、生产 `config.toml` 模板与热更新边界、中间件分层装配顺序、全模块接入示范及 Kubernetes 部署自查清单。
+- 发布规范：在 [AGENTS.md](AGENTS.md) 与 [README.md](README.md) 明确每次发版前必须同步检查并更新 `README.md` 与 `docs/integration-guide.md`。
 
 ## v0.17.0
 
-- 依赖瘦身与基础包加固（含迁移提示）：移除 `github.com/go-resty/resty/v2`、`github.com/pkg/errors`、`github.com/mitchellh/mapstructure`、`github.com/gookit/goutil`、`github.com/patrickmn/go-cache` 5 个冗余或停止维护的直接依赖。`version.GetVersionByURL` 改用标准库 `net/http` 并新增 `GetVersionByURLContext`；`errors.Wrap`/`WithMessage` 改用标准库 `%w` 保留错误链；`pkg/struct_formatter` 迁移至 `mapstructure/v2` 并修复 `FormToStringMap` 并发写入调用方指针的竞态；`pkg/cache` 改用标准库懒过期实现，不再泄漏后台清理协程并新增 `Close()`；`pkg/safety` 修复 `PKCS7Padding` 底层切片覆写、`UnPKCS7Padding` 改为恒定时间校验与统一错误并预编译 `IsBase64` 正则。根 `db` 包不再依赖 `go.mongodb.org/mongo-driver` v1（迁移提示：MongoDB BSON 时间序列化改用 `mongodb.Time`，MongoDB 错误映射改用新增的 `mongodb.NewError`；`db.Time` 保留 SQL `Value`/`Scan` 兼容）。
-- Console 代理、Pubsub 与多服务 Swagger：`console` 加固反向代理（支持 `GET`/`POST`/`PUT`/`PATCH`/`DELETE`、按路径段重写 `/api`、封装空响应体 4xx/5xx 避免误报 502、支持 `gzip` 解压与 SSE 实时刷新/清写超时、WebSocket 重路由防 `RawPath` 损坏、移除 `%#v` 防止日志泄露请求头）；`pubsub` 新增可复用连接的 `Publisher`（`NewPublisher`/`NewPublisherWithPort`/`Close`），修复 `OnEventWithGroup` 对空回调返回值与斜杠拼接的处理；`swagger` 新增 `SwaggerWithPrefix` 并在 `conf.HTTPServerConfig` 新增 `SwaggerDocPrefix`，支持多引擎独立 Swagger 文档实例。
-- 示例、代码生成器与检查流水线：修复 `example-hello-world` CLI `delete` 子命令示例错误；示例 `Makefile` 统一支持 `SWAG` 覆盖/`PATH`/`GOBIN`/`GOPATH/bin`，非 SQLite 示例构建与运行改为 `CGO_ENABLED=0`；`scripts/gen_code.py` 生成的 `go.mod` 对齐模板直接依赖并规范制表符缩进；`scripts/check.py` 新增跨文件发布版本一致性校验 `check_release_versions` 与 `--fast` 无 Docker 快速检查模式（对应根 `Makefile` `make check-fast`），并将 `./pkg/cache`、`./pkg/safety`、`./version`、`./swagger` 纳入 `-race` 覆盖。
+- **依赖瘦身与基础包加固（含迁移提示）**：移除 `github.com/go-resty/resty/v2`、`github.com/pkg/errors`、`github.com/mitchellh/mapstructure`、`github.com/gookit/goutil`、`github.com/patrickmn/go-cache` 5 个冗余或停止维护的直接依赖。`version.GetVersionByURL` 改用标准库 `net/http` 并新增 `GetVersionByURLContext`；`errors.Wrap`/`WithMessage` 改用标准库 `%w` 保留错误链；`pkg/struct_formatter` 迁移至 `mapstructure/v2` 并修复 `FormToStringMap` 并发写入调用方指针的竞态；`pkg/cache` 改用标准库懒过期实现，不再泄漏后台清理协程并新增 `Close()`；`pkg/safety` 修复 `PKCS7Padding` 底层切片覆写、`UnPKCS7Padding` 改为恒定时间校验与统一错误并预编译 `IsBase64` 正则。根 `db` 包不再依赖 `go.mongodb.org/mongo-driver` v1（**迁移提示**：MongoDB BSON 时间序列化改用 `mongodb.Time`，MongoDB 错误映射改用新增的 `mongodb.NewError`；`db.Time` 保留 SQL `Value`/`Scan` 兼容）。
+- **Console 代理、Pubsub 与多服务 Swagger**：`console` 加固反向代理（支持 `GET`/`POST`/`PUT`/`PATCH`/`DELETE`、按路径段重写 `/api`、封装空响应体 4xx/5xx 避免误报 502、支持 `gzip` 解压与 SSE 实时刷新/清写超时、WebSocket 重路由防 `RawPath` 损坏、移除 `%#v` 防止日志泄露请求头）；`pubsub` 新增可复用连接的 `Publisher`（`NewPublisher`/`NewPublisherWithPort`/`Close`），修复 `OnEventWithGroup` 对空回调返回值与斜杠拼接的处理；`swagger` 新增 `SwaggerWithPrefix` 并在 `conf.HTTPServerConfig` 新增 `SwaggerDocPrefix`，支持多引擎独立 Swagger 文档实例。
+- **示例、代码生成器与检查流水线**：修复 `example-hello-world` CLI `delete` 子命令示例错误；示例 `Makefile` 统一支持 `SWAG` 覆盖/`PATH`/`GOBIN`/`GOPATH/bin`，非 SQLite 示例构建与运行改为 `CGO_ENABLED=0`；`scripts/gen_code.py` 生成的 `go.mod` 对齐模板直接依赖并规范制表符缩进；`scripts/check.py` 新增跨文件发布版本一致性校验 `check_release_versions` 与 `--fast` 无 Docker 快速检查模式（对应根 `Makefile` `make check-fast`），并将 `./pkg/cache`、`./pkg/safety`、`./version`、`./swagger` 纳入 `-race` 覆盖。
 
-## v0.16.0
+### 历史版本摘要
 
-- HTTP 生命周期、探针与安全监听器：新增 `/livez` 与 `/readyz` 健康探针（支持 `HTTPHost.RegisterHealthCheck` 注册自定义就绪检查）；停机时先将 `/readyz` 置为不可用、等待 `HTTPServer.PreStopDelay` 毫秒后再排空主监听器与管理监听器；新增 `HTTPServer.AdminListen` 隔离 `pprof`、`metrics` 与 `Swagger`（启用后不再暴露于业务主端口，新增 `httpintegration.InstallDiagnostics` 与 `HTTPHost.AdminAddress`）；主监听器支持 `HTTPServer.TLS`（TLS 与可选 mTLS 客户端证书校验）、`TrustedProxies`、`ReadHeaderTimeout`（默认 5 秒），并将 `http.Server.ErrorLog` 桥接到应用日志。
-- 结构化日志与可观测性：`logger.Logger` 新增 `With`、`SlogHandler()` 与 `Slog()` 桥接标准库 `log/slog`；`metrics` 新增独立注册表 `NewRegistry`、`HandlerFor` 与低基数路由模板指标 `NewHTTPMetrics`；新增 `middleware.Tracing` 接入 OpenTelemetry 服务端 span 与 `traceparent` 传播，`sdk.Client` 自动向出站请求注入追踪上下文；新增 `middleware.RequestLogWithOptions`（支持跳过路径与结构化日志输出，原 `RequestLog` 保持兼容）。
-- 多副本幂等与 HTTP 防护中间件：`idempotence` 新增 `Store` 接口、`Key.ProjectID`、`Options`（有界容量淘汰与 `MaxBodyBytes` 限制）以及基于 Redis Lua 原子脚本的 `RedisStore`；`middleware.IdempotentWithStore` 接入可插拔存储，重放响应过滤 `Date`/`Set-Cookie` 并使用当前请求 `Request-ID`；新增 `CORS`、`SecurityHeaders`、`RateLimit`、`MaxInFlight`、`RequestTimeout`、`MaxBodyBytes` 防护中间件。
-- 数据库迁移、CLI、代理与流式加固：新增 `db/migrate` 版本化 SQL/Go 迁移器（支持 `fs.FS` 加载、校验和校验、`Up`/`Down`/`Status` 与 `NewFromGorm`）；`cli` 加固配置读写权限、`apply`/`print` 健壮性，`encrypt` 支持 `--stdin` 与管道输入；`proxy` 补全反代错误透传与逐跳头清理；`stream` 加固 SSE 分段写超时与事件刷新；`middleware.Debug` 与 `middleware.Asset` 修复脱敏、目录穿越、隐藏文件与受保护静态路径冲突问题。
+完整发布说明见 [GitHub Releases](https://github.com/FlyTOmeLight/server-go/releases)；涉及需要调用方注意的迁移节点如下：
 
-## v0.15.0
+| 版本 | 重点演进与迁移提示 |
+| --- | --- |
+| `v0.16.0` | `/livez` 与 `/readyz` 探针、`PreStopDelay`、`AdminListen` 管理端口隔离、TLS/mTLS、`logger` 桥接 `log/slog`、独立 `metrics` 注册表与 `NewHTTPMetrics`、OpenTelemetry `middleware.Tracing`、Redis 多副本幂等 `RedisStore`、HTTP 防护中间件（`CORS`/`SecurityHeaders`/`RateLimit`/`MaxInFlight`/`RequestTimeout`/`MaxBodyBytes`）、`db/migrate` 与 `cli`/`proxy`/`stream`/`Asset`/`Debug` 加固 |
+| `v0.15.0` | `conf.Watch` K8s `..data` 防抖热更新、`HTTPHost` 业务段热更新与 `RunWithShutdownHook`、`auth.Identity` 同步请求 `context.Context`、`sdk.Client` 自动透传 `Request-ID` 与幂等条件重试、SQL 参数脱敏日志、Redis 懒连接选项、选主指数退避与 `DummyAppElection` 对齐（**迁移**：已取消 `ctx` 传给 `DummyAppElection.Run` 返回 `context.Canceled`） |
+| `v0.14.0` | 新增 `Apache-2.0` `LICENSE`；`RunMode = "release"` 禁止隐式/假鉴权（**迁移**：生产必须传入显式鉴权 handler）；加固多值身份头、`RequestID`/`Recovery`、DSN 安全构造与 `orderby` 白名单 |
+| `v0.12.0`–`v0.13.0` | 新增 `middleware.HTTPAuthorization` 与服务间 `auth.InternalPropagatedIdentity`；**不兼容迁移（`v0.12.0`）**：组织标识统一重命名为租户（`x-forge-tenant-id`、`KeyTenantID`、`FakeAuthConfig.TenantID` 等），移除 `QueryOrgID` |
+| `v0.10.0`–`v0.11.0` | `db.Transaction` 隔离级别与 PG/MySQL 死锁重试；`redis.NewRedisLazy` 与重导出驱动类型 |
+| `v0.5.0`–`v0.9.0` | `app.Run` 统一应用入口（`v0.5.0`）；Go `1.27` 与标准库 H2C；接口收敛与 `AuthWithAuthCenter` 移除（`v0.6.0`）；`binder.All` 与 `defaults.Set` 请求契约（`v0.7.0`）；SDK `sdk.Complete` 与 `CommandLine` 实例（`v0.8.0`）；Swagger 注释与多模块生成器对齐（`v0.9.0`） |
+| `v0.2.0`–`v0.4.0` | [设计审查](docs/server-go-design-review.md) 修复、配置密文升级为 AES-GCM + `SERVER_SECRET_KEY`（`v0.2.0`）、`stream.NewSSE` 与 `make check`（`v0.3.0`）、Bearer 凭据与严格 JSON 绑定（`v0.3.1`）、PostgreSQL 迁移至 `pgx/v5`（`v0.4.0`）；公开仓库清理私有日志/许可证 SDK 与达梦驱动并确立现有公开依赖边界 |
 
-- 配置、Host、应用与日志：`conf.Watch` 支持 Kubernetes ConfigMap `..data` 原子切换并加入 50ms 防抖；`conf.Bind(nil)` 返回错误、`Subscribe(nil)` 返回空操作；快照深拷贝覆盖任意切片与 map 类型。`HTTPHost` 不再否决业务自定义配置段热更新，修复 `prepareReload` 持锁调用外部回调死锁，请求路径改用 `RWMutex` 读锁，并向 `service.Start(workerCtx)` 注入应用配置 Logger；新增 `RunWithShutdownHook` 供 `app.Run` 在排空和停服前同步关闭配置监听，停服失败时仍刷新日志。`logger` 在执行 `fmt.Sprintf` 前检查启用级别，`Close()` 幂等且对零值安全。
-- 身份传播与 SDK：新增 `auth.Identity` 及 `WithIdentity`/`IdentityFromContext`/`SyncIdentityToRequestContext`，所有框架鉴权中间件与 `middleware.HTTPAuthorization` 同步将身份写入 `c.Request.Context()`；`HTTPAuthorization` 保留外层包装的 `http.ResponseWriter`。`sdk.Client` 自动从 `context.Context` 透传 `Request-ID`、构造校验 `ProxyURL`、自动重试仅限幂等方法或携带幂等键的请求；`sdk.Complete` 处理 nil 响应并在缺失时从响应头补全 `RequestID`；`internalsdk.InternalClient.R` 支持 nil 上下文、透传 `Request-ID` 且不再发送空代理身份头。
-- 数据层：`db` 六个 SQL 驱动默认开启 `ParameterizedQueries: true` 防止日志泄露明文参数；`db.Transaction` 防护 nil 入参、支持 GaussDB 死锁/序列化重试并改为抖动指数退避；修复 `db.UTCTime` 与 `AIBaseDialector` 边界缺陷；`db/mongodb` 与 `redis` 的 `Module.Close` 仅在关闭成功后清空句柄，MongoDB 初始化失败改用独立 5 秒清理超时、加锁保护默认集合、保证多字段排序有序；`redis.Module` 新增 `Lazy` 选项，`redis.Nil` 改为常量。
-- 调度与选主：`cron` 修复运行窗口时区与未启动任务误调 `Stop`、单任务同步失败不再阻断其他健康任务、新增 `SetErrorHandler` 与 worker panic 捕获；`pkg/election` 增加失主指数退避、默认租约升级为 `15s/10s/2s` 并新增 `WithRenewDeadline`/`WithRetryPeriod`/`LookupLocalIP`、`DummyAppElection` 与 K8s 选举对齐回调顺序及预取消返回 `context.Canceled`（迁移提示：若测试或调用方对 `DummyAppElection.Run` 传入已取消的 `ctx`，现在与 `K8sLeaderElection` 一致返回 `context.Canceled`）。
+## 开源协议
 
-## v0.14.0
-
-- 鉴权生产保护（迁移提示）：`RunMode = "release"` 下未提供显式鉴权 handler 时，`auth.Use` 与 `httpintegration.Install` / `InstallWithAuth` 会在注册任何路由前拒绝 `FakeAuth` 和空 `AuthType`；生产环境必须传入显式鉴权 handler（如 `auth.TrustedIdentityHeaders` 或 `auth.BearerTokens`），本地调试/测试请使用 `test` 或 `debug` 模式。`TrustedIdentityHeaders`、`Impersonate` 与 `InternalPropagatedIdentity` 现在拒绝同名多值身份头及仅传 `x-impersonate-target-project-id` 的请求，并在切换身份时清空旧 `KeyUserName` 和 `KeyUserRole`；`BearerTokens` 改用 SHA-256 摘要进行全量常量时间比对。
-- HTTP 链路与错误：`middleware.RequestID` 校验入站 `Request-ID`、改用 `Header.Set` 避免空头导致后续读取为空，并将 `Request-ID` 写入响应头；`middleware.Recovery` 在日志中记录 panic 值并保持通用错误响应；`middleware.RequestLog` 在未匹配路由时回退记录 `URL.Path`；`errors` 优先读取上下文中的 `KeyRequestID` 并将缺失 HTTP 状态码兜底为 `500`。
-- 数据库与基础工具：`db.Config` 拒绝负数连接池和超时参数，省略 `MaxIdleConns` 时不再调用 `SetMaxIdleConns(0)` 关闭连接池；DSN 改为使用 `mysql.Config`、libpq 引号转义与 `net/url` 安全构造，MySQL 默认字符集改为 `utf8mb4`；`db.NewError` 新增 PostgreSQL `23505`/`22P02` 错误映射并保留兜底错误链；`db.Module.Close` 在关闭失败时保留 `DB` 引用以支持重试；`gormLogger` 不再将 `gorm.ErrRecordNotFound` 按 Error 级别刷屏。`orderby` 校验收紧为严格标识符白名单，新增 `sdk.PagingRequest.DBOrderWithAllowlist` 并加固 `sdk.Paging`；修复 `pkg/id.go` 随机数碰撞（改用 `crypto/rand`）及 `pkg/file.go`、`pkg/path.go`、`pkg/datatypes/string_map.go` 缺陷。
-- 开源协议与工程卫生：根目录新增 `Apache-2.0` `LICENSE`，清理 0 字节遗留 `ci.yml`，扩充 `make check` 的 `-race` 覆盖范围。
-
-## v0.13.0
-
-新增 `auth.InternalPropagatedIdentity(authorize)`，用于内部服务之间透传已经验证过的用户身份。安装位置在 `auth.BearerTokens` 之后，`authorize` 必须确认调用方是允许透传身份的授权内部服务。请求带 `x-impersonate-target-*` 时，把用户、租户、项目同时写入 `Key*` 和 `KeyImpersonateOrigin*`，并把 `KeyAuthMode` 设成 `Internal`。不带透传头时该中间件是空操作。下游通过检查 `KeyImpersonateOrigin*` 是否为空判断身份来自上游还是本服务自己解析的。
-
-`auth.Impersonate` 行为不变，仍用于真正的代理场景，origin 键记录调用方本身。
-
-## v0.12.0
-
-新增 `middleware.HTTPAuthorization`，把标准 `net/http` 鉴权中间件接入 Gin 链路：鉴权失败时由鉴权中间件写响应，成功后把请求 context 中的身份发布到 Gin context。
-
-组织标识统一改为租户，这是不兼容变更，需要调用方迁移：
-
-- 请求头：用户组织头改为 `x-forge-tenant-id`（`constants.HeaderTenantID`），用户头同步改为 `x-forge-user-id`（`HeaderUserID`），新增项目头 `x-forge-project-id`（`HeaderProjectID`）；代理请求头 `x-impersonate-target-org-id` 改为 `x-impersonate-target-tenant-id`（`HeaderImpersonateTenantID`），代理部门头 `x-impersonate-target-department-id` 改为 `x-impersonate-target-project-id`（`HeaderImpersonateProjectID`）。上游网关与客户端需同步修改。可信网关鉴权和代理鉴权都会读取项目头；项目头可选，代理项目头提供时替换 `KeyProjectID`，否则保留原值。内部 SDK 会转发项目。
-- 查询参数：`constants.QueryOrgID`（`orgID`）已删除，没有直接替代。
-- 上下文键：`KeyOrgID` 改为 `KeyTenantID`，值为 `TenantID`；`KeyImpersonateOriginOrgID` 改为 `KeyImpersonateOriginTenantID`。新增 `KeyProjectID`，以及代理时记录原项目的 `KeyImpersonateOriginProjectID`。
-- 假鉴权：`conf.FakeAuthConfig.OrgID` 改为 `TenantID`，默认值由 `test-org-id` 改为 `test-tenant-id`；`auth.FakeAuthWithID` 的首个参数随之改名。自定义配置中若引用了旧字段，需同步改名。
-
-## v0.11.0
-
-新增 `redis.NewRedisLazy`：构造客户端时不验证连接，首次使用时连接并自动重连，Redis 不可用时服务仍可启动，连接恢复后自动恢复订阅；`NewRedis` 保持启动即 ping 的行为。`redis.XReadArgs` 与 `redis.Nil` 重新导出驱动符号，流订阅调用方不再需要直接依赖 `github.com/redis/go-redis/v9`。
-
-## v0.10.0
-
-新增 `db.Transaction`，提供显式 SQL 隔离级别与只读选项、context 取消、带次数和时间预算的 PostgreSQL/MySQL 整笔事务重试。嵌套调用拒绝执行，现有 GORM 事务接口保持不变。使用方式及回调边界见 [事务文档](db/README.md)。完整检查新增 MySQL 8.4 隔离数据库与双库真实死锁测试。
-
-## v0.9.0
-
-所有示例按当前推荐统一 Controller 错误处理、SDK 构造和资源交付。18 个业务 HTTP 接口维护完整 Swagger 注释；每个 HTTP 示例提供 `make doc`，生成文档与参数来源、默认值、可空字段、状态码和 SSE 事件一致。生成器沿用更新后的 HelloWorld 模板。
-
-### 示例 SDK 迁移
-
-HelloWorld、Dataset 和 HelloWorld 内部 SDK 的便捷构造从 `NewClient(ak, sk, endpoint)` 改为 `NewClient(endpoint)`。API Key、代理和内部身份传播使用各自的 `NewClientWithConfig`，客户端由调用方关闭。框架根 SDK 的公开构造接口保持原契约。SSE 的非 JSON HTTP 失败统一返回 `HTTPError`，并保留实际 HTTP 状态。
-
-普通 Controller 调用 `serrors.AbortWithError(ctx, err)` 完成错误响应后返回，业务 Service 只返回错误。新业务 API 默认采用资源路由；已有 HelloWorld 的全 POST 接口保持原路径和方法。详细约定见 [Go 项目组织约定](docs/go-project-layout.md)。
-
-## v0.8.0
-
-JSON 的 1 MiB 读取预算覆盖 Debug、幂等与 binder 的组合，前置中间件不再先读完整个超限正文。缺少 Content-Type 的调试请求使用相同预算；显式文本、表单和 multipart 保留原有规则。多个读取者复用本次请求的正文。
-
-立即错误和延后错误共享完成规则，保留请求 ID、业务错误码和已开始输出后的行为。自动转为 HTTP 200 的错误仍被识别为失败，不进入幂等缓存。应用与 HTTPHost 共享任务停止策略，超时后继续等待并保留错误，停止失败时保留依赖。
-
-普通 JSON SDK 方法用 `sdk.Complete(result, err)` 统一完成请求，保留网络、取消与解码错误身份以及 HTTP 错误元数据。SSE 继续使用独立的流读取和关闭流程。
-
-`CommandLine` 实例拥有配置、Apply 注册、SDK 和日志。业务命令改用 `cli.Client(cmd.Context())` 获取本次执行的客户端，通过 `cli.RegisterCommandApplyHandler` 注册领域 Apply；`ExecuteContext` 返回错误并清理资源，`Execute` 处理进程信号和退出码。`CommandLine` 不再初始化包级 `cli.Config`，旧手动 `SetConfig` 路径仍可使用。迁移示例见 [Go 项目组织约定](docs/go-project-layout.md)。这些变更从 v0.8.0 提供。
-
-生成器按明确的模板文件与完整片段展开业务领域，不再根据每行是否包含 `Module` 猜测复制范围。新增模板领域文件或改变聚合位置时，同步更新 `scripts/gen_code.py` 的规则；规则失配会停止生成，已有目标继续受保护。
-
-## v0.7.0
-
-`binder.All` 合并正文、query 和 URI 后统一校验，支持 SDK 请求的必填路径标签。Controller 在绑定前设置静态默认值；Dataset 创建省略 fileFormat 时使用 File，显式空串或未知枚举返回 400。CLI apply 单独映射路径字段，Swagger 同步请求契约。
-
-新增 PostgreSQL CRUD、分页与 Go SDK 示例，验证真实数据库类型、NULL、默认值、取消和资源关闭。每次修改由 `make check` 和 GitHub Actions 实际运行全部示例及生成项目。
-
-## v0.5.0
-
-新增 `app.Run` 和类型化配置装配，统一资源初始化、HTTP 运行与退出清理；SQL 日志使用框架 logger 并保留 Request ID。所有示例统一公开 `service/`、私有领域层和 context 约定，修正 SDK、CLI、Swagger 与打包流程。
-
-最低 Go 版本升至 1.27。H2C 改用标准库 HTTP/2，客户端采用 prior knowledge 模式。Kubernetes 依赖与 kube-openapi 保持兼容版本。
-
-## v0.4.0
-
-升级 GORM PostgreSQL 驱动至 v1.6.0，使用 pgx/v5，移除旧 pgx/v4 驱动依赖；该版本最低 Go 版本为 1.25。
-
-## v0.3.2
-
-`db.Config.DSN` 支持完整 PostgreSQL URL 或连接字符串，保留调用方指定的 TLS、search_path、时区及其他驱动参数。未设置 DSN 时继续使用分字段配置。
-
-## v0.3.1
-
-HTTPHost 统一安装请求日志和 Recovery，返回标准 404/405；响应已提交后不追加错误 JSON。新增静态 Bearer 凭据与身份读取、严格单文档 JSON 绑定（1 MiB 上限）、分页大小解析及 SDK 标准错误解码。`HTTPBinder.JSON()` 现在拒绝未知字段和连续 JSON 文档，使用该接口的服务需确认请求符合约定。详见上方通用 HTTP 行为。
-
-## v0.3.0
-
-新增 `stream.NewSSE(writer, writeTimeout)` 与 `Send(event, data)`：逐事件编码和刷新，单次写入有期限，事件间等待不消耗写入时限。调用方负责操作 context、业务取消与错误事件。Console 代理支持带 charset 的 SSE，调试日志限制响应采集大小。完整用法见 [流式服务示例](examples/streaming-service/README.md)。
-
-HelloWorld 模板的 SDK 方法新增 `context.Context` 参数，CLI 同步传递 context；HTTP 失败保留状态与服务错误，控制器在服务构造时创建并在路由重建时复用。升级已有模板 SDK 调用时补上传入的 context。新增 `make check` 统一执行框架、独立示例和生成项目验证。
-
-## v0.2.0 接口变化
-
-本版本修复 [设计审查](docs/server-go-design-review.md) 中的问题，并调整尚未稳定的公开接口。配置、数据库、幂等和订阅集合改由应用实例拥有，日志显式构造。`host.Service` 使用 `RegisterRoutes`、`Start(ctx)`、`Stop(ctx)`；`HTTPHost.Run(ctx)` 管理一次启动与退出，可选集成由 setup 安装。完整装配见最小示例和 HelloWorld 模板。
-
-幂等路由必须先完成身份验证及本次授权，再用 `middleware.Idempotent` 包装最后的业务 handler。缓存按租户、用户、HTTP 操作和 token 隔离，只在单进程内有效；匿名请求不缓存。
-
-SDK 构造函数返回错误。当前支持 API Key；AK/SK、STS 与内部 SDK 自动幂等尚未实现，配置这些能力会明确失败。内部请求包装继承入站请求的取消和截止时间。客户端克隆只在装配阶段使用，原客户端在所有借用者退出后关闭。
-
-配置密文改用 AES-GCM，必须设置 `SERVER_SECRET_KEY`，旧 CBC 密文需要从原始明文重新加密。监听地址、协议、传输超时和基础设施配置变更需要重启进程；失败的动态更新保留上一份有效配置。
-
-## 公开迁移
-
-公开版本使用新的模块路径与清理后的首次提交。示例中的密码使用环境变量占位符，地址改为本地示例地址。
-
-原私有日志依赖替换为本仓库 `logger` 包。许可证中间件接收 `middleware.LicenseAuthorizer`，调用方负责客户端生命周期。达梦数据库的私有驱动已移除；保留 MySQL、SQLite、PostgreSQL、ClickHouse、Kingbase 和 GaussDB 支持。
+本项目基于 [Apache-2.0](LICENSE) 协议开源。

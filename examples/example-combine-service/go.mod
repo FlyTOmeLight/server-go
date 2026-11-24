@@ -3,7 +3,7 @@ module github.com/FlyTOmeLight/server-go/examples/example-combine-service
 go 1.27.0
 
 require (
-	github.com/FlyTOmeLight/server-go v0.17.0
+	github.com/FlyTOmeLight/server-go v0.17.1
 	github.com/FlyTOmeLight/server-go/examples/example-hello-world v0.0.0
 	github.com/FlyTOmeLight/server-go/examples/example-service1 v0.0.0
 	github.com/FlyTOmeLight/server-go/examples/example-service2 v0.0.0

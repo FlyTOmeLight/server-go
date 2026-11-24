@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-本仓库维护可供其他 Go 项目引用的 Gin 服务框架。公开模块路径为 `github.com/FlyTOmeLight/server-go`。搭建业务项目时先读 [README.md](README.md)，从 `examples/minimal-service` 打通 HTTP 流程；需要数据库、SDK 和 CLI 时参考 `examples/example-hello-world`。
+本仓库维护可供其他 Go 项目引用的 Gin 服务框架。公开模块路径为 `github.com/FlyTOmeLight/server-go`。搭建业务项目时先读 [README.md](README.md) 与 [业务项目接入与能力复用指南](docs/integration-guide.md)，从 `examples/minimal-service` 打通 HTTP 流程；需要数据库、SDK 和 CLI 时参考 `examples/example-hello-world`。
 
 ## 业务项目组织
 
@@ -33,6 +33,6 @@
 
 ## 公开版本边界
 
-影响调用方的修复或功能合入 `main` 后发布版本，让消费方可通过版本号取得改动；纯文档和测试改动可随下一版发布。兼容修复递增补丁号，新增能力递增次版本；v0.x 的不兼容接口调整递增次版本，并提供迁移说明。发布标签指向通过完整检查的 `main` 提交，不重写既有标签；同步示例 `require`、生成器和使用说明的正式版本，并验证发布依赖的独立构建。
+影响调用方的修复或功能合入 `main` 后发布版本，让消费方可通过版本号取得改动；纯文档和测试改动可随下一版发布。兼容修复递增补丁号，新增能力递增次版本；v0.x 的不兼容接口调整递增次版本，并提供迁移说明。发布标签指向通过完整检查的 `main` 提交，不重写既有标签；每次发版前必须同步检查并更新 [README.md](README.md) 与 [docs/integration-guide.md](docs/integration-guide.md)（版本号、包能力清单、生产配置/装配示例及迁移说明），同时同步示例 `require` 和生成器 `scripts/gen_code.py`，并验证发布依赖的独立构建。
 
 公开版本从清理后的代码快照建立历史。旧远端与旧 Git 历史保留在本地，不推送到公开仓库。旧版本中的私有 `logger-go` 已替换为本仓库 `logger` 包；私有许可证 SDK 改为调用方注入；依赖私有驱动的达梦数据库支持已移除。
