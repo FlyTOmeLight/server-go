@@ -3,17 +3,38 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/mongo/driver"
 
+	serrors "github.com/FlyTOmeLight/server-go/errors"
 	"github.com/FlyTOmeLight/server-go/sdk"
 )
+
+func TestNewError(t *testing.T) {
+	require.NoError(t, NewError(nil))
+	notFound := fmt.Errorf("find item: %w", mongo.ErrNoDocuments)
+	require.ErrorIs(t, NewError(notFound), serrors.ErrorResourceNotFound)
+
+	duplicate := mongo.WriteException{WriteErrors: mongo.WriteErrors{{Code: 11000, Message: "duplicate key"}}}
+	require.ErrorIs(t, NewError(duplicate), serrors.ErrorResourceIsExists)
+
+	cause := mongo.CommandError{Code: 2, Message: "bad value"}
+	unknown := fmt.Errorf("write item: %w", cause)
+	got := NewError(unknown)
+	require.ErrorIs(t, got, serrors.ErrorInternalError)
+	require.ErrorIs(t, got, unknown)
+	var commandError mongo.CommandError
+	require.ErrorAs(t, got, &commandError)
+	require.Equal(t, cause, commandError)
+}
 
 func TestModuleRejectsMissingConfigAndCancelledInitialization(t *testing.T) {
 	if err := (&Module{}).Initialize(context.Background()); err == nil {

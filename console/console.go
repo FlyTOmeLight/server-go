@@ -2,17 +2,18 @@ package console
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/gookit/goutil/arrutil"
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
@@ -22,44 +23,53 @@ import (
 )
 
 func RegisterConsoleAPI(engine *core.Engine, config *conf.Config) {
-	names := config.HTTPServer.ConsoleProxyNames
-	if !arrutil.Contains(names, config.AppName) {
+	names := slices.Clone(config.HTTPServer.ConsoleProxyNames)
+	if !slices.Contains(names, config.AppName) {
 		names = append(names, config.AppName)
 	}
 
+	handler := Reverse(&config.HTTPServer, config.AppCode, engine)
 	for _, name := range names {
 		if name == "" {
 			continue
 		}
-		// 传入 engine 到 Reverse，用于 WebSocket 重路由
-		handler := Reverse(&config.HTTPServer, config.AppCode, engine)
-		engine.GET("/"+name+"/api/*any", handler)
-		engine.POST("/"+name+"/api/*any", handler)
+		path := "/" + name + "/api/*any"
+		engine.GET(path, handler)
+		engine.POST(path, handler)
+		engine.PUT(path, handler)
+		engine.PATCH(path, handler)
+		engine.DELETE(path, handler)
 	}
 }
 
 func Reverse(config *conf.HTTPServerConfig, appCode int, engine *core.Engine) core.HandlerFunc {
 	proxy := NewConsoleProxy(config, appCode)
 	return func(c *core.Context) {
-		// WebSocket 请求不能通过普通反向代理，需要直接路由
-		// 检测 Upgrade: websocket 头，如果是 WebSocket 则重写路径并触发重新路由
-		if isWebSocketUpgrade(c.Request) {
-			// 将 /api 路径转换为 /internal 路径
-			newPath := strings.Replace(c.Request.URL.Path, "/api", "/internal", 1)
-			c.Request.URL.Path = newPath
-			c.Request.URL.RawPath = newPath
+		path, err := parseRequest(c.Request)
+		if err != nil {
+			_ = c.Error(err)
+			c.Abort()
+			return
+		}
 
-			// 手动触发 Gin 引擎重新处理这个请求
-			// 这样会让请求重新匹配路由，找到真正的 WebSocket handler
+		if isWebSocketUpgrade(c.Request) {
+			if engine == nil {
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			c.Request.URL.Path = path
+			c.Request.URL.RawPath = ""
 			engine.HandleContext(c)
 			c.Abort()
 			return
 		}
 
-		if _, err := parseRequest(c.Request); err != nil {
-			_ = c.Error(err)
-			c.Abort()
-			return
+		if strings.Contains(strings.ToLower(c.GetHeader("Accept")), "text/event-stream") {
+			if err := http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{}); err != nil &&
+				!errors.Is(err, http.ErrNotSupported) {
+				logger.FromContext(c.Request.Context()).
+					Debugf(c.Request.Context(), "ProxyWriteDeadline: %v", err)
+			}
 		}
 
 		proxy.ServeHTTP(c.Writer, c.Request)
@@ -79,27 +89,36 @@ func isWebSocketUpgrade(r *http.Request) bool {
 // 目标地址和应用错误码由调用方传入；不读取进程全局配置。
 func NewConsoleProxy(config *conf.HTTPServerConfig, appCode int) *httputil.ReverseProxy {
 	listen := config.Listen
+	writeTimeout := time.Duration(config.WriteTimeout) * time.Millisecond
+	dialTimeout := 30 * time.Second
+	if writeTimeout > 0 {
+		dialTimeout = writeTimeout
+	}
+	idleTimeout := time.Duration(config.IdleTimeout) * time.Millisecond
+	if idleTimeout <= 0 {
+		idleTimeout = 90 * time.Second
+	}
 	return &httputil.ReverseProxy{
 		Director:       func(r *http.Request) { modifyRequest(r, listen) },
 		ModifyResponse: func(resp *http.Response) error { return modifyResponse(resp, appCode) },
+		FlushInterval:  -1,
 		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout: time.Millisecond * time.Duration(config.WriteTimeout), // 连接超时
-			}).DialContext,
-			ResponseHeaderTimeout: time.Millisecond * time.Duration(config.WriteTimeout), // 响应头超时
-			IdleConnTimeout:       time.Millisecond * time.Duration(config.IdleTimeout),  // 空闲连接超时
+			DialContext:           (&net.Dialer{Timeout: dialTimeout}).DialContext,
+			ResponseHeaderTimeout: max(writeTimeout, 0),
+			IdleConnTimeout:       idleTimeout,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   100,
+			DisableCompression:    true,
 		},
 		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
 			logger.FromContext(request.Context()).
-				Errorf(request.Context(), "ProxyError req: %#v, err: %v", request, err)
+				Errorf(request.Context(), "ProxyError method: %s, path: %s, err: %v", request.Method, request.URL.Path, err)
 			writer.WriteHeader(http.StatusBadGateway)
 		},
 	}
 }
 
 func modifyRequest(r *http.Request, listen string) {
-	defer logger.FromContext(r.Context()).Debugf(r.Context(), "ProxyModifiedRequest: %#v, URL: %#v", r, r.URL)
-
 	r.URL.Scheme = "http"
 	r.URL.Host = listen
 
@@ -109,12 +128,10 @@ func modifyRequest(r *http.Request, listen string) {
 		return
 	}
 	r.URL.Path = path
-	r.RequestURI = r.URL.Path
-
-	// 屏蔽静态资源的if-modified-since header头
-	if _, ok := r.Header["If-Modified-Since"]; ok {
-		r.Header["If-Modified-Since"] = []string{""}
-	}
+	r.URL.RawPath = ""
+	r.Header.Del("If-Modified-Since")
+	r.Header.Del("Accept-Encoding")
+	logger.FromContext(r.Context()).Debugf(r.Context(), "ProxyModifiedRequest method: %s, URL: %s", r.Method, r.URL)
 }
 
 func modifyResponse(resp *http.Response, appCode int) error {
@@ -128,14 +145,24 @@ func modifyResponse(resp *http.Response, appCode int) error {
 	}
 	contentType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	contentType = strings.ToLower(contentType)
-	if arrutil.Contains(ignoredContentType, contentType) {
+	if slices.Contains(ignoredContentType, contentType) {
 		logger.FromContext(resp.Request.Context()).
 			Debugf(resp.Request.Context(), "ProxyModifiedResponse ignored content type %s", contentType)
 		return nil
 	}
 
 	defer resp.Body.Close()
-	buffer, err := io.ReadAll(resp.Body)
+	var body io.Reader = resp.Body
+	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		reader, err := gzip.NewReader(body)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+		body = reader
+		resp.Header.Del("Content-Encoding")
+	}
+	buffer, err := io.ReadAll(body)
 	if err != nil {
 		return err
 	}
@@ -156,12 +183,17 @@ func modifyResponse(resp *http.Response, appCode int) error {
 	// error
 	if resp.StatusCode/100 != 2 && resp.StatusCode/100 != 3 {
 		var wrong serrors.Error
-		err = json.Unmarshal(buffer, &wrong)
-		if err != nil {
+		if len(buffer) == 0 {
+			wrong.Code = http.StatusText(resp.StatusCode)
+			wrong.Message = wrong.Code
+		} else if err := json.Unmarshal(buffer, &wrong); err != nil {
 			return err
 		}
 		if wrong.Status == 0 {
 			wrong.Status = resp.StatusCode
+		}
+		if wrong.RequestID == "" {
+			wrong.RequestID = resp.Header.Get(constants.HeaderRequestID)
 		}
 		wrong.SetStatusCode(appCode)
 		setResponse(resp, Response{Error: &wrong})
@@ -183,17 +215,21 @@ func modifyResponse(resp *http.Response, appCode int) error {
 }
 
 func parseRequest(r *http.Request) (string, error) {
-	// eg: POST /example/api/v1/GetProject => POST /example/internal/v1/GetProject
-	// 注意：只转换路径，HTTP方法保持不变
-	path := strings.Replace(r.URL.Path, "/api", "/internal", 1)
-	if path == r.URL.Path {
-		return "", serrors.ErrorInvalidURI
+	path := r.URL.Path
+	prefix, remaining, found := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+	if prefix != "" && found {
+		offset := len(path) - len(remaining)
+		for segment := range strings.SplitSeq(remaining, "/") {
+			if segment == "api" {
+				return path[:offset] + "internal" + path[offset+len(segment):], nil
+			}
+			offset += len(segment) + 1
+		}
 	}
-	return path, nil
+	return "", serrors.ErrorInvalidURI
 }
 
 func setResponse(resp *http.Response, content any) {
-	resp.StatusCode = http.StatusOK
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
 	encoder.SetEscapeHTML(false)
@@ -202,8 +238,14 @@ func setResponse(resp *http.Response, content any) {
 	}
 	buffer := bytes.TrimRight(buf.Bytes(), "\n")
 	reader := bytes.NewReader(buffer)
+	resp.StatusCode = http.StatusOK
+	resp.Status = "200 OK"
 	resp.Body = io.NopCloser(reader)
 	contentLength := len(buffer)
 	resp.ContentLength = int64(contentLength)
+	resp.TransferEncoding = nil
 	resp.Header.Set("Content-Length", strconv.Itoa(contentLength))
+	resp.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp.Header.Del("Content-Encoding")
+	resp.Header.Del("Transfer-Encoding")
 }

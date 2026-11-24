@@ -124,7 +124,7 @@ func deleteModuleCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return deleteModule(cmd.Context(), &req)
 		},
-		Example: cli.DefaultName() + " module get --id=xx",
+		Example: cli.DefaultName() + " module delete --id=xx",
 	}
 
 	cmd.Flags().StringVar(&req.ID, "id", "", " Module id (required)")

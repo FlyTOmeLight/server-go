@@ -29,7 +29,7 @@ curl http://127.0.0.1:8080/hello
 
 ```sh
 go mod init github.com/your-org/your-service
-go get github.com/FlyTOmeLight/server-go@v0.16.0
+go get github.com/FlyTOmeLight/server-go@v0.17.0
 go mod tidy
 go run ./cmd/server
 ```
@@ -64,7 +64,7 @@ go mod tidy
 go build ./cmd/server ./cmd/cli
 ```
 
-生成器使用 HelloWorld 模板，并引用发布版框架 v0.16.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
+生成器使用 HelloWorld 模板，并引用发布版框架 v0.17.0。按项目需求调整配置，API 文档可通过示例 Makefile 的 `doc` 目标重新生成。
 
 ## 当前工作树的依赖与 HTTP/2
 
@@ -210,6 +210,12 @@ go vet ./...
 ```
 
 `examples/example-hello-world`、`example-service1`、`example-service2` 和 `example-combine-service` 各自有 `go.mod`。修改跨模块依赖后，在每个示例目录执行 `go mod tidy`、`CGO_ENABLED=1 go test ./...`、`go vet ./...`。示例使用本地 `replace` 指向框架根目录。
+
+## v0.17.0
+
+- 依赖瘦身与基础包加固（含迁移提示）：移除 `github.com/go-resty/resty/v2`、`github.com/pkg/errors`、`github.com/mitchellh/mapstructure`、`github.com/gookit/goutil`、`github.com/patrickmn/go-cache` 5 个冗余或停止维护的直接依赖。`version.GetVersionByURL` 改用标准库 `net/http` 并新增 `GetVersionByURLContext`；`errors.Wrap`/`WithMessage` 改用标准库 `%w` 保留错误链；`pkg/struct_formatter` 迁移至 `mapstructure/v2` 并修复 `FormToStringMap` 并发写入调用方指针的竞态；`pkg/cache` 改用标准库懒过期实现，不再泄漏后台清理协程并新增 `Close()`；`pkg/safety` 修复 `PKCS7Padding` 底层切片覆写、`UnPKCS7Padding` 改为恒定时间校验与统一错误并预编译 `IsBase64` 正则。根 `db` 包不再依赖 `go.mongodb.org/mongo-driver` v1（迁移提示：MongoDB BSON 时间序列化改用 `mongodb.Time`，MongoDB 错误映射改用新增的 `mongodb.NewError`；`db.Time` 保留 SQL `Value`/`Scan` 兼容）。
+- Console 代理、Pubsub 与多服务 Swagger：`console` 加固反向代理（支持 `GET`/`POST`/`PUT`/`PATCH`/`DELETE`、按路径段重写 `/api`、封装空响应体 4xx/5xx 避免误报 502、支持 `gzip` 解压与 SSE 实时刷新/清写超时、WebSocket 重路由防 `RawPath` 损坏、移除 `%#v` 防止日志泄露请求头）；`pubsub` 新增可复用连接的 `Publisher`（`NewPublisher`/`NewPublisherWithPort`/`Close`），修复 `OnEventWithGroup` 对空回调返回值与斜杠拼接的处理；`swagger` 新增 `SwaggerWithPrefix` 并在 `conf.HTTPServerConfig` 新增 `SwaggerDocPrefix`，支持多引擎独立 Swagger 文档实例。
+- 示例、代码生成器与检查流水线：修复 `example-hello-world` CLI `delete` 子命令示例错误；示例 `Makefile` 统一支持 `SWAG` 覆盖/`PATH`/`GOBIN`/`GOPATH/bin`，非 SQLite 示例构建与运行改为 `CGO_ENABLED=0`；`scripts/gen_code.py` 生成的 `go.mod` 对齐模板直接依赖并规范制表符缩进；`scripts/check.py` 新增跨文件发布版本一致性校验 `check_release_versions` 与 `--fast` 无 Docker 快速检查模式（对应根 `Makefile` `make check-fast`），并将 `./pkg/cache`、`./pkg/safety`、`./version`、`./swagger` 纳入 `-race` 覆盖。
 
 ## v0.16.0
 

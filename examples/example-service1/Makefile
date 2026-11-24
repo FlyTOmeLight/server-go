@@ -3,7 +3,7 @@ OUTDIR := output
 SVCNAME := example1-server
 CLINAME := example1
 SWAG_DOC_PREFIX := Example1
-SWAG := $(shell $(GO) env GOPATH)/bin/swag
+SWAG ?= $(shell command -v swag 2>/dev/null || { bin=$$($(GO) env GOBIN); [ -n "$$bin" ] || bin=$$($(GO) env GOPATH)/bin; printf '%s/swag' "$$bin"; })
 FRAMEWORK_DIR := $(shell $(GO) list -m -f '{{.Dir}}' github.com/FlyTOmeLight/server-go)
 SWAG_SCAN_DIRS := $(shell ls -d internal/app/* | paste -sd ',' -)
 SWAG_SDK_DIRS := $(shell ls -d sdk/go/* | paste -sd ',' -)

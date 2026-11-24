@@ -26,6 +26,9 @@ all: clean prepare compile package
 check:
 	python3 -B scripts/check.py
 
+check-fast:
+	python3 -B scripts/check.py --fast
+
 prepare: check-var
 
 check-var:
@@ -55,5 +58,5 @@ clean:
 	rm -rf $(OUTDIR)
 
 # avoid filename conflict and speed up build
-.PHONY: all compile build test check package clean
+.PHONY: all compile build test check check-fast package clean
 

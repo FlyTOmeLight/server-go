@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"net/http"
 	"os"
@@ -76,6 +77,9 @@ func (r *Registry) OnEvent(
 	configHandler ConfigHandler,
 	handlers ...core.HandlerFunc,
 ) {
+	if engine == nil {
+		return
+	}
 	r.OnEventWithGroup(&engine.RouterGroup, relativePath, configHandler, handlers...)
 }
 
@@ -93,15 +97,20 @@ func (r *Registry) OnEventWithGroup(
 	configHandler ConfigHandler,
 	handlers ...core.HandlerFunc,
 ) {
+	if r == nil || group == nil {
+		return
+	}
 	topic := ValidTopicName(relativePath)
-	route := strings.TrimPrefix(group.BasePath(), "/") + "/" + strings.TrimPrefix(relativePath, "/")
+	route := strings.Trim(group.BasePath(), "/") + "/" + strings.TrimPrefix(relativePath, "/")
 	subscription := &Subscription{
 		PubsubName: topic,
 		Topic:      topic,
 		Route:      route,
 	}
 	if configHandler != nil {
-		subscription = configHandler(subscription)
+		if configured := configHandler(subscription); configured != nil {
+			subscription = configured
+		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -109,21 +118,74 @@ func (r *Registry) OnEventWithGroup(
 	r.subscriptions = append(r.subscriptions, copySubscription(*subscription))
 }
 
-func PublishEvent(ctx context.Context, pubsubName string, topic string, data any) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+type eventClient interface {
+	PublishEvent(ctx context.Context, pubsubName, topic string, data any, opts ...dapr.PublishEventOption) error
+	Close()
+}
+
+// Publisher owns a Dapr connection and supports concurrent publishing.
+type Publisher struct {
+	mu     sync.RWMutex
+	client eventClient
+}
+
+// NewPublisher creates a publisher using DAPR_GRPC_PORT or port 50001.
+func NewPublisher() (*Publisher, error) {
 	port := os.Getenv("DAPR_GRPC_PORT")
 	if port == "" {
 		port = "50001"
 	}
-	// The SDK's NewClient returns a process-wide singleton. Use an owned
-	// connection so closing this operation cannot break other Dapr users.
+	return NewPublisherWithPort(port)
+}
+
+// NewPublisherWithPort creates a publisher with its own connection to the local sidecar.
+func NewPublisherWithPort(port string) (*Publisher, error) {
 	client, err := dapr.NewClientWithPort(port)
+	if err != nil {
+		return nil, err
+	}
+	return &Publisher{client: client}, nil
+}
+
+// PublishEvent sends an event through the publisher's connection.
+func (p *Publisher) PublishEvent(ctx context.Context, pubsubName, topic string, data any) error {
+	if p == nil {
+		return errors.New("nil Dapr publisher")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.client == nil {
+		return errors.New("Dapr publisher is closed")
+	}
+	return p.client.PublishEvent(ctx, pubsubName, topic, data)
+}
+
+// Close waits for active publishes to finish and closes the connection.
+func (p *Publisher) Close() error {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.client != nil {
+		p.client.Close()
+		p.client = nil
+	}
+	return nil
+}
+
+// PublishEvent sends one event. Use NewPublisher to reuse a connection for frequent publishing.
+func PublishEvent(ctx context.Context, pubsubName, topic string, data any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	publisher, err := NewPublisher()
 	if err != nil {
 		return err
 	}
-
-	defer client.Close()
-	return client.PublishEvent(ctx, pubsubName, topic, data)
+	defer publisher.Close()
+	return publisher.PublishEvent(ctx, pubsubName, topic, data)
 }

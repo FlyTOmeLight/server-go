@@ -76,6 +76,7 @@ func TestNewDBErrorPreservesUnknownCause(t *testing.T) {
 	result := db.NewError(original)
 	assert.True(t, serrors.IsStatusCode(result, http.StatusInternalServerError))
 	assert.True(t, serrors.IsCode(result, "InternalError"))
+	assert.ErrorIs(t, result, serrors.ErrorInternalError)
 	assert.ErrorIs(t, result, original)
 	var pgError *pgconn.PgError
 	if assert.ErrorAs(t, result, &pgError) {

@@ -87,6 +87,21 @@ func TestHTTPServerConfigValidation(t *testing.T) {
 	}
 }
 
+func TestLoadSwaggerDocPrefix(t *testing.T) {
+	for _, test := range []struct{ config, want string }{
+		{config: "[HTTPServer]\nSwaggerEnable=true\n"},
+		{config: "[HTTPServer]\nSwaggerEnable=true\nSwaggerDocPrefix='configured-doc'\n", want: "configured-doc"},
+	} {
+		config, err := Load(configFile(t, test.config))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := config.HTTPServer.SwaggerDocPrefix; got != test.want {
+			t.Errorf("SwaggerDocPrefix = %q, want %q", got, test.want)
+		}
+	}
+}
+
 func TestHTTPServerConfigSnapshotOwnsTrustedProxies(t *testing.T) {
 	manager, err := NewManager(configFile(t, `[HTTPServer]
 Listen="127.0.0.1:8080"

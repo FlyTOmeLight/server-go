@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"os"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -17,34 +17,35 @@ import (
 	"github.com/FlyTOmeLight/server-go/constants"
 )
 
-func TestWrap(t *testing.T) {
-	testCases := []struct {
-		desc           string
-		err            error
-		wrapMessage    string
-		shouldContains bool
+func TestWrapAndWithMessage(t *testing.T) {
+	original := &Error{Status: http.StatusNotFound, Code: "Missing", Message: "gone"}
+	plain := &os.PathError{Op: "open", Path: "object", Err: os.ErrNotExist}
+	for _, test := range []struct {
+		name          string
+		wrap          func(error, string) error
+		frameworkText string
 	}{
-		{
-			desc:           "serverGo error",
-			err:            ErrorResourceNotFound,
-			wrapMessage:    "filesystem not found",
-			shouldContains: true,
-		},
-		{
-			desc:           "not serverGo error",
-			err:            errors.New("a wild error"),
-			wrapMessage:    "filesystem not found",
-			shouldContains: true,
-		},
-	}
+		{name: "Wrap", wrap: Wrap, frameworkText: "request failed gone"},
+		{name: "WithMessage", wrap: WithMessage, frameworkText: "request failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.NoError(t, test.wrap(nil, "request failed"))
 
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			err := Wrap(tc.err, tc.wrapMessage)
-			t.Log(err.Error())
-			if strings.Contains(err.Error(), tc.wrapMessage) != tc.shouldContains {
-				t.Fatalf("case: %#v", tc)
-			}
+			frameworkErr := test.wrap(original, "request failed")
+			require.EqualError(t, frameworkErr, test.frameworkText)
+			require.ErrorIs(t, frameworkErr, original)
+			var detail *Error
+			require.ErrorAs(t, frameworkErr, &detail)
+			require.Equal(t, original.Code, detail.Code)
+			require.Equal(t, original.Status, detail.Status)
+
+			plainErr := test.wrap(plain, "request failed")
+			require.EqualError(t, plainErr, "request failed: "+plain.Error())
+			require.ErrorIs(t, plainErr, plain)
+			require.ErrorIs(t, plainErr, os.ErrNotExist)
+			var pathErr *os.PathError
+			require.ErrorAs(t, plainErr, &pathErr)
+			require.Same(t, plain, pathErr)
 		})
 	}
 }

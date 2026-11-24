@@ -4,28 +4,11 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/bsontype"
-
-	"github.com/FlyTOmeLight/server-go/db/mongodb"
 )
 
+// Time wraps a SQL timestamp. Use mongodb.Time for MongoDB BSON values.
 type Time struct {
 	time.Time
-}
-
-func (t Time) MarshalBSONValue() (bsontype.Type, []byte, error) {
-	mt := mongodb.Time(t.Time)
-	return (&mt).MarshalBSONValue()
-}
-
-func (t *Time) UnmarshalBSONValue(bt bsontype.Type, data []byte) error {
-	var mt mongodb.Time
-	if err := (&mt).UnmarshalBSONValue(bt, data); err != nil {
-		return err
-	}
-	t.Time = time.Time(mt)
-	return nil
 }
 
 func (t Time) Value() (driver.Value, error) {

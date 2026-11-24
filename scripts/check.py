@@ -1,8 +1,10 @@
 """Check the framework, independent examples and generated projects."""
+import argparse
 import contextlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import socket
@@ -19,6 +21,38 @@ EXAMPLES = [ROOT / 'examples' / name for name in (
     'example-hello-world', 'example-service1', 'example-service2', 'example-combine-service',
 )]
 ENV = dict(os.environ, CGO_ENABLED='1', GOWORK='off')
+
+
+def check_release_versions(root=ROOT):
+    version = r'(v[0-9]+\.[0-9]+\.[0-9]+)(?![\w.+-])'
+    module = re.escape('github.com/FlyTOmeLight/server-go')
+    dependency = rf'^(?:require[ \t]+)?[ \t]*{module}[ \t]+{version}(?:[ \t]+//.*)?[ \t]*$'
+    checks = (
+        (Path('README.md'), 'release heading', rf'^## {version}[ \t]*$', True),
+        (Path('README.md'), 'go get', rf'^go get {module}@{version}', False),
+        (Path('README.md'), 'generator instructions', rf'并引用发布版框架 {version}', False),
+        (Path('examples/README.md'), 'framework reference', rf'{module}@{version}', False),
+        (Path('scripts/gen_code.py'), 'framework dependency', rf'{module} {version}', False),
+        *((example.relative_to(ROOT) / 'go.mod', 'framework dependency', dependency, False)
+          for example in EXAMPLES),
+    )
+    versions = set()
+    references = []
+    missing = False
+    for path, label, pattern, first_only in checks:
+        try:
+            text = (root / path).read_text(encoding='utf-8')
+        except FileNotFoundError:
+            text = ''
+        matches = re.findall(pattern, text, re.MULTILINE)
+        if first_only:
+            matches = matches[:1]
+        if not matches:
+            missing = True
+        versions.update(matches)
+        references.append(f'{path} ({label}): {", ".join(matches) or "missing"}')
+    if missing or len(versions) != 1:
+        raise RuntimeError('Inconsistent server-go release versions:\n' + '\n'.join(references))
 
 
 def docker(*args, check=True, timeout=30):
@@ -337,28 +371,39 @@ def check_generated(directory, name, modules):
                 raise RuntimeError('Generated list contract failed')
 
 
-def main():
-    for command in ('go', 'gorgeous', 'make'):
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--fast', action='store_true',
+                        help='Run version, module, race and Python checks without Docker or example smoke tests.')
+    args = parser.parse_args(argv)
+    check_release_versions()
+    required_commands = ('go', 'gorgeous') if args.fast else ('go', 'gorgeous', 'make')
+    for command in required_commands:
         if shutil.which(command) is None:
             raise RuntimeError(f'Missing required command: {command}')
     # Turn termination into an exception so the contexts still remove owned resources.
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
-    with postgres_database() as dsn, mysql_database() as mysql_dsn:
-        ENV.update(SERVER_GO_TEST_POSTGRES_DSN=dsn, SERVER_GO_TEST_MYSQL_DSN=mysql_dsn, DATABASE_URL=dsn)
+    with contextlib.ExitStack() as fixtures:
+        if not args.fast:
+            dsn = fixtures.enter_context(postgres_database())
+            mysql_dsn = fixtures.enter_context(mysql_database())
+            ENV.update(SERVER_GO_TEST_POSTGRES_DSN=dsn, SERVER_GO_TEST_MYSQL_DSN=mysql_dsn, DATABASE_URL=dsn)
         for module in [ROOT, *EXAMPLES]:
             check_module(module)
         run('go', 'test', '-count=1', '-race', '.', './app', './host', './middleware', './console', './errors',
             './cli', './sdk', './internalsdk', './db', './db/migrate', './stream', './cron',
-            './pkg', './pkg/binder', './pkg/election', './pkg/modbus',
+            './pkg', './pkg/binder', './pkg/cache', './pkg/election', './pkg/modbus', './pkg/safety',
             './conf', './idempotence', './auth', './logger', './metrics', './proxy', './httpintegration',
-            './redis', './pubsub', './examples/streaming-service/...', './examples/postgresql-service/...')
+            './redis', './pubsub', './version', './swagger',
+            './examples/streaming-service/...', './examples/postgresql-service/...')
         run('go', 'test', '-count=1', '-race', './service', './sdk/go/...', cwd=EXAMPLES[0])
         run(sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'scripts', '-p', 'test_*.py')
-        with tempfile.TemporaryDirectory(prefix='server-go-check-') as temporary:
-            directory = Path(temporary)
-            check_examples(directory)
-            check_generated(directory, 'Generated', ['Module'])
-            check_generated(directory, 'Multi', ['Catalog', 'Order'])
+        if not args.fast:
+            with tempfile.TemporaryDirectory(prefix='server-go-check-') as temporary:
+                directory = Path(temporary)
+                check_examples(directory)
+                check_generated(directory, 'Generated', ['Module'])
+                check_generated(directory, 'Multi', ['Catalog', 'Order'])
     print('All checks passed.', flush=True)
 
 

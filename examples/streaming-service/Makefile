@@ -9,9 +9,9 @@ all: build package
 compile: build
 build:
 	mkdir -p $(OUTDIR)/bin
-	CGO_ENABLED=1 $(GO) build -ldflags="$(LD_FLAGS)" -o $(OUTDIR)/bin/$(SVCNAME) ./cmd/server
+	CGO_ENABLED=0 $(GO) build -ldflags="$(LD_FLAGS)" -o $(OUTDIR)/bin/$(SVCNAME) ./cmd/server
 run:
-	CGO_ENABLED=1 $(GO) run ./cmd/server
+	CGO_ENABLED=0 $(GO) run ./cmd/server
 test:
 	CGO_ENABLED=1 $(GO) test ./...
 check:
@@ -24,7 +24,7 @@ package: build
 clean:
 	rm -rf $(OUTDIR)
 
-SWAG := $(shell $(GO) env GOPATH)/bin/swag
+SWAG ?= $(shell command -v swag 2>/dev/null || { bin=$$($(GO) env GOBIN); [ -n "$$bin" ] || bin=$$($(GO) env GOPATH)/bin; printf '%s/swag' "$$bin"; })
 FRAMEWORK_DIR := $(shell $(GO) list -m -f '{{.Dir}}' github.com/FlyTOmeLight/server-go)
 
 .PHONY: doc install-doc

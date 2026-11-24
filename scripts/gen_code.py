@@ -126,9 +126,13 @@ class MultiModuleGenerator:
         os.remove(f"{file_path}/go.sum")
         # 重写go.mod
         go_mod_content = (f"module {go_mod}\n\ngo 1.27.0\n\nrequire (\n"
-                          f"   github.com/FlyTOmeLight/server-go v0.16.0\n"
-                          f"   github.com/spf13/cobra v1.7.0\n"
-                          f"   github.com/swaggo/swag v1.8.1\n)")
+                          "\tgithub.com/FlyTOmeLight/server-go v0.17.0\n"
+                          "\tgithub.com/creasty/defaults v1.11.0\n"
+                          "\tgithub.com/gin-gonic/gin v1.12.0\n"
+                          "\tgithub.com/spf13/cobra v1.10.2\n"
+                          "\tgithub.com/swaggo/swag v1.16.6\n"
+                          "\tresty.dev/v3 v3.0.0-rc.4\n"
+                          ")\n")
         write_to_file(f"{file_path}/go.mod", go_mod_content)
 
         self._rename_project(file_path, name, go_mod, self.template_name)

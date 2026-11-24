@@ -1,10 +1,12 @@
 package core_test
 
 import (
-	"encoding/json"
+	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	core "github.com/FlyTOmeLight/server-go/pkg"
 	"github.com/FlyTOmeLight/server-go/sdk"
@@ -19,7 +21,8 @@ func TestStructDecode(t *testing.T) {
 	t.Run("empty in", func(t *testing.T) {
 		var out map[string]any
 		err := core.StructDecode(nil, &out, "json")
-		assert.Nil(t, err)
+		require.NoError(t, err)
+		require.Empty(t, out)
 	})
 
 	t.Run("empty out", func(t *testing.T) {
@@ -39,6 +42,15 @@ func TestStructDecode(t *testing.T) {
 		var out map[string]string
 		err := core.StructDecode(&in, &out, "")
 		assert.Nil(t, err)
+		assert.Equal(t, in, out)
+	})
+
+	t.Run("custom tag", func(t *testing.T) {
+		var out struct {
+			Name string `wire:"key"`
+		}
+		require.NoError(t, core.StructDecode(map[string]string{"key": "value"}, &out, "wire"))
+		require.Equal(t, "value", out.Name)
 	})
 
 	t.Run("paging", func(t *testing.T) {
@@ -54,35 +66,37 @@ func TestStructDecode(t *testing.T) {
 			UserID:        "test",
 		}
 		out := core.FormToStringMap(&req)
-		t.Logf("out: %v", out)
+		assert.Equal(t, "test", out["orgID"])
+		assert.Equal(t, "test", out["userID"])
 	})
 }
 
-func TestNilFieldDecode(t *testing.T) {
-	t.Run("NilField", func(t *testing.T) {
-		type Request struct {
-			OrgID  string  `form:"orgID"`
-			UserID *string `form:"userID"`
-			Name   *string `form:"name"`
-			Value  *int    `form:"value"`
-			Count  int     `form:"count"`
-		}
+func TestFormToStringMap(t *testing.T) {
+	type request struct {
+		OrgID  string  `form:"orgID"`
+		UserID *string `form:"userID"`
+		Name   *string `form:"name"`
+		Value  *int    `form:"value"`
+		Count  int     `form:"count"`
+	}
+	var nilRequest *request
+	require.Empty(t, core.FormToStringMap(nil))
+	require.Empty(t, core.FormToStringMap(nilRequest))
 
-		name := "test"
-		val := 1
-		req := Request{
-			OrgID: name,
-			Name:  &name,
-			Value: &val,
-		}
-		bytes, _ := json.Marshal(req)
-
-		var mapdata map[string]string
-		json.Unmarshal(bytes, &mapdata)
-
-		out := core.FormToStringMap(&req)
-		_, ok := out["UserID"]
-		assert.False(t, ok)
-		t.Logf("out: %v %v", out, mapdata)
-	})
+	name := "test"
+	value := 1
+	req := &request{OrgID: name, Name: &name, Value: &value}
+	want := map[string]string{"orgID": "test", "name": "test", "value": "1", "count": "0"}
+	var workers sync.WaitGroup
+	for range 8 {
+		workers.Go(func() {
+			for range 32 {
+				if got := core.FormToStringMap(req); !reflect.DeepEqual(got, want) {
+					t.Errorf("FormToStringMap = %v, want %v", got, want)
+					return
+				}
+			}
+		})
+	}
+	workers.Wait()
 }

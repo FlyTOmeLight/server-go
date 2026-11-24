@@ -9,11 +9,13 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/swaggo/swag"
 
 	"github.com/FlyTOmeLight/server-go/auth"
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
 	core "github.com/FlyTOmeLight/server-go/pkg"
+	"github.com/FlyTOmeLight/server-go/swagger"
 )
 
 func TestInstallLeavesDisabledFeaturesAndDaprUnregistered(t *testing.T) {
@@ -107,6 +109,39 @@ func TestInstallWithAdminListenerKeepsDiagnosticsOffBusinessRouter(t *testing.T)
 		}
 		if writer.Code != want {
 			t.Errorf("GET %s = %d, want %d", path, writer.Code, want)
+		}
+	}
+}
+
+func TestInstallDiagnosticsUsesEngineSwaggerPrefix(t *testing.T) {
+	original := swagger.DocPrefix
+	t.Cleanup(func() { swagger.DocPrefix = original })
+	swagger.DocPrefix = "diagnostics-default"
+	for _, prefix := range []string{"diagnostics-first", "diagnostics-second", swagger.DocPrefix} {
+		if swag.GetSwagger(prefix) == nil {
+			swag.Register(prefix, &swag.Spec{SwaggerTemplate: `{"title":"` + prefix + `"}`})
+		}
+	}
+	for _, test := range []struct {
+		prefix, want string
+	}{
+		{prefix: "diagnostics-first", want: "diagnostics-first"},
+		{prefix: "diagnostics-second", want: "diagnostics-second"},
+		{want: "diagnostics-default"},
+	} {
+		engine := gin.New()
+		InstallDiagnostics(engine, conf.HTTPServerConfig{SwaggerEnable: true, SwaggerDocPrefix: test.prefix})
+		writer := httptest.NewRecorder()
+		engine.ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/swagger/doc.json", nil))
+		if want := `{"title":"` + test.want + `"}`; writer.Code != http.StatusOK ||
+			writer.Body.String() != want {
+			t.Errorf(
+				"prefix %q: swagger doc = HTTP %d %s, want %s",
+				test.prefix,
+				writer.Code,
+				writer.Body,
+				want,
+			)
 		}
 	}
 }

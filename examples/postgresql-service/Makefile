@@ -31,7 +31,7 @@ postgres:
 stop:
 	docker compose down
 
-SWAG := $(shell $(GO) env GOPATH)/bin/swag
+SWAG ?= $(shell command -v swag 2>/dev/null || { bin=$$($(GO) env GOBIN); [ -n "$$bin" ] || bin=$$($(GO) env GOPATH)/bin; printf '%s/swag' "$$bin"; })
 FRAMEWORK_DIR := $(shell $(GO) list -m -f '{{.Dir}}' github.com/FlyTOmeLight/server-go)
 
 .PHONY: doc install-doc

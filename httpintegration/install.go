@@ -75,6 +75,6 @@ func InstallDiagnostics(engine *core.Engine, config conf.HTTPServerConfig) {
 		engine.GET("/metrics", metrics.Metrics())
 	}
 	if config.SwaggerEnable {
-		engine.GET("/swagger/*any", swagger.Swagger())
+		engine.GET("/swagger/*any", swagger.SwaggerWithPrefix(config.SwaggerDocPrefix))
 	}
 }

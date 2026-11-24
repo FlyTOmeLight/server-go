@@ -129,6 +129,7 @@ type HTTPServerConfig struct {
 	PprofEnable       bool
 	MetricsEnable     bool
 	SwaggerEnable     bool
+	SwaggerDocPrefix  string
 	Trace             HTTPServerTraceConfig
 	UseH2C            bool // 支持HTTP2 无SSL
 	AuthType          AuthType

@@ -1,20 +1,24 @@
 package swagger
 
 import (
-	"context"
-
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	"github.com/FlyTOmeLight/server-go/logger"
 	core "github.com/FlyTOmeLight/server-go/pkg"
 )
 
 var DocPrefix = "unknown"
 
 func Swagger() core.HandlerFunc {
-	return ginSwagger.WrapHandler(swaggerFiles.Handler, func(config *ginSwagger.Config) {
-		logger.Debugf(context.Background(), "SwaggerInstanceName: %s", DocPrefix)
-		config.InstanceName = DocPrefix
-	})
+	return SwaggerWithPrefix("")
+}
+
+// SwaggerWithPrefix captures the document instance for a Swagger handler.
+// An empty prefix uses DocPrefix at registration time.
+func SwaggerWithPrefix(prefix string) core.HandlerFunc {
+	if prefix == "" {
+		prefix = DocPrefix
+	}
+	files := *swaggerFiles.Handler
+	return ginSwagger.WrapHandler(&files, ginSwagger.InstanceName(prefix))
 }

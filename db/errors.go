@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
-	"go.mongodb.org/mongo-driver/mongo"
 	"gorm.io/gorm"
 
 	serrors "github.com/FlyTOmeLight/server-go/errors"
@@ -53,14 +52,6 @@ func NewError(err error) error {
 		case "22P02": // invalid_text_representation
 			return serrors.NewInvalidParameter("invalid input syntax")
 		}
-	}
-
-	// mongodb error
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return serrors.ErrorResourceNotFound
-	}
-	if mongo.IsDuplicateKeyError(err) {
-		return serrors.ErrorResourceIsExists
 	}
 
 	return fmt.Errorf("%w: %w", serrors.ErrorInternalError, err)

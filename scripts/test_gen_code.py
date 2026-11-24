@@ -57,6 +57,15 @@ class GeneratorTest(unittest.TestCase):
             self.assertEqual((target / 'user.txt').read_text(), 'another invocation')
             self.assertEqual(list(Path(output).iterdir()), [target])
 
+    def test_go_mod_matches_template_direct_requirements(self):
+        with tempfile.TemporaryDirectory() as output, contextlib.redirect_stdout(io.StringIO()):
+            generator = gen_code.MultiModuleGenerator(str(TEMPLATE))
+            target = Path(generator.generate('TestProject', output, ['Module'], 'example.com/test-project'))
+            template = (TEMPLATE / 'go.mod').read_text()
+            direct_requirements = template.split('require (\n', 1)[1].split('\n)\n', 1)[0]
+            expected = f'module example.com/test-project\n\ngo 1.27.0\n\nrequire (\n{direct_requirements}\n)\n'
+            self.assertEqual((target / 'go.mod').read_text(), expected)
+
     def test_default_and_custom_modules(self):
         for modules in [['Module'], ['Catalog'], ['Catalog', 'Order'], ['CatalogItem', 'OrderLine']]:
             with self.subTest(modules=modules), tempfile.TemporaryDirectory() as output:
@@ -101,6 +110,8 @@ class GeneratorTest(unittest.TestCase):
                     self.assertIn(f'{module.lower()}.New{module}Controller', (target / 'service/service.go').read_text())
                     self.assertIn(f'Create{module}(ctx', (target / 'sdk/go/testprojectv1/testproject_api.go').read_text())
                     self.assertIn(f'command.{module}CommandBuilder', (target / 'cmd/cli/cli.go').read_text())
+                    command = (target / f'command/{filename}.go').read_text()
+                    self.assertIn(f'Example: cli.DefaultName() + " {module.lower()} delete --id=xx"', command)
                     for operation in ['Create', 'List', 'Get', 'Update', 'Delete']:
                         self.assertIn('/v1/' + operation + module, spec['paths'])
                 yaml = spec_file.with_suffix('.yaml')

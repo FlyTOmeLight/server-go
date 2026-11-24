@@ -39,12 +39,43 @@ func TestCBCDecrypter(t *testing.T) {
 }
 
 func TestIsBase64(t *testing.T) {
-	t.Run("judge base64", func(t *testing.T) {
-		is := IsBase64(ciphertext)
-		not := IsBase64(text)
-		assert.Equal(t, is, true)
-		assert.Equal(t, not, false)
-	})
+	for _, input := range []string{ciphertext, "YQ==", "YWI=", "YWJj", "+/8="} {
+		assert.True(t, IsBase64(input), "%q", input)
+	}
+	for _, input := range []string{text, "", "YQ", "YQ=", "YR==", "-_8=", "YQ==\n", "Y=Q="} {
+		assert.False(t, IsBase64(input), "%q", input)
+	}
+}
+
+func TestPKCS7PaddingCopiesInput(t *testing.T) {
+	backing := []byte("testXXXXXXXXXXXX")
+	input := backing[:4]
+	for _, blockSize := range []int{aes.BlockSize, 0, -1, 256} {
+		padded := PKCS7Padding(input, blockSize)
+		assert.Equal(t, "testXXXXXXXXXXXX", string(backing))
+		assert.Equal(t, "test\x0c\x0c\x0c\x0c\x0c\x0c\x0c\x0c\x0c\x0c\x0c\x0c", string(padded))
+		padded[0] = 'X'
+		assert.Equal(t, "test", string(input))
+	}
+}
+
+func TestUnPKCS7Padding(t *testing.T) {
+	for size := range aes.BlockSize {
+		input := make([]byte, size)
+		unpadded, err := UnPKCS7Padding(PKCS7Padding(input, aes.BlockSize))
+		assert.NoError(t, err)
+		assert.Equal(t, input, unpadded)
+	}
+
+	wrongBytes := make([]byte, aes.BlockSize)
+	wrongBytes[aes.BlockSize-1] = 2
+	wrongLength := make([]byte, aes.BlockSize)
+	wrongLength[aes.BlockSize-1] = 17
+	for _, input := range [][]byte{nil, {1}, make([]byte, aes.BlockSize), wrongLength, wrongBytes} {
+		got, err := UnPKCS7Padding(input)
+		assert.Nil(t, got)
+		assert.EqualError(t, err, "invalid PKCS7 padding")
+	}
 }
 
 func BenchmarkIsBase64(b *testing.B) {
@@ -76,6 +107,6 @@ func TestCBCRejectsMalformedInputs(t *testing.T) {
 		// padding=2 has a preceding zero byte, which must also be rejected.
 		cipher.NewCBCEncrypter(block, iv).CryptBlocks(plain, plain)
 		_, err = CBCDecrypter(base64.StdEncoding.EncodeToString(plain), key, iv)
-		assert.Error(t, err)
+		assert.EqualError(t, err, "invalid PKCS7 padding")
 	}
 }

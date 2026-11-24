@@ -9,9 +9,9 @@ all: build package
 compile: build
 build:
 	mkdir -p $(OUTDIR)/bin
-	CGO_ENABLED=1 $(GO) build -ldflags="$(LD_FLAGS)" -o $(OUTDIR)/bin/$(SVCNAME) ./cmd/worker
+	CGO_ENABLED=0 $(GO) build -ldflags="$(LD_FLAGS)" -o $(OUTDIR)/bin/$(SVCNAME) ./cmd/worker
 run:
-	CGO_ENABLED=1 $(GO) run ./cmd/worker
+	CGO_ENABLED=0 $(GO) run ./cmd/worker
 test:
 	CGO_ENABLED=1 $(GO) test ./...
 check:

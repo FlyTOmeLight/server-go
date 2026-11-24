@@ -1,16 +1,22 @@
 package safety
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"regexp"
 )
 
-// CBCEncrypter is used to encryption with cbc mode
+var base64Regex = regexp.MustCompile(
+	"^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$",
+)
+
+var errInvalidPKCS7Padding = errors.New("invalid PKCS7 padding")
+
+// CBCEncrypter encrypts using legacy unauthenticated AES-CBC. New code should prefer AEAD such as AES-GCM.
 func CBCEncrypter(text string, key []byte, iv []byte) (string, error) {
 	// key is secret key
 	block, err := aes.NewCipher(key)
@@ -38,7 +44,7 @@ func CBCEncrypter(text string, key []byte, iv []byte) (string, error) {
 	return result, nil
 }
 
-// CBCDecrypter is used to decryption with cbc mode
+// CBCDecrypter decrypts legacy unauthenticated AES-CBC. New code should prefer AEAD such as AES-GCM.
 func CBCDecrypter(ciphertext string, key []byte, iv []byte) (string, error) {
 	cipherBuf, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
@@ -69,46 +75,42 @@ func CBCDecrypter(ciphertext string, key []byte, iv []byte) (string, error) {
 	return string(resultBuf), nil
 }
 
-// PKCS7Padding PKCS7 填充方式
+// PKCS7Padding pads a copy of text, using the AES block size if blockSize is invalid.
 func PKCS7Padding(text []byte, blockSize int) []byte {
-	// 计算待填充的长度
-	size := blockSize - len(text)%blockSize
-	var paddingText []byte
-	if size == 0 {
-		// 已对齐，填充一整块数据，每个数据为 blockSize
-		paddingText = bytes.Repeat([]byte{byte(blockSize)}, blockSize)
-	} else {
-		// 未对齐 填充 padding 个数据，每个数据为 padding
-		paddingText = bytes.Repeat([]byte{byte(size)}, size)
+	if blockSize <= 0 || blockSize > 255 {
+		blockSize = aes.BlockSize
 	}
-	return append(text, paddingText...)
+	size := blockSize - len(text)%blockSize
+	padded := make([]byte, len(text)+size)
+	copy(padded, text)
+	for index := len(text); index < len(padded); index++ {
+		padded[index] = byte(size)
+	}
+	return padded
 }
 
 // UnPKCS7Padding PKCS7 去除填充方式
 func UnPKCS7Padding(text []byte) ([]byte, error) {
 	if len(text) == 0 || len(text)%aes.BlockSize != 0 {
-		return nil, errors.New("invalid PKCS7 padded length")
+		return nil, errInvalidPKCS7Padding
 	}
-	padding := int(text[len(text)-1])
-	if padding == 0 || padding > aes.BlockSize || padding > len(text) {
-		return nil, errors.New("invalid PKCS7 padding length")
+	lastBlock := text[len(text)-aes.BlockSize:]
+	padding := int(lastBlock[aes.BlockSize-1])
+	valid := subtle.ConstantTimeLessOrEq(1, padding) & subtle.ConstantTimeLessOrEq(padding, aes.BlockSize)
+	for index, value := range lastBlock {
+		isPadding := subtle.ConstantTimeLessOrEq(aes.BlockSize-index, padding)
+		matches := subtle.ConstantTimeByteEq(value, byte(padding))
+		valid &= subtle.ConstantTimeSelect(isPadding, matches, 1)
 	}
-	for _, value := range text[len(text)-padding:] {
-		if int(value) != padding {
-			return nil, errors.New("invalid PKCS7 padding bytes")
-		}
+	if valid != 1 {
+		return nil, errInvalidPKCS7Padding
 	}
 	return text[:len(text)-padding], nil
 }
 
 // IsBase64 判断字符串是否是base64，只能判断一定不是，目前条件下足够了
 func IsBase64(text string) bool {
-	pattern := "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$"
-	matched, err := regexp.MatchString(pattern, text)
-	if err != nil {
-		return false
-	}
-	if !(len(text)%4 == 0 && matched) {
+	if len(text)%4 != 0 || !base64Regex.MatchString(text) {
 		return false
 	}
 	decodedText, err := base64.StdEncoding.DecodeString(text)

@@ -1,14 +1,13 @@
 package errors
 
 import (
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/pkg/errors"
 
 	"github.com/FlyTOmeLight/server-go/conf"
 	"github.com/FlyTOmeLight/server-go/constants"
@@ -167,7 +166,7 @@ func normalize(err error, debug bool) *Error {
 	}
 
 	var e *Error
-	if stderrors.As(err, &e) && e != nil {
+	if errors.As(err, &e) && e != nil {
 		message := e.Message
 		if e.Status == http.StatusInternalServerError {
 			message = ErrorInternalError.Error()
@@ -194,12 +193,12 @@ func normalize(err error, debug bool) *Error {
 // IsStatusCode check error's http status code equal to targetCode
 func IsStatusCode(err error, targetCode int) bool {
 	var e *Error
-	return stderrors.As(err, &e) && e != nil && e.Status == targetCode
+	return errors.As(err, &e) && e != nil && e.Status == targetCode
 }
 
 func IsCode(err error, code string) bool {
 	var e *Error
-	return stderrors.As(err, &e) && e != nil && e.Code == code
+	return errors.As(err, &e) && e != nil && e.Code == code
 }
 
 // Wrap returns a new error with wrap message
@@ -208,7 +207,7 @@ func Wrap(err error, message string) error {
 		return nil
 	}
 	var e *Error
-	if stderrors.As(err, &e) && e != nil {
+	if errors.As(err, &e) && e != nil {
 		newError := &Error{
 			Code:       e.Code,
 			Message:    message + " " + err.Error(),
@@ -219,7 +218,7 @@ func Wrap(err error, message string) error {
 		}
 		return newError
 	}
-	return errors.Wrap(err, message)
+	return fmt.Errorf("%s: %w", message, err)
 }
 
 // WithMessage returns a new error with new message
@@ -228,7 +227,7 @@ func WithMessage(err error, message string) error {
 		return nil
 	}
 	var e *Error
-	if stderrors.As(err, &e) && e != nil {
+	if errors.As(err, &e) && e != nil {
 		newError := &Error{
 			Code:       e.Code,
 			Message:    message,
@@ -239,7 +238,7 @@ func WithMessage(err error, message string) error {
 		}
 		return newError
 	}
-	return errors.WithMessage(err, message)
+	return fmt.Errorf("%s: %w", message, err)
 }
 
 // ErrorHandler completes queued errors using the same policy as immediate failures.
